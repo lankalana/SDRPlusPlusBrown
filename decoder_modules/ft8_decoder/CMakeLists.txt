@@ -41,12 +41,6 @@ if (NEVER)
     target_include_directories(sdrpp_ft8_mshv PUBLIC "../../core/src")
 
     if (MSVC)
-        # Lib path
-        target_link_directories(sdrpp_ft8_mshv PUBLIC "C:/Program Files/PothosSDR/lib/")
-
-        # Misc headers
-        target_include_directories(sdrpp_ft8_mshv PUBLIC "C:/Program Files/PothosSDR/include/")
-
         # Volk
         target_link_libraries(sdrpp_ft8_mshv PUBLIC volk)
 

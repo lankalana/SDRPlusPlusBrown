@@ -143,6 +143,27 @@ if (ANDROID)
     set(CMAKE_CXX14_EXTENSION_COMPILE_OPTION "-std=c++17")
 endif (ANDROID)
 
+# Create uninstall target
+configure_file(${CMAKE_SOURCE_DIR}/cmake_uninstall.cmake ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake @ONLY)
+add_custom_target(uninstall ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+
+# GNU Radio VOLK
+include(FetchContent)
+
+set(ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(ENABLE_UTILITY_APPS OFF CACHE BOOL "" FORCE)
+set(ENABLE_MODTOOL OFF CACHE BOOL "" FORCE)
+set(ENABLE_PROFILING OFF CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+    volk
+    GIT_REPOSITORY https://github.com/gnuradio/volk.git
+    GIT_TAG e73b4b442b162db2888e66a92ecbbf171e5497b8
+    GIT_SUBMODULES cpu_features
+)
+
+FetchContent_MakeAvailable(volk)
+
 # Core of SDR++
 add_subdirectory("core")
 
@@ -469,7 +490,17 @@ target_compile_options(sdrpp PRIVATE ${SDRPP_COMPILER_FLAGS})
 # Copy dynamic libs over
 if (MSVC)
     add_custom_target(do_always ALL xcopy /s \"$<TARGET_FILE_DIR:sdrpp_core>\\*.dll\" \"$<TARGET_FILE_DIR:sdrpp>\" /Y)
-    add_custom_target(do_always_volk ALL xcopy /s \"C:/Program Files/PothosSDR/bin\\volk.dll\" \"$<TARGET_FILE_DIR:sdrpp>\" /Y)
+    add_custom_command(
+        TARGET sdrpp
+        POST_BUILD
+
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:volk>"
+            "$<TARGET_FILE_DIR:sdrpp>"
+
+        COMMENT "Deploying VOLK runtime"
+        VERBATIM
+    )
 
     if (COPY_MSVC_REDISTRIBUTABLES)
         # Get the list of Visual C++ runtime DLLs
@@ -485,6 +516,21 @@ if (MSVC)
         # Create target
         add_custom_target(do_always_msvc ALL ${REDIST_DLLS_STR})
     endif ()
+    
+    add_custom_command(
+        TARGET sdrpp POST_BUILD
+
+        # Resources
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CMAKE_SOURCE_DIR}/root/res"
+            "$<TARGET_FILE_DIR:sdrpp>/res"
+
+        # Modules directory
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "$<TARGET_FILE_DIR:sdrpp>/modules"
+
+        COMMENT "Preparing SDR++ runtime directory"
+    )
 endif ()
 
 
@@ -523,10 +569,6 @@ configure_file(${CMAKE_SOURCE_DIR}/sdrpp.desktop ${CMAKE_CURRENT_BINARY_DIR}/sdr
 if (${CMAKE_SYSTEM_NAME} MATCHES "Linux")
     install(FILES ${CMAKE_CURRENT_BINARY_DIR}/sdrpp.desktop DESTINATION share/applications)
 endif ()
-
-# Create uninstall target
-configure_file(${CMAKE_SOURCE_DIR}/cmake_uninstall.cmake ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake @ONLY)
-add_custom_target(uninstall ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
 
 # Create headers target
 

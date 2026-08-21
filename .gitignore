@@ -35,6 +35,7 @@ qemu/
 /xcode
 *.log
 __pycache__/
+.venv/
 *.pyc
 
 # Stray root-level generated files

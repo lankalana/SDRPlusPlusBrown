@@ -13,6 +13,31 @@ target_include_directories(${PROJECT_NAME} PRIVATE "${SDRPP_CORE_ROOT}/src/")
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "")
 if(MSVC)
     add_compile_options(/wd4996)
+    add_custom_command(
+        TARGET ${PROJECT_NAME}
+        POST_BUILD
+
+        COMMAND ${CMAKE_COMMAND} -E make_directory
+            "${CMAKE_BINARY_DIR}/$<CONFIG>/modules"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "$<TARGET_FILE:${PROJECT_NAME}>"
+            "${CMAKE_BINARY_DIR}/$<CONFIG>/modules"
+
+        COMMENT "Deploying ${PROJECT_NAME} to the SDR++ runtime directory"
+        VERBATIM
+    )
+    add_custom_command(
+        TARGET ${PROJECT_NAME}
+        POST_BUILD
+
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_RUNTIME_DLLS:${PROJECT_NAME}>
+            "${CMAKE_BINARY_DIR}/$<CONFIG>"
+
+        COMMENT "Deploying ${PROJECT_NAME} runtime dependencies"
+        COMMAND_EXPAND_LISTS
+        VERBATIM
+    )
 else()
     add_compile_options(-Wno-deprecated-declarations)
 endif()

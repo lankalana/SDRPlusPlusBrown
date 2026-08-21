@@ -1,0 +1,103 @@
+{
+	"version": 3,
+	"configurePresets": [
+		{
+			"name": "sdrplay-base",
+			"hidden": true,
+			"cacheVariables": {
+				"OPT_BACKEND_GLFW": "ON",
+				"OPT_BACKEND_ANDROID": "OFF",
+				"OPT_OVERRIDE_STD_FILESYSTEM": "OFF",
+				"OPT_BUILD_AIRSPY_SOURCE": "OFF",
+				"OPT_BUILD_AIRSPYHF_SOURCE": "OFF",
+				"OPT_BUILD_AUDIO_SOURCE": "ON",
+				"OPT_BUILD_BADGESDR_SOURCE": "OFF",
+				"OPT_BUILD_BLADERF_SOURCE": "OFF",
+				"OPT_BUILD_FILE_SOURCE": "OFF",
+				"OPT_BUILD_FOBOSSDR_SOURCE": "OFF",
+				"OPT_BUILD_HACKRF_SOURCE": "OFF",
+				"OPT_BUILD_HAROGIC_SOURCE": "OFF",
+				"OPT_BUILD_HERMES_SOURCE": "OFF",
+				"OPT_BUILD_HYDRASDR_SOURCE": "OFF",
+				"OPT_BUILD_KCSDR_SOURCE": "OFF",
+				"OPT_BUILD_DRAGONLABS_SOURCE": "OFF",
+				"OPT_BUILD_LIMESDR_SOURCE": "OFF",
+				"OPT_BUILD_NETWORK_SOURCE": "OFF",
+				"OPT_BUILD_PERSEUS_SOURCE": "OFF",
+				"OPT_BUILD_PLUTOSDR_SOURCE": "OFF",
+				"OPT_BUILD_RFNM_SOURCE": "OFF",
+				"OPT_BUILD_RFSPACE_SOURCE": "OFF",
+				"OPT_BUILD_RTL_SDR_SOURCE": "OFF",
+				"OPT_BUILD_RTL_TCP_SOURCE": "OFF",
+				"OPT_BUILD_SDRPP_SERVER_SOURCE": "OFF",
+				"OPT_BUILD_SDRPLAY_SOURCE": "ON",
+				"OPT_BUILD_SOAPY_SOURCE": "OFF",
+				"OPT_BUILD_SPECTRAN_SOURCE": "OFF",
+				"OPT_BUILD_SPECTRAN_HTTP_SOURCE": "OFF",
+				"OPT_BUILD_SPYSERVER_SOURCE": "OFF",
+				"OPT_BUILD_USRP_SOURCE": "OFF",
+				"OPT_BUILD_KIWISDR_SOURCE": "OFF",
+				"OPT_BUILD_ANDROID_AUDIO_SINK": "OFF",
+				"OPT_BUILD_AUDIO_SINK": "ON",
+				"OPT_BUILD_NETWORK_SINK": "OFF",
+				"OPT_BUILD_MPEG_ADTS_SINK": "OFF",
+				"OPT_BUILD_NEW_PORTAUDIO_SINK": "ON",
+				"OPT_BUILD_PORTAUDIO_SINK": "OFF",
+				"OPT_BUILD_ATV_DECODER": "ON",
+				"OPT_BUILD_DAB_DECODER": "OFF",
+				"OPT_BUILD_KG_SSTV_DECODER": "OFF",
+				"OPT_BUILD_CH_EXTRAVHF_DECODER": "ON",
+				"OPT_BUILD_CH_TETRA_DEMODULATOR": "ON",
+				"OPT_BUILD_METEOR_DEMODULATOR": "ON",
+				"OPT_BUILD_PAGER_DECODER": "ON",
+				"OPT_BUILD_RADIO": "ON",
+				"OPT_BUILD_RYFI_DECODER": "ON",
+				"OPT_BUILD_VOR_RECEIVER": "ON",
+				"OPT_BUILD_WEATHER_SAT_DECODER": "OFF",
+				"OPT_BUILD_DISCORD_PRESENCE": "OFF",
+				"OPT_BUILD_FREQUENCY_MANAGER": "ON",
+				"OPT_BUILD_IQ_EXPORTER": "ON",
+				"OPT_BUILD_RECORDER": "ON",
+				"OPT_BUILD_RIGCTL_CLIENT": "OFF",
+				"OPT_BUILD_RIGCTL_SERVER": "OFF",
+				"OPT_BUILD_TCI_SERVER": "OFF",
+				"OPT_BUILD_SCANNER": "ON",
+				"OPT_BUILD_SCHEDULER": "OFF",
+				"OPT_BUILD_NOISE_REDUCTION_LOGMMSE": "ON",
+				"USE_INTERNAL_LIBCORRECT": "ON",
+				"USE_BUNDLE_DEFAULTS": "OFF",
+				"COPY_MSVC_REDISTRIBUTABLES": "OFF"
+			}
+		},
+		{
+			"name": "windows-vs2022",
+			"inherits": [
+				"sdrplay-base"
+			],
+			"displayName": "Windows x64 - VS 2022 + vcpkg",
+			"description": "Development build using VS2022, vcpkg and PothosSDR",
+			"generator": "Visual Studio 17 2022",
+			"architecture": "x64",
+			"binaryDir": "${sourceDir}/out/build/${presetName}",
+			"toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+			"cacheVariables": {
+				"VCPKG_TARGET_TRIPLET": "x64-windows",
+				"PYTHON_EXECUTABLE": "${sourceDir}/.venv/Scripts/python.exe"
+			}
+		}
+	],
+	"buildPresets": [
+		{
+			"name": "windows-relwithdebinfo",
+			"displayName": "Windows RelWithDebInfo",
+			"configurePreset": "windows-vs2022",
+			"configuration": "RelWithDebInfo"
+		},
+		{
+			"name": "windows-release",
+			"displayName": "Windows Release",
+			"configurePreset": "windows-vs2022",
+			"configuration": "Release"
+		}
+	]
+}
