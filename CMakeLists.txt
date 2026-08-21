@@ -249,6 +249,7 @@ add_subdirectory("core")
 if(BUILD_TESTS)
     enable_testing()
     include(CTest)
+    add_subdirectory("tests")
 endif()
 
 function(sdrpp_add_optional_subdirectory option_name directory)

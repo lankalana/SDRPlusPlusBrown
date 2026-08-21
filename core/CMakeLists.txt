@@ -25,6 +25,7 @@ if(BUILD_TESTS)
     add_definitions(-DBUILD_TESTS)
     file(GLOB_RECURSE TEST_SRC "../tests/*.cpp")
     list(FILTER TEST_SRC EXCLUDE REGEX "dsp_bounded_tests.cpp")
+    list(FILTER TEST_SRC EXCLUDE REGEX "lora_phy_tests.cpp")
     set(SRC ${SRC} ${TEST_SRC})
 endif()
 
