@@ -36,9 +36,8 @@
     {
       "name": "windows-vs2022",
       "inherits": "minimal-sdrplay",
-      "displayName": "Windows x64 - VS 2022 + vcpkg",
+      "displayName": "Windows x64 + vcpkg",
       "description": "Runnable SDRplay development build using VS2022 and vcpkg",
-      "generator": "Visual Studio 17 2022",
       "architecture": "x64",
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
