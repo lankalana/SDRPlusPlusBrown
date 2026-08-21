@@ -14,13 +14,8 @@ Prerequisites:
 - vcpkg, with `VCPKG_ROOT` pointing to its installation directory
 - the SDRplay API when building the default preset
 
-Create and activate a Python environment, then install the one host-side build requirement:
-
-```powershell
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements-build.txt
-```
+CMake creates `.venv` in the source tree and installs the host-side build requirements there
+automatically.
 
 Configure and build:
 

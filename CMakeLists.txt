@@ -179,6 +179,24 @@ add_custom_target(uninstall ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmak
 if (SDRPP_USE_BUNDLED_VOLK)
     include(FetchContent)
 
+    set(SDRPP_PYTHON_VENV "${CMAKE_SOURCE_DIR}/.venv")
+    if (WIN32)
+        set(SDRPP_VENV_PYTHON "${SDRPP_PYTHON_VENV}/Scripts/python.exe")
+    else()
+        set(SDRPP_VENV_PYTHON "${SDRPP_PYTHON_VENV}/bin/python")
+    endif()
+
+    if (NOT EXISTS "${SDRPP_VENV_PYTHON}")
+        find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
+        message(STATUS "Creating Python virtual environment at ${SDRPP_PYTHON_VENV}")
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}" -m venv "${SDRPP_PYTHON_VENV}"
+            COMMAND_ERROR_IS_FATAL ANY
+        )
+    endif()
+
+    set(Python3_EXECUTABLE "${SDRPP_VENV_PYTHON}" CACHE FILEPATH
+        "Python interpreter used for SDR++ build tools" FORCE)
     find_package(Python3 3.8 REQUIRED COMPONENTS Interpreter)
     execute_process(
         COMMAND "${Python3_EXECUTABLE}" -c "import mako"
@@ -187,10 +205,10 @@ if (SDRPP_USE_BUNDLED_VOLK)
         ERROR_QUIET
     )
     if (NOT SDRPP_MAKO_RESULT EQUAL 0)
-        message(FATAL_ERROR
-            "Bundled VOLK requires the Python package 'mako'. "
-            "Install it with: ${Python3_EXECUTABLE} -m pip install -r "
-            "${CMAKE_SOURCE_DIR}/requirements-build.txt"
+        message(STATUS "Installing Python build requirements into ${SDRPP_PYTHON_VENV}")
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}" -m pip install --disable-pip-version-check mako
+            COMMAND_ERROR_IS_FATAL ANY
         )
     endif()
 
