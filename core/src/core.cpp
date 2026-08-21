@@ -582,6 +582,7 @@ int sdrpp_main(int argc, char* argv[]) {
         { "WebSDR View", false },
         { "Noise Reduction logmmse", false },
         { "FT8/FT4 Decoder", false },
+        { "ABD-S Decoder", false },
         { "Rigctl Server", false },
         { "Module Manager", false },
     };
@@ -697,6 +698,8 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["moduleInstances"]["VHF Digital Modes"]["enabled"] = true;
     defConfig["moduleInstances"]["TETRA Demodulator"]["module"] = "ch_tetra_demodulator";
     defConfig["moduleInstances"]["TETRA Demodulator"]["enabled"] = false;
+    defConfig["moduleInstances"]["ABD-S Decoder"]["module"] = "adsb_decoder";
+    defConfig["moduleInstances"]["ABD-S Decoder"]["enabled"] = true;
     // defConfig["moduleInstances"]["Rigctl Client"] = "rigctl_client";
     // TODO: Enable rigctl_client when ready
     // defConfig["moduleInstances"]["Scanner"] = "scanner";
