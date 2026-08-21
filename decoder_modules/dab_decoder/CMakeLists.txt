@@ -9,8 +9,8 @@ target_include_directories(dab_decoder PRIVATE "src/")
 
 if (MSVC)
     # Lib path
-    target_include_directories(dab_decoder PRIVATE "C:/Program Files/codec2/include/")
-    target_link_directories(dab_decoder PRIVATE "C:/Program Files/codec2/lib")
+    target_include_directories(dab_decoder PRIVATE "${CODEC2_ROOT}/include/")
+    target_link_directories(dab_decoder PRIVATE "${CODEC2_ROOT}/lib")
 
     target_link_libraries(dab_decoder PRIVATE libcodec2)
 elseif (ANDROID)

@@ -6,25 +6,13 @@ file(GLOB_RECURSE SRC "src/*.cpp" "src/*.c" ../../misc_modules/recorder/src/wav.
 list(FILTER SRC EXCLUDE REGEX "sdrpp_ft8_mshv_main.cpp")
 #list(FILTER SRC EXCLUDE REGEX "ft8_etc/*" )
 
-add_library(ft8_decoder SHARED ${SRC})
-target_link_libraries(ft8_decoder PRIVATE sdrpp_core)
-set_target_properties(ft8_decoder PROPERTIES PREFIX "")
+include(${SDRPP_MODULE_CMAKE})
+
 if (ANDROID)
     target_link_libraries(ft8_decoder PRIVATE log)
 endif()
 
 target_include_directories(ft8_decoder PRIVATE "src/")
-
-if (MSVC)
-    target_compile_options(ft8_decoder PRIVATE /std:c++17 /EHsc)
-elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(ft8_decoder PRIVATE -O3 -std=c++17 -Wno-unused-command-line-argument -undefined dynamic_lookup)
-else ()
-    target_compile_options(ft8_decoder PRIVATE -O3 -std=c++17)
-endif ()
-
-# Install directives
-install(TARGETS ft8_decoder DESTINATION lib/sdrpp/plugins)
 
 if (NEVER)
 

@@ -7,9 +7,9 @@ include(${SDRPP_MODULE_CMAKE})
 
 if (MSVC)
     # Lib path
-    target_link_directories(airspy_source PRIVATE "C:/Program Files/PothosSDR/bin/")
+    target_link_directories(airspy_source PRIVATE "${POTHOSSDR_ROOT}/bin/")
 
-    target_include_directories(airspy_source PUBLIC "C:/Program Files/PothosSDR/include/libairspy/")
+    target_include_directories(airspy_source PUBLIC "${POTHOSSDR_ROOT}/include/libairspy/")
 
     target_link_libraries(airspy_source PRIVATE airspy)
 elseif (ANDROID)

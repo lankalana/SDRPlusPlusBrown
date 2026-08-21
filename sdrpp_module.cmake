@@ -13,18 +13,8 @@ target_include_directories(${PROJECT_NAME} PRIVATE "${SDRPP_CORE_ROOT}/src/")
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "")
 if(MSVC)
     add_compile_options(/wd4996)
-    add_custom_command(
-        TARGET ${PROJECT_NAME}
-        POST_BUILD
-
-        COMMAND ${CMAKE_COMMAND} -E make_directory
-            "${CMAKE_BINARY_DIR}/$<CONFIG>/modules"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "$<TARGET_FILE:${PROJECT_NAME}>"
-            "${CMAKE_BINARY_DIR}/$<CONFIG>/modules"
-
-        COMMENT "Deploying ${PROJECT_NAME} to the SDR++ runtime directory"
-        VERBATIM
+    set_target_properties(${PROJECT_NAME} PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>/modules"
     )
     add_custom_command(
         TARGET ${PROJECT_NAME}
@@ -50,4 +40,14 @@ target_compile_options(${PROJECT_NAME} PRIVATE
 )
 
 # Install directives
-install(TARGETS ${PROJECT_NAME} DESTINATION lib/sdrpp/plugins)
+if (WIN32)
+    install(TARGETS ${PROJECT_NAME}
+        RUNTIME_DEPENDENCY_SET sdrpp_runtime_dependencies
+        RUNTIME DESTINATION "${SDRPP_MODULE_INSTALL_DIR}"
+    )
+else()
+    install(TARGETS ${PROJECT_NAME}
+        LIBRARY DESTINATION "${SDRPP_MODULE_INSTALL_DIR}"
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    )
+endif()

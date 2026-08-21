@@ -51,6 +51,12 @@ endif ()
 # Add code to dyn lib
 add_library(sdrpp_core SHARED ${SRC} ${BACKEND_SRC})
 
+if (MSVC)
+    set_target_properties(sdrpp_core PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
+    )
+endif()
+
 if(APPLE)
     target_link_libraries(sdrpp_core PUBLIC "-framework CoreFoundation")
     target_link_libraries(sdrpp_core PUBLIC "-framework Accelerate")
@@ -105,7 +111,7 @@ endif (OPT_OVERRIDE_STD_FILESYSTEM)
 
 if (MSVC)
     # Volk
-    target_link_libraries(sdrpp_core PUBLIC volk)
+    target_link_libraries(sdrpp_core PUBLIC ${SDRPP_VOLK_TARGET})
 
     # OpenGL
     find_package(OpenGL REQUIRED)
@@ -160,7 +166,11 @@ else()
 
     # temp
 
-    pkg_check_modules(VOLK REQUIRED volk)
+    if (SDRPP_USE_BUNDLED_VOLK)
+        set(VOLK_LIBRARIES ${SDRPP_VOLK_TARGET})
+    else()
+        pkg_check_modules(VOLK REQUIRED volk)
+    endif()
     pkg_check_modules(GLFW3 REQUIRED glfw3)
     pkg_check_modules(LIBZSTD REQUIRED libzstd)
 
@@ -215,4 +225,14 @@ set(CORE_FILES ${RUNTIME_OUTPUT_DIRECTORY} PARENT_SCOPE)
 # cmake .. "-DCMAKE_TOOLCHAIN_FILE=C:/dev/vcpkg/scripts/buildsystems/vcpkg.cmake"
 
 # Install directives
-install(TARGETS sdrpp_core DESTINATION lib)
+if (WIN32)
+    install(TARGETS sdrpp_core
+        RUNTIME_DEPENDENCY_SET sdrpp_runtime_dependencies
+        RUNTIME DESTINATION "${SDRPP_RUNTIME_INSTALL_DIR}"
+    )
+else()
+    install(TARGETS sdrpp_core
+        LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+        ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
+    )
+endif()

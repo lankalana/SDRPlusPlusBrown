@@ -2,8 +2,6 @@ cmake_minimum_required(VERSION 3.21)
 project(ch_extravhf_decoder)
 
 
-message("HERE in ch_extravhf_decoder: VCPKG_INSTALLED_DIR=${VCPKG_INSTALLED_DIR}")
-
 set(DLROOT ${CMAKE_BINARY_DIR})
 if (EXISTS ${DLROOT}/mbelib)
     message("Not downloading mbelib")
@@ -60,6 +58,7 @@ endif()
 
 FILE(REMOVE ${DLROOT}/mbelib/config.h)
 add_subdirectory(${DLROOT}/mbelib ${DLROOT}/mbelib-build)
+set_property(DIRECTORY "${DLROOT}/mbelib" PROPERTY EXCLUDE_FROM_ALL TRUE)
 
 file(GLOB_RECURSE SRC "src/*.cpp" "src/*.h" "src/*.hpp" "src/*.c")
 
@@ -74,9 +73,16 @@ endif()
 if(ANDROID)
     target_link_libraries(ch_extravhf_decoder PUBLIC ${SDR_KIT_ROOT}/${ANDROID_ABI}/lib/libfftw3f.so)
 elseif(MSVC)
-    target_link_libraries(ch_extravhf_decoder PUBLIC volk)
-    target_link_libraries(ch_extravhf_decoder PUBLIC itpp)
-    target_link_directories(ch_extravhf_decoder PUBLIC "${VCPKG_INSTALLED_DIR}/x64-windows/lib")
+    find_path(ITPP_INCLUDE_DIR NAMES itpp/itbase.h REQUIRED)
+    find_library(ITPP_LIBRARY NAMES itpp REQUIRED)
+    find_file(ITPP_RUNTIME NAMES itpp.dll PATH_SUFFIXES bin REQUIRED)
+    add_library(ITPP::itpp SHARED IMPORTED)
+    set_target_properties(ITPP::itpp PROPERTIES
+        IMPORTED_IMPLIB "${ITPP_LIBRARY}"
+        IMPORTED_LOCATION "${ITPP_RUNTIME}"
+        INTERFACE_INCLUDE_DIRECTORIES "${ITPP_INCLUDE_DIR}"
+    )
+    target_link_libraries(ch_extravhf_decoder PUBLIC ${SDRPP_VOLK_TARGET} ITPP::itpp)
     find_package(FFTW3f CONFIG REQUIRED)
     target_link_libraries(ch_extravhf_decoder PUBLIC FFTW3::fftw3f)
 else()

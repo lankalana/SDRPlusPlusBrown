@@ -7,9 +7,9 @@ include(${SDRPP_MODULE_CMAKE})
 
 if (MSVC)
     # Lib path
-    target_link_directories(perseus_source PRIVATE "C:/Program Files/PothosSDR/bin/")
+    target_link_directories(perseus_source PRIVATE "${POTHOSSDR_ROOT}/bin/")
 
-    target_include_directories(perseus_source PUBLIC "C:/Program Files/PothosSDR/include/perseus-sdr")
+    target_include_directories(perseus_source PUBLIC "${POTHOSSDR_ROOT}/include/perseus-sdr")
 
     target_link_libraries(perseus_source PRIVATE perseus-sdr)
 else (MSVC)

@@ -150,7 +150,8 @@ jobs:
             if (Test-Path C:/vcpkg-cache) {
               $snap = (Get-ChildItem C:/vcpkg-cache -Recurse -File | Measure-Object -Property Length -Sum).Sum
             }
-            vcpkg install fftw3:x64-windows glfw3:x64-windows portaudio:x64-windows zstd:x64-windows libusb:x64-windows itpp:x64-windows spdlog:x64-windows boost:x64-windows
+            vcpkg install --x-manifest-root="$Env:GITHUB_WORKSPACE" --x-install-root=C:/vcpkg/installed --triplet=x64-windows
+            vcpkg install boost:x64-windows
             $now = 0
             if (Test-Path C:/vcpkg-cache) {
               $now = (Get-ChildItem C:/vcpkg-cache -Recurse -File | Measure-Object -Property Length -Sum).Sum
@@ -222,9 +223,6 @@ jobs:
               Write-Host "nothing to upload"
             }
 
-        - name: Install rtaudio
-          run: git clone https://github.com/thestk/rtaudio ; cd rtaudio ; git checkout 2f2fca4502d506abc50f6d4473b2836d24cfb1e3 ; mkdir build ; cd build ; cmake .. ; cmake --build . --config Release ; cmake --install .
-
         - name: Install libperseus-sdr
           run: git clone https://github.com/AlexandreRouma/libperseus-sdr ; cd libperseus-sdr ; mkdir build ; cd build ; cmake -DCMAKE_BUILD_TYPE=Release "-DLIBUSB_LIBRARIES=C:/Program Files/PothosSDR/lib/libusb-1.0.lib" "-DLIBUSB_INCLUDE_DIRS=C:/Program Files/PothosSDR/include/libusb-1.0" .. "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" ; cmake --build . --config Release  ; mkdir "C:/Program Files/PothosSDR/include/perseus-sdr" ; cp Release/perseus-sdr.dll "C:/Program Files/PothosSDR/bin" ; cp Release/perseus-sdr.lib "C:/Program Files/PothosSDR/bin" ; cd .. ; xcopy "src" "C:/Program Files/PothosSDR/include/perseus-sdr"
 
@@ -237,9 +235,12 @@ jobs:
         - name: Install libhydrasdr
           run: git clone https://github.com/hydrasdr/rfone_host; cd rfone_host/ ; mkdir build ; cd build ; cmake .. -DCMAKE_BUILD_TYPE=Release "-DLIBUSB_LIBRARIES=C:\Program Files\PothosSDR\lib\libusb-1.0.lib" "-DLIBUSB_INCLUDE_DIR=C:\Program Files\PothosSDR\include\libusb-1.0" "-DTHREADS_PTHREADS_WIN32_LIBRARY=C:\Program Files\PothosSDR\lib\pthreadVC2.lib" "-DTHREADS_PTHREADS_INCLUDE_DIR=C:\Program Files\PothosSDR\include" -DCMAKE_INSTALL_PREFIX="C:/Program Files/hydrasdr-host" ; cmake --build . --config Release ; cmake --install .
 
+        - name: Install CMake Python dependencies
+          run: python -m pip install -r requirements-build.txt
+
         - name: Prepare CMake
           working-directory: ${{runner.workspace}}/build
-          run: cmake -DCOPY_MSVC_REDISTRIBUTABLES=ON "$Env:GITHUB_WORKSPACE" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -DOPT_BUILD_BLADERF_SOURCE=ON -DOPT_BUILD_LIMESDR_SOURCE=ON -DOPT_BUILD_PERSEUS_SOURCE=ON -DOPT_BUILD_SDRPLAY_SOURCE=ON -DOPT_BUILD_NEW_PORTAUDIO_SINK=ON -DOPT_BUILD_M17_DECODER=ON -DOPT_BUILD_RFNM_SOURCE=ON -DOPT_BUILD_FOBOSSDR_SOURCE=ON -DOPT_BUILD_HYDRASDR_SOURCE=ON -DOPT_BUILD_CH_EXTRAVHF_DECODER=ON -DOPT_BUILD_SOAPY_SOURCE=ON -DOPT_BUILD_MPEG_ADTS_SINK=OFF -DOPT_BUILD_USRP_SOURCE=ON -DUHD_DIR="C:/Program Files/uhd"
+          run: cmake -DCOPY_MSVC_REDISTRIBUTABLES=ON "$Env:GITHUB_WORKSPACE" "-DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake" -DVCPKG_INSTALLED_DIR=C:/vcpkg/installed -DVCPKG_APPLOCAL_DEPS=OFF -DOPT_BUILD_BLADERF_SOURCE=ON -DOPT_BUILD_LIMESDR_SOURCE=ON -DOPT_BUILD_PERSEUS_SOURCE=ON -DOPT_BUILD_SDRPLAY_SOURCE=ON -DOPT_BUILD_NEW_PORTAUDIO_SINK=ON -DOPT_BUILD_M17_DECODER=ON -DOPT_BUILD_RFNM_SOURCE=ON -DOPT_BUILD_FOBOSSDR_SOURCE=ON -DOPT_BUILD_HYDRASDR_SOURCE=ON -DOPT_BUILD_CH_EXTRAVHF_DECODER=ON -DOPT_BUILD_SOAPY_SOURCE=ON -DOPT_BUILD_MPEG_ADTS_SINK=OFF -DOPT_BUILD_USRP_SOURCE=ON -DUHD_DIR="C:/Program Files/uhd"
 
         - name: Build
           working-directory: ${{runner.workspace}}/build

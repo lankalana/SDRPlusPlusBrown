@@ -3,19 +3,9 @@ project(hl2_source)
 
 file(GLOB SRC "src/*.cpp" "src/*.h" "src/*.c")
 
-add_library(hl2_source SHARED ${SRC})
-target_link_libraries(hl2_source PRIVATE sdrpp_core)
-set_target_properties(hl2_source PROPERTIES PREFIX "")
+include(${SDRPP_MODULE_CMAKE})
 
 target_include_directories(hl2_source PRIVATE "src/")
-
-if (MSVC)
-    target_compile_options(hl2_source PRIVATE ${OPTIMIZE_OPTIONS} /std:c++17 /EHsc)
-elseif (CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(hl2_source PRIVATE ${OPTIMIZE_OPTIONS} -std=c++17 -Wno-unused-command-line-argument -undefined dynamic_lookup)
-else ()
-    target_compile_options(hl2_source PRIVATE ${OPTIMIZE_OPTIONS} -std=c++17)
-endif ()
 
 if (MSVC)
     # Lib path
@@ -39,6 +29,3 @@ else (MSVC)
     endif()
     
 endif ()
-
-# Install directives
-install(TARGETS hl2_source DESTINATION lib/sdrpp/plugins)

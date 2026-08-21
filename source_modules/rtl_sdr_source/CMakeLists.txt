@@ -7,7 +7,7 @@ include(${SDRPP_MODULE_CMAKE})
 
 if (MSVC)
     # Lib path
-    target_link_directories(rtl_sdr_source PRIVATE "C:/Program Files/PothosSDR/bin/")
+    target_link_directories(rtl_sdr_source PRIVATE "${POTHOSSDR_ROOT}/bin/")
 
     target_link_libraries(rtl_sdr_source PRIVATE rtlsdr)
 elseif (ANDROID)

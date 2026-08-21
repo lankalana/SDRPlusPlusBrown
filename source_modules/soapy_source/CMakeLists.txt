@@ -7,10 +7,10 @@ include(${SDRPP_MODULE_CMAKE})
 
 if (MSVC)
     # Lib path
-    target_link_directories(soapy_source PRIVATE "C:/Program Files/PothosSDR/lib/")
+    target_link_directories(soapy_source PRIVATE "${POTHOSSDR_ROOT}/lib/")
 
     # Misc headers
-    target_include_directories(soapy_source PRIVATE "C:/Program Files/PothosSDR/include/")
+    target_include_directories(soapy_source PRIVATE "${POTHOSSDR_ROOT}/include/")
 
     target_link_libraries(soapy_source PRIVATE SoapySDR)
 else (MSVC)

@@ -1,0 +1,15 @@
+{
+  "name": "sdrpp-brown",
+  "version-string": "1.2.0",
+  "description": "Common dependencies for the SDR++ Brown development build",
+  "dependencies": [
+    "fftw3",
+    "glfw3",
+    "itpp",
+    "libusb",
+    "portaudio",
+    "rtaudio",
+    "spdlog",
+    "zstd"
+  ]
+}

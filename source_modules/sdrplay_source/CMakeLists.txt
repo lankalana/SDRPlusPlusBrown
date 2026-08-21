@@ -6,14 +6,17 @@ file(GLOB SRC "src/*.cpp")
 include(${SDRPP_MODULE_CMAKE})
 
 if (MSVC)
-    add_library(sdrplay_api_imported SHARED IMPORTED)
-    set_target_properties(sdrplay_api_imported PROPERTIES
-        IMPORTED_IMPLIB "C:/Program Files/SDRplay/API/x64/sdrplay_api.lib"
-        IMPORTED_LOCATION "C:/Program Files/SDRplay/API/x64/sdrplay_api.dll"
-    )
-    target_include_directories(sdrplay_source PRIVATE "C:/Program Files/SDRplay/API/inc")
+    find_path(SDRPLAY_INCLUDE_DIR NAMES sdrplay_api.h HINTS "${SDRPLAY_ROOT}/inc" REQUIRED)
+    find_library(SDRPLAY_LIBRARY NAMES sdrplay_api HINTS "${SDRPLAY_ROOT}/x64" REQUIRED)
+    find_file(SDRPLAY_RUNTIME NAMES sdrplay_api.dll HINTS "${SDRPLAY_ROOT}/x64" REQUIRED)
 
-    target_link_libraries(sdrplay_source PRIVATE sdrplay_api_imported)
+    add_library(SDRplay::API SHARED IMPORTED)
+    set_target_properties(SDRplay::API PROPERTIES
+        IMPORTED_IMPLIB "${SDRPLAY_LIBRARY}"
+        IMPORTED_LOCATION "${SDRPLAY_RUNTIME}"
+        INTERFACE_INCLUDE_DIRECTORIES "${SDRPLAY_INCLUDE_DIR}"
+    )
+    target_link_libraries(sdrplay_source PRIVATE SDRplay::API)
 else (MSVC)
     find_package(PkgConfig)
 

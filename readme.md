@@ -13,6 +13,8 @@ Last merge: 2025-06-11
 
 Please see [brown fork page](https://sdrpp-brown.san.systems) for list of fork features.
 
+For local builds, see [BUILDING.md](BUILDING.md).
+
 WINDOWS INSTALL TROUBLESHOOTING: https://youtu.be/Q3CV5U-2IIU
 
 ## Thanks / Credits
@@ -37,7 +39,7 @@ Found an issue? Fork is worse than original? File an [issue](https://github.com/
 ## Debugging reminders
 
 * to debug in windows in virtualbox env, download mesa opengl32.dll from https://downloads.fdossena.com/Projects/Mesa3D/Builds/MesaForWindows-x64-20.1.8.7z
-* make sure you put rtaudiod.dll in the build folder's root otherwise audio sink will not load.
+* preset builds stage required runtime DLLs next to the executable automatically.
 * use system monitor to debug missing dlls while they fail to load.
 
 ## Local Android build:

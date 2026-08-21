@@ -7,7 +7,7 @@ include(${SDRPP_MODULE_CMAKE})
 
 if (MSVC)
     # Lib path
-    target_link_directories(limesdr_source PRIVATE "C:/Program Files/PothosSDR/lib")
+    target_link_directories(limesdr_source PRIVATE "${POTHOSSDR_ROOT}/lib")
 
     target_link_libraries(limesdr_source PRIVATE LimeSuite)
 else (MSVC)

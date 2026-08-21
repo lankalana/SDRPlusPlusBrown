@@ -1,5 +1,8 @@
 # Agent Instructions: Windows Build via windows-mcp
 
+For ordinary local development, prefer the preset workflow in `BUILDING.md`. This runbook remains
+the reference for provisioning a fresh remote machine and reproducing the full CI dependency set.
+
 Step-by-step runbook for building this repo (SDR++Brown) on a remote Windows machine through the
 `windows-mcp` MCP server. Written from a successful build; `IMPORTANT` marks the steps that make
 or break it. Pitfalls are summarized briefly at each step and in the table at the end.

@@ -7,8 +7,8 @@ include(${SDRPP_MODULE_CMAKE})
 
 if (MSVC)
     # Lib path
-    target_link_directories(plutosdr_source PRIVATE "C:/Program Files/PothosSDR/lib/")
-    target_include_directories(plutosdr_source PRIVATE "C:/Program Files/PothosSDR/include/")
+    target_link_directories(plutosdr_source PRIVATE "${POTHOSSDR_ROOT}/lib/")
+    target_include_directories(plutosdr_source PRIVATE "${POTHOSSDR_ROOT}/include/")
 
     target_link_libraries(plutosdr_source PRIVATE libiio)
     target_link_libraries(plutosdr_source PRIVATE libad9361)
