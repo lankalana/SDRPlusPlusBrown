@@ -31,6 +31,7 @@ struct DecodedFrame {
 
 uint32_t crc24(const std::array<uint8_t, FRAME_BYTES>& frame);
 std::string frameToHex(const std::array<uint8_t, FRAME_BYTES>& frame);
+std::string formatLogLine(const DecodedFrame& frame, int64_t timestampMillis);
 bool decodeAltitude(int ac12, int& altitudeFeet);
 bool decodeFrame(std::array<uint8_t, FRAME_BYTES> frame, int maxCorrections, float rssiDbfs, DecodedFrame& decoded);
 

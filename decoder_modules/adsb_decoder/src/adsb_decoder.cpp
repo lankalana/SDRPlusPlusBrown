@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <iomanip>
 #include <limits>
 #include <sstream>
@@ -166,6 +167,31 @@ std::string frameToHex(const std::array<uint8_t, FRAME_BYTES>& frame) {
     std::ostringstream stream;
     stream << std::uppercase << std::hex << std::setfill('0');
     for (uint8_t byte : frame) { stream << std::setw(2) << (int)byte; }
+    return stream.str();
+}
+
+std::string formatLogLine(const DecodedFrame& frame, int64_t timestampMillis) {
+    std::time_t seconds = (std::time_t)(timestampMillis / 1000);
+    std::tm utc{};
+#ifdef _WIN32
+    gmtime_s(&utc, &seconds);
+#else
+    gmtime_r(&seconds, &utc);
+#endif
+    char timestamp[32];
+    std::strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%S", &utc);
+
+    std::ostringstream stream;
+    stream << timestamp << '.' << std::setfill('0') << std::setw(3) << (timestampMillis % 1000) << 'Z'
+           << "\tICAO=" << std::uppercase << std::hex << std::setfill('0') << std::setw(6) << frame.icao
+           << "\tCALLSIGN=" << (frame.hasCallsign ? frame.callsign : "-")
+           << "\tCATEGORY=" << (frame.hasCategory ? frame.category : "-")
+           << "\tALTITUDE_FT=";
+    if (frame.hasAltitude) { stream << std::dec << frame.altitudeFeet; }
+    else { stream << '-'; }
+    stream << "\tRSSI_DBFS=" << std::dec << std::fixed << std::setprecision(1) << frame.rssiDbfs
+           << "\tCORRECTED_BITS=" << frame.correctedBits
+           << "\tRAW=" << frameToHex(frame.raw);
     return stream.str();
 }
 

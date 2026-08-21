@@ -78,6 +78,7 @@ public:
 
     ~ADSBDecoderModule() override {
         disable();
+        closeLogFile();
         gui::mainWindow.onPlayStateChange.unbindHandler(&onPlayStateChange);
         gui::waterfall.afterWaterfallDraw.unbindHandler(&afterWaterfallDrawListener);
         gui::menu.removeEntry(name);
@@ -108,6 +109,7 @@ public:
         workerRunning = false;
         if (vfo) { vfo->out.stopReader(); }
         if (worker.joinable()) { worker.join(); }
+        closeLogFile();
         if (vfo) {
             sigpath::iqFrontEnd.removeVFO(internalVFOName);
             vfo = nullptr;
@@ -136,13 +138,23 @@ private:
         if (config.conf[name].contains("secondsToKeepResults")) {
             retentionSeconds = config.conf[name]["secondsToKeepResults"].get<int>();
         }
+        if (config.conf[name].contains("logEnabled")) {
+            logEnabledSetting = config.conf[name]["logEnabled"].get<bool>();
+        }
+        if (config.conf[name].contains("logPath")) {
+            std::string configuredPath = config.conf[name]["logPath"].get<std::string>();
+            std::snprintf(logPath, sizeof(logPath), "%s", configuredPath.c_str());
+        }
         errorCorrectionSetting = (std::max)(0, (std::min)(2, errorCorrectionSetting));
         retentionSeconds = (std::max)(5, (std::min)(300, retentionSeconds));
         processingEnabled = processingEnabledSetting;
         errorCorrectionBits = errorCorrectionSetting;
+        logEnabled = logEnabledSetting;
         config.conf[name]["processingEnabled"] = processingEnabledSetting;
         config.conf[name]["errorCorrectionBits"] = errorCorrectionSetting;
         config.conf[name]["secondsToKeepResults"] = retentionSeconds;
+        config.conf[name]["logEnabled"] = logEnabledSetting;
+        config.conf[name]["logPath"] = std::string(logPath);
         config.release(true);
     }
 
@@ -222,9 +234,46 @@ private:
 
     void onFrame(const adsb::DecodedFrame& frame) {
         int64_t timestamp = sigpath::iqFrontEnd.getCurrentStreamTime();
+        logFrame(frame, timestamp);
         std::lock_guard<std::mutex> lock(trackerMutex);
         tracker.update(frame, timestamp);
         trackedAircraft = tracker.size();
+    }
+
+    void logFrame(const adsb::DecodedFrame& frame, int64_t timestamp) {
+        if (!logEnabled.load()) { return; }
+        std::lock_guard<std::mutex> lock(logMutex);
+        if (!logPath[0]) {
+            logPathError = "filename is empty";
+            return;
+        }
+        if (!logFile) {
+            logFile = std::fopen(logPath, "at");
+            if (!logFile) {
+                logPathError = "can't write file";
+                return;
+            }
+        }
+
+        std::string line = adsb::formatLogLine(frame, timestamp);
+        if (std::fprintf(logFile, "%s\n", line.c_str()) < 0 || std::fflush(logFile) != 0) {
+            logPathError = "can't write file";
+            std::fclose(logFile);
+            logFile = nullptr;
+            return;
+        }
+        logPathError.clear();
+    }
+
+    void closeLogFile() {
+        std::lock_guard<std::mutex> lock(logMutex);
+        closeLogFileLocked();
+    }
+
+    void closeLogFileLocked() {
+        if (!logFile) { return; }
+        std::fclose(logFile);
+        logFile = nullptr;
     }
 
     void resetDecoder() {
@@ -326,6 +375,7 @@ private:
             if (!module->processingEnabledSetting) {
                 module->resetDecoder();
                 module->clearAircraft();
+                module->closeLogFile();
             }
         }
 
@@ -342,6 +392,36 @@ private:
         ImGui::FillWidth();
         if (ImGui::SliderInt(CONCAT("##_adsb_retention_", module->name), &module->retentionSeconds, 5, 300)) {
             module->saveSetting("secondsToKeepResults", module->retentionSeconds);
+        }
+
+        ImGui::LeftLabel("ALL.TXT log");
+        if (ImGui::Checkbox(CONCAT("##_adsb_log_enabled_", module->name), &module->logEnabledSetting)) {
+            module->logEnabled = module->logEnabledSetting;
+            module->saveSetting("logEnabled", module->logEnabledSetting);
+            if (!module->logEnabledSetting) { module->closeLogFile(); }
+        }
+        ImGui::SameLine();
+        ImGui::Text("filename:");
+        ImGui::SameLine();
+        ImGui::FillWidth();
+        bool logPathChanged = false;
+        std::string updatedLogPath;
+        std::string logError;
+        {
+            std::lock_guard<std::mutex> lock(module->logMutex);
+            if (ImGui::InputText(CONCAT("##_adsb_log_path_", module->name), module->logPath, sizeof(module->logPath))) {
+                module->closeLogFileLocked();
+                module->logPathError.clear();
+                updatedLogPath = module->logPath;
+                logPathChanged = true;
+            }
+            logError = module->logPathError;
+        }
+        if (logPathChanged) { module->saveSetting("logPath", updatedLogPath); }
+        if (!logError.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0, 0, 1.0f));
+            ImGui::Text("Error: %s", logError.c_str());
+            ImGui::PopStyleColor();
         }
 
         if (ImGui::Button(CONCAT("Clear results##_adsb_", module->name))) { module->clearAircraft(); }
@@ -362,11 +442,13 @@ private:
     std::string internalVFOName;
     bool enabled = false;
     bool processingEnabledSetting = true;
+    bool logEnabledSetting = false;
     int errorCorrectionSetting = 1;
     int retentionSeconds = DEFAULT_RETENTION_SECONDS;
 
     std::atomic_bool workerRunning{false};
     std::atomic_bool processingEnabled{true};
+    std::atomic_bool logEnabled{false};
     std::atomic_bool onFrequency{false};
     std::atomic_int errorCorrectionBits{1};
     std::atomic<uint64_t> candidates{0};
@@ -382,6 +464,10 @@ private:
     std::mutex decoderMutex;
     adsb::AircraftTracker tracker;
     std::mutex trackerMutex;
+    char logPath[1024]{};
+    std::string logPathError;
+    FILE* logFile = nullptr;
+    std::mutex logMutex;
 
     EventHandler<ImGui::WaterFall::WaterfallDrawArgs> afterWaterfallDrawListener;
     EventHandler<bool> onPlayStateChange;

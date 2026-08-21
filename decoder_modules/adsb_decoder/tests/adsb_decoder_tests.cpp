@@ -64,6 +64,9 @@ void testProtocolVectors() {
     assert(callsign.typeCode == 4);
     assert(callsign.hasCategory);
     assert(adsb::frameToHex(callsignFrame) == "8D4840D6202CC371C32CE0576098");
+    assert(adsb::formatLogLine(callsign, 1704067200123) ==
+           "2024-01-01T00:00:00.123Z\tICAO=4840D6\tCALLSIGN=KLM1023\tCATEGORY=No category information"
+           "\tALTITUDE_FT=-\tRSSI_DBFS=-18.0\tCORRECTED_BITS=0\tRAW=8D4840D6202CC371C32CE0576098");
 
     auto categoryFrame = callsignFrame;
     categoryFrame[4] = (uint8_t)((categoryFrame[4] & 0xF8) | 5);
