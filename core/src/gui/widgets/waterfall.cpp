@@ -871,7 +871,43 @@ namespace ImGui {
         if (!viewBandwidth) {
             return;
         }
-        int count = bandplan->bands.size();
+        struct VisibleBand {
+            int index;
+            double start;
+            double end;
+            int lane;
+        };
+
+        std::vector<VisibleBand> visibleBands;
+        visibleBands.reserve(bandplan->bands.size());
+        for (int i = 0; i < bandplan->bands.size(); i++) {
+            double start = bandplan->bands[i].start;
+            double end = bandplan->bands[i].end;
+            if ((start < lowerFreq && end < lowerFreq) || (start > upperFreq && end > upperFreq)) {
+                continue;
+            }
+            visibleBands.push_back({ i, (std::max)(start, lowerFreq), (std::min)(end, upperFreq), 0 });
+        }
+
+        std::stable_sort(visibleBands.begin(), visibleBands.end(), [](const VisibleBand& a, const VisibleBand& b) {
+            return a.start < b.start;
+        });
+
+        std::vector<double> laneEnds;
+        for (VisibleBand& band : visibleBands) {
+            int lane = 0;
+            while (lane < laneEnds.size() && band.start < laneEnds[lane]) {
+                lane++;
+            }
+            if (lane == laneEnds.size()) {
+                laneEnds.push_back(band.end);
+            }
+            else {
+                laneEnds[lane] = band.end;
+            }
+            band.lane = lane;
+        }
+
         double horizScale = (double)dataWidth / viewBandwidth;
         double start, end, center, aPos, bPos, cPos, width;
         ImVec2 txtSz;
@@ -881,32 +917,26 @@ namespace ImGui {
         float height = ImGui::CalcTextSize("0").y * 2.5f;
         float bpBottom;
 
-        if (bandPlanPos == BANDPLAN_POS_BOTTOM) {
-            bpBottom = fftAreaMax.y;
-        }
-        else {
-            bpBottom = fftAreaMin.y + height + 1;
-        }
-
-
-        for (int i = 0; i < count; i++) {
+        window->DrawList->PushClipRect(fftAreaMin, fftAreaMax, true);
+        for (const VisibleBand& visibleBand : visibleBands) {
+            int i = visibleBand.index;
             start = bandplan->bands[i].start;
             end = bandplan->bands[i].end;
-            if (start < lowerFreq && end < lowerFreq) {
-                continue;
-            }
-            if (start > upperFreq && end > upperFreq) {
-                continue;
-            }
             startVis = (start > lowerFreq);
             endVis = (end < upperFreq);
-            start = std::clamp<double>(start, lowerFreq, upperFreq);
-            end = std::clamp<double>(end, lowerFreq, upperFreq);
+            start = visibleBand.start;
+            end = visibleBand.end;
             center = (start + end) / 2.0;
             aPos = fftAreaMin.x + ((start - lowerFreq) * horizScale);
             bPos = fftAreaMin.x + ((end - lowerFreq) * horizScale);
             cPos = fftAreaMin.x + ((center - lowerFreq) * horizScale);
             width = bPos - aPos;
+            if (bandPlanPos == BANDPLAN_POS_BOTTOM) {
+                bpBottom = fftAreaMax.y - (visibleBand.lane * height);
+            }
+            else {
+                bpBottom = fftAreaMin.y + ((visibleBand.lane + 1) * height) + 1;
+            }
             txtSz = ImGui::CalcTextSize(bandplan->bands[i].name.c_str());
             if (bandplan::colorTable.find(bandplan->bands[i].type.c_str()) != bandplan::colorTable.end()) {
                 color = bandplan::colorTable[bandplan->bands[i].type].colorValue;
@@ -939,6 +969,7 @@ namespace ImGui {
                                           IM_COL32(255, 255, 255, 255), bandplan->bands[i].name.c_str());
             }
         }
+        window->DrawList->PopClipRect();
     }
 
 
