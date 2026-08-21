@@ -97,6 +97,7 @@ option(OPT_BUILD_TCI_SERVER "TCI backend for controlling SDR++ with sunsdr and s
 option(OPT_BUILD_SCANNER "Frequency scanner" ${SDRPP_DEFAULT_MODULE})
 option(OPT_BUILD_SCHEDULER "Build the scheduler" OFF)
 option(OPT_BUILD_NOISE_REDUCTION_LOGMMSE "Build LOGMMSE noise reduction" ${SDRPP_DEFAULT_MODULE})
+option(OPT_BUILD_WEB_SDR_VIEW "Build Web SDR view" ${SDRPP_DEFAULT_MODULE})
 
 # Other options
 option(USE_INTERNAL_LIBCORRECT "Use an internal version of libcorrect" ON)
@@ -334,6 +335,7 @@ sdrpp_add_optional_subdirectory(OPT_BUILD_IQ_EXPORTER misc_modules/iq_exporter)
 sdrpp_add_optional_subdirectory(OPT_BUILD_RECORDER misc_modules/recorder)
 sdrpp_add_optional_subdirectory(OPT_BUILD_RIGCTL_CLIENT misc_modules/rigctl_client)
 sdrpp_add_optional_subdirectory(OPT_BUILD_RIGCTL_SERVER misc_modules/rigctl_server)
+sdrpp_add_optional_subdirectory(OPT_BUILD_WEB_SDR_VIEW misc_modules/websdr_view)
 
 if (OPT_BUILD_TCI_SERVER)
     if (MSVC)
@@ -347,7 +349,6 @@ if (OPT_BUILD_TCI_SERVER)
     endif()
 endif (OPT_BUILD_TCI_SERVER)
 
-add_subdirectory("misc_modules/websdr_view")
 add_subdirectory("misc_modules/reports_monitor")
 
 sdrpp_add_optional_subdirectory(OPT_BUILD_SCANNER misc_modules/scanner)
