@@ -849,12 +849,13 @@ public:
         //
         // FT8
         //
-        ImGui::FillWidth();
-        if (ImGui::SliderInt("##ft8_threads", &_this->nthreads, 1, 6, "%d threads decode", 0)) {
-            config.acquire();
-            config.conf[_this->name]["nthreads"] = _this->nthreads;
-            config.release(true);
-        }
+        // TODO: Enable when multithreading works (decoder_modules\ft8_decoder\src\ft8_etc\decoderms.cpp:2886)
+        // ImGui::FillWidth();
+        // if (ImGui::SliderInt("##ft8_threads", &_this->nthreads, 1, 6, "%d threads decode", 0)) {
+        //     config.acquire();
+        //     config.conf[_this->name]["nthreads"] = _this->nthreads;
+        //     config.release(true);
+        // }
 
         auto ft8processing = _this->ft8decoder.blockProcessorsRunning.load();
         if (ft8processing) {
