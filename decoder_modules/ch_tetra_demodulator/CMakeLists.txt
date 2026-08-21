@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.21)
 project(ch_tetra_demodulator)
 
 message(STATUS "[CH_TETRA_DEMODULATOR] ===== Configuring ch_tetra_demodulator module =====")

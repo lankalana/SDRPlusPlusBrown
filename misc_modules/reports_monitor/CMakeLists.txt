@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.21)
 project(reports_monitor)
 
 file(GLOB SRC "src/*.cpp")
