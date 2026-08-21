@@ -543,7 +543,7 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["bandColors"]["broadcast"] = "#0000FFFF";
     defConfig["bandColors"]["marine"] = "#00FFFFFF";
     defConfig["bandColors"]["military"] = "#FFFF00FF";
-    defConfig["bandPlan"] = "General";
+    defConfig["bandPlan"] = "Finland - Traficom";
     defConfig["bandPlanEnabled"] = true;
     defConfig["bandPlanPos"] = 0;
     defConfig["centerTuning"] = false;
