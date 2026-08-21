@@ -79,10 +79,11 @@ void testGray() {
 void testHardwareSyncEncoding() {
     for (int sf = 7; sf <= 12; sf++) {
         const int bins = 1 << sf;
-        for (uint16_t word : { 0x12u, 0x2Bu, 0xFFu }) {
+        for (uint16_t word : { 0x12u, 0x2Bu, 0xFFu, 0x1424u }) {
             const int first = syncNibbleFromBin(firstSyncBin(word, bins), bins, false);
             const int second = syncNibbleFromBin(secondSyncBin(word, bins), bins, true);
             require(matchSyncWord(first, second, word), "hardware sync encoding mismatch");
+            if (word == 0x1424u) { require(first == 1 && second == 2, "SX126x private sync mapping mismatch"); }
         }
     }
 }
@@ -224,6 +225,7 @@ void testSyntheticIq() {
     config.spreadingFactor = 7;
     config.codingRate = 1;
     config.minimumPreambleSymbols = 6;
+    config.syncWord = 0x1424;
     const std::vector<uint8_t> payload = { 'm', 'e', 's', 'h' };
     const std::vector<uint16_t> phySymbols = encodePhySymbols(config, payload);
     ChirpGenerator chirps;

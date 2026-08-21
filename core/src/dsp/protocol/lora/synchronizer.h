@@ -10,8 +10,10 @@ inline void normalizedSyncWord(uint16_t syncWord, int& first, int& second) {
         second = syncWord & 0x0Fu;
     }
     else {
-        first = (syncWord >> 8u) & 0x0Fu;
-        second = syncWord & 0x0Fu;
+        // SX126x stores each on-air sync nibble in the high half of a register
+        // byte and reserves the low nibble (for example private sync 0x1424).
+        first = (syncWord >> 12u) & 0x0Fu;
+        second = (syncWord >> 4u) & 0x0Fu;
     }
 }
 

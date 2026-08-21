@@ -2,14 +2,22 @@
 
 This receive-only module uses a hidden DSP channel and the native LoRa PHY. The built-in
 EdgeFastLow profile uses 869.43125 MHz, BW 62.5 kHz, SF8, CR 4/8, sync word `0x2B`, and the
-current 16-symbol Meshtastic preamble behavior. EU_868 LongFast and custom EU_868 BW/SF/CR/slot
-profiles are also selectable without adding a manually adjustable waterfall VFO.
+current 16-symbol Meshtastic preamble behavior. EU_868 LongFast is included as a second profile,
+and every configured profile can be edited without adding a manually adjustable waterfall VFO.
 
 Reusable protocol code lives under `core/src/protocol/meshtastic`. It provides explicit RF-header
 parsing, multiple collision-aware channels, unencrypted/AES-128/AES-256 channel payloads, PKI
 traffic recognition, radio profiles, frequency calculation, and Data/application decoding. The UI
 displays Text, Position, NodeInfo, Telemetry, and Routing packets; unknown ports remain inspectable.
 Channel names and Base64 or hex PSKs can be changed at runtime without printing the key.
+
+On first load, the module creates `meshtastic_decoder_config.json` in the SDR++ root. Its `profiles`
+array is prefilled with complete `EdgeFastLow` and `LongFast` entries. Radio fields use Hz and the
+displayed coding-rate denominator; each channel stores its PSK text and either `base64` or `hex` as
+the encoding. The UI profile selector is populated from this array, and radio/channel edits are
+written back to the selected entry. Per-instance selected profile and display preferences are kept
+under `instances`. Additional profiles can be added by copying an entry and assigning a unique
+`id`; malformed entries are logged and ignored.
 
 The DSP callback queues bounded decoded results for the GUI. Packet history is bounded, duplicate
 `from + packet ID` receptions are collapsed by default, and a session node cache is updated from

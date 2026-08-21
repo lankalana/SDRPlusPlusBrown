@@ -1,4 +1,5 @@
 #include <imgui.h>
+#include <config.h>
 #include <core.h>
 #include <gui/gui.h>
 #include <gui/style.h>
@@ -10,6 +11,7 @@
 #include <utils/flog.h>
 
 #include <array>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -19,6 +21,7 @@
 #include <iomanip>
 #include <mutex>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -31,12 +34,98 @@ SDRPP_MOD_INFO{
     /* Max instances    */ -1
 };
 
+ConfigManager config;
+
 namespace {
 
 constexpr std::size_t MAX_PENDING_PACKETS = 64;
 constexpr std::size_t MAX_PACKET_HISTORY = 100;
 constexpr std::size_t MAX_RECENT_PACKETS = 256;
 namespace meshtastic = protocol::meshtastic;
+
+struct ConfiguredProfile {
+    std::string id;
+    meshtastic::RadioProfile radio;
+    std::string channelName;
+    std::string psk;
+    int pskEncoding = 0;
+};
+
+json profileJson(const char* id, const meshtastic::RadioProfile& profile, const char* channelName) {
+    return {
+        { "id", id },
+        { "radio", {
+            { "name", profile.name },
+            { "region", "EU_868" },
+            { "bandwidthHz", profile.bandwidth },
+            { "spreadingFactor", profile.spreadingFactor },
+            { "codingRateDenominator", profile.codingRate + 4 },
+            { "frequencySlot", profile.frequencySlot },
+            { "preambleLength", profile.preambleLength },
+            { "syncWord", profile.syncWord }
+        } },
+        { "channel", {
+            { "name", channelName },
+            { "psk", "AQ==" },
+            { "pskEncoding", "base64" }
+        } }
+    };
+}
+
+json defaultConfig() {
+    return {
+        { "profiles", json::array({
+            profileJson("EdgeFastLow", meshtastic::edgeFastLowProfile(), "EdgeFastLow"),
+            profileJson("LongFast", meshtastic::longFastProfile(), "LongFast")
+        }) },
+        { "instances", json::object() }
+    };
+}
+
+bool parseConfiguredProfile(const json& value, ConfiguredProfile& configured, std::string& error) {
+    try {
+        configured.id = value.at("id").get<std::string>();
+        const json& radio = value.at("radio");
+        if (radio.value("region", "EU_868") != "EU_868") { throw std::invalid_argument("unsupported region"); }
+        configured.radio.name = radio.value("name", configured.id);
+        configured.radio.mode = meshtastic::RadioMode::Custom;
+        configured.radio.bandwidth = radio.at("bandwidthHz").get<double>();
+        configured.radio.spreadingFactor = radio.at("spreadingFactor").get<int>();
+        const int codingRateDenominator = radio.at("codingRateDenominator").get<int>();
+        configured.radio.codingRate = codingRateDenominator - 4;
+        configured.radio.frequencySlot = radio.at("frequencySlot").get<int>();
+        configured.radio.preambleLength = radio.value("preambleLength", 16);
+        configured.radio.syncWord = radio.value("syncWord", 0x2B);
+        if (radio.contains("frequencyHz") && !radio["frequencyHz"].is_null()) {
+            configured.radio.frequencyOverride = radio["frequencyHz"].get<double>();
+        }
+        const json& channel = value.at("channel");
+        configured.channelName = channel.at("name").get<std::string>();
+        configured.psk = channel.value("psk", "AQ==");
+        const std::string encoding = channel.value("pskEncoding", "base64");
+        if (encoding != "base64" && encoding != "hex") { throw std::invalid_argument("unsupported PSK encoding"); }
+        configured.pskEncoding = encoding == "hex" ? 1 : 0;
+        if (configured.id.empty() || configured.channelName.empty()) { throw std::invalid_argument("empty id or channel name"); }
+        if (configured.radio.bandwidth <= 0.0 || configured.radio.spreadingFactor < 5 ||
+            configured.radio.spreadingFactor > 12 || codingRateDenominator < 5 || codingRateDenominator > 8 ||
+            configured.radio.frequencySlot < 1 || configured.radio.preambleLength < 8) {
+            throw std::invalid_argument("invalid radio parameters");
+        }
+        meshtastic::calculateFrequency(configured.radio);
+        std::vector<uint8_t> encodedPsk;
+        const bool validPsk = configured.pskEncoding == 0
+            ? meshtastic::decodeBase64Psk(configured.psk, encodedPsk)
+            : meshtastic::decodeHexPsk(configured.psk, encodedPsk);
+        if (!validPsk || (meshtastic::expandPsk(encodedPsk.data(), encodedPsk.size()).empty() && !encodedPsk.empty())) {
+            throw std::invalid_argument("invalid PSK");
+        }
+        return true;
+    }
+    catch (const std::exception& exception) {
+        error = exception.what();
+        return false;
+    }
+}
 
 std::string bytesToHex(const uint8_t* data, std::size_t size) {
     std::ostringstream stream;
@@ -90,9 +179,17 @@ class MeshtasticDecoderModule : public ModuleManager::Instance {
 public:
     explicit MeshtasticDecoderModule(std::string instanceName)
         : name(std::move(instanceName)), iqInputName(name + ".efl.iq"), iqInput(iqInputName.c_str()) {
-        channels.push_back(meshtastic::makeChannel("EdgeFastLow", { 1 }));
-        std::snprintf(channelNameInput.data(), channelNameInput.size(), "%s", "EdgeFastLow");
-        std::snprintf(channelPskInput.data(), channelPskInput.size(), "%s", "AQ==");
+        loadConfig();
+        const ConfiguredProfile& configured = configuredProfiles[profileSelection];
+        profile = configured.radio;
+        std::vector<uint8_t> encodedPsk;
+        if (configured.pskEncoding == 0) { meshtastic::decodeBase64Psk(configured.psk, encodedPsk); }
+        else { meshtastic::decodeHexPsk(configured.psk, encodedPsk); }
+        channels.push_back(meshtastic::makeChannel(configured.channelName, encodedPsk));
+        std::snprintf(channelNameInput.data(), channelNameInput.size(), "%s", configured.channelName.c_str());
+        std::snprintf(channelPskInput.data(), channelPskInput.size(), "%s", configured.psk.c_str());
+        pskEncoding = configured.pskEncoding;
+        syncRadioInputs();
         protocolDecoder.setChannels(channels);
         channelHash = channels.front().hash;
         receiveFrequency = meshtastic::calculateFrequency(profile);
@@ -155,6 +252,96 @@ public:
     bool isEnabled() override { return enabled; }
 
 private:
+    void loadConfig() {
+        std::string selectedId = "EdgeFastLow";
+        bool modified = false;
+        config.acquire();
+        try {
+            json& instance = config.conf["instances"][name];
+            if (!instance.is_object()) {
+                instance = json::object();
+                modified = true;
+            }
+            selectedId = instance.value("selectedProfile", selectedId);
+            if (!instance.contains("selectedProfile")) {
+                instance["selectedProfile"] = selectedId;
+                modified = true;
+            }
+            showRawPayload.store(instance.value("showRawPayload", false));
+            showDecryptedPayload.store(instance.value("showDecryptedPayload", false));
+            showNonText.store(instance.value("showNonText", true));
+            showUnsupportedChannels.store(instance.value("showUnsupportedChannels", false));
+            showDuplicates.store(instance.value("showDuplicates", false));
+            for (const auto& value : config.conf["profiles"]) {
+                ConfiguredProfile configured;
+                std::string error;
+                if (parseConfiguredProfile(value, configured, error)) { configuredProfiles.push_back(std::move(configured)); }
+                else { flog::error("Meshtastic: invalid JSON profile: {}", error); }
+            }
+        }
+        catch (const std::exception& exception) {
+            flog::error("Meshtastic: could not read configuration: {}", exception.what());
+        }
+        config.release(modified);
+
+        if (configuredProfiles.empty()) {
+            ConfiguredProfile efl;
+            ConfiguredProfile longFast;
+            std::string error;
+            parseConfiguredProfile(profileJson("EdgeFastLow", meshtastic::edgeFastLowProfile(), "EdgeFastLow"), efl, error);
+            parseConfiguredProfile(profileJson("LongFast", meshtastic::longFastProfile(), "LongFast"), longFast, error);
+            configuredProfiles = { efl, longFast };
+            configurationError = "No valid JSON profiles; using built-in defaults";
+        }
+        const auto selected = std::find_if(configuredProfiles.begin(), configuredProfiles.end(), [&](const ConfiguredProfile& configured) {
+            return configured.id == selectedId;
+        });
+        profileSelection = selected == configuredProfiles.end() ? 0 : static_cast<int>(selected - configuredProfiles.begin());
+    }
+
+    void saveProfiles() {
+        json profiles = json::array();
+        for (const ConfiguredProfile& configured : configuredProfiles) {
+            json value = profileJson(configured.id.c_str(), configured.radio, configured.channelName.c_str());
+            value["channel"]["psk"] = configured.psk;
+            value["channel"]["pskEncoding"] = configured.pskEncoding == 0 ? "base64" : "hex";
+            if (configured.radio.frequencyOverride) { value["radio"]["frequencyHz"] = *configured.radio.frequencyOverride; }
+            profiles.push_back(std::move(value));
+        }
+        config.acquire();
+        config.conf["profiles"] = std::move(profiles);
+        config.release(true);
+    }
+
+    void saveInstanceSetting(const char* key, const json& value) {
+        config.acquire();
+        config.conf["instances"][name][key] = value;
+        config.release(true);
+    }
+
+    void syncRadioInputs() {
+        customBandwidthKhz = static_cast<float>(profile.bandwidth / 1000.0);
+        customSf = profile.spreadingFactor;
+        customCrDenominator = profile.codingRate + 4;
+        customSlot = profile.frequencySlot;
+    }
+
+    void applyConfiguredProfile(int selection) {
+        if (selection < 0 || selection >= static_cast<int>(configuredProfiles.size())) { return; }
+        profileSelection = selection;
+        const ConfiguredProfile& configured = configuredProfiles[profileSelection];
+        setProfile(configured.radio);
+        std::vector<uint8_t> encodedPsk;
+        if (configured.pskEncoding == 0) { meshtastic::decodeBase64Psk(configured.psk, encodedPsk); }
+        else { meshtastic::decodeHexPsk(configured.psk, encodedPsk); }
+        setChannel(configured.channelName, encodedPsk);
+        std::snprintf(channelNameInput.data(), channelNameInput.size(), "%s", configured.channelName.c_str());
+        std::snprintf(channelPskInput.data(), channelPskInput.size(), "%s", configured.psk.c_str());
+        pskEncoding = configured.pskEncoding;
+        syncRadioInputs();
+        saveInstanceSetting("selectedProfile", configured.id);
+    }
+
     void startReceiver() {
         const double offset = receiveFrequency - gui::waterfall.getCenterFrequency();
         currentOffset.store(offset, std::memory_order_relaxed);
@@ -184,15 +371,12 @@ private:
         if (restartDecoder) { loraDecoder.start(); }
     }
 
-    void setDefaultChannel(const char* channelName) {
+    void setChannel(const std::string& channelName, const std::vector<uint8_t>& encodedPsk) {
         const bool restartDecoder = enabled;
         if (restartDecoder) { loraDecoder.stop(); }
-        channels = { meshtastic::makeChannel(channelName, { 1 }) };
+        channels = { meshtastic::makeChannel(channelName, encodedPsk) };
         protocolDecoder.setChannels(channels);
         channelHash = channels.front().hash;
-        std::snprintf(channelNameInput.data(), channelNameInput.size(), "%s", channelName);
-        std::snprintf(channelPskInput.data(), channelPskInput.size(), "%s", "AQ==");
-        pskEncoding = 0;
         if (restartDecoder) { loraDecoder.start(); }
     }
 
@@ -346,30 +530,38 @@ private:
         self->drainPackets();
 
         if (!self->enabled) { style::beginDisabled(); }
-        const char* profileNames[] = { "EdgeFastLow (Finland)", "EU_868 LongFast", "Custom EU_868" };
-        if (ImGui::Combo(("Radio profile##" + self->name).c_str(), &self->profileSelection, profileNames, 3)) {
-            if (self->profileSelection == 0) {
-                self->setProfile(meshtastic::edgeFastLowProfile()); self->setDefaultChannel("EdgeFastLow");
+        const char* selectedProfile = self->configuredProfiles[self->profileSelection].id.c_str();
+        if (ImGui::BeginCombo(("Radio profile##" + self->name).c_str(), selectedProfile)) {
+            for (int index = 0; index < static_cast<int>(self->configuredProfiles.size()); index++) {
+                const bool selected = index == self->profileSelection;
+                if (ImGui::Selectable(self->configuredProfiles[index].id.c_str(), selected)) {
+                    self->applyConfiguredProfile(index);
+                    self->configurationError.clear();
+                }
+                if (selected) { ImGui::SetItemDefaultFocus(); }
             }
-            else if (self->profileSelection == 1) {
-                self->setProfile(meshtastic::longFastProfile()); self->setDefaultChannel("LongFast");
-            }
+            ImGui::EndCombo();
         }
-        if (self->profileSelection == 2) {
+        if (ImGui::CollapsingHeader("Radio configuration")) {
             ImGui::InputFloat(("Bandwidth (kHz)##" + self->name).c_str(), &self->customBandwidthKhz, 0.0f, 0.0f, "%.3f");
             ImGui::InputInt(("Spreading factor##" + self->name).c_str(), &self->customSf);
             ImGui::InputInt(("Coding denominator##" + self->name).c_str(), &self->customCrDenominator);
             ImGui::InputInt(("Frequency slot##" + self->name).c_str(), &self->customSlot);
-            if (ImGui::Button(("Apply custom radio##" + self->name).c_str())) {
+            if (ImGui::Button(("Apply radio##" + self->name).c_str())) {
                 if (self->customBandwidthKhz > 0.0f && self->customSf >= 5 && self->customSf <= 12 &&
                     self->customCrDenominator >= 5 && self->customCrDenominator <= 8 && self->customSlot >= 1) {
-                    meshtastic::RadioProfile custom = meshtastic::edgeFastLowProfile();
-                    custom.name = "Custom EU_868";
+                    meshtastic::RadioProfile custom = self->profile;
                     custom.bandwidth = self->customBandwidthKhz * 1000.0;
                     custom.spreadingFactor = self->customSf;
                     custom.codingRate = self->customCrDenominator - 4;
                     custom.frequencySlot = self->customSlot;
-                    try { self->setProfile(custom); self->configurationError.clear(); }
+                    custom.frequencyOverride.reset();
+                    try {
+                        self->setProfile(custom);
+                        self->configuredProfiles[self->profileSelection].radio = custom;
+                        self->saveProfiles();
+                        self->configurationError.clear();
+                    }
                     catch (const std::exception& error) { self->configurationError = error.what(); }
                 }
                 else { self->configurationError = "Invalid BW/SF/CR/slot"; }
@@ -392,13 +584,13 @@ private:
                     : meshtastic::decodeHexPsk(self->channelPskInput.data(), encodedPsk);
                 const std::vector<uint8_t> expanded = meshtastic::expandPsk(encodedPsk.data(), encodedPsk.size());
                 if (valid && (!expanded.empty() || encodedPsk.empty()) && self->channelNameInput[0]) {
-                    const bool restartDecoder = self->enabled;
-                    if (restartDecoder) { self->loraDecoder.stop(); }
-                    self->channels = { meshtastic::makeChannel(self->channelNameInput.data(), encodedPsk) };
-                    self->protocolDecoder.setChannels(self->channels);
-                    self->channelHash = self->channels.front().hash;
+                    self->setChannel(self->channelNameInput.data(), encodedPsk);
+                    ConfiguredProfile& configured = self->configuredProfiles[self->profileSelection];
+                    configured.channelName = self->channelNameInput.data();
+                    configured.psk = self->channelPskInput.data();
+                    configured.pskEncoding = self->pskEncoding;
+                    self->saveProfiles();
                     self->configurationError.clear();
-                    if (restartDecoder) { self->loraDecoder.start(); }
                 }
                 else { self->configurationError = "Invalid channel name or PSK"; }
             }
@@ -407,7 +599,8 @@ private:
         if (!self->configurationError.empty()) {
             ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.3f, 1.0f), "%s", self->configurationError.c_str());
         }
-        ImGui::TextUnformatted("PSK: default (AQ==)");
+        ImGui::Text("Configuration: meshtastic_decoder_config.json [%s]",
+                    self->configuredProfiles[self->profileSelection].id.c_str());
         const double offset = self->currentOffset.load(std::memory_order_relaxed);
         const double inputRate = self->currentInputSampleRate.load(std::memory_order_relaxed);
         const bool inPassband = std::abs(offset) + self->profile.bandwidth * 0.75 <= inputRate * 0.5;
@@ -419,18 +612,24 @@ private:
         }
 
         bool toggle = self->showRawPayload.load(std::memory_order_relaxed);
-        if (ImGui::Checkbox(("Show raw LoRa payload##" + self->name).c_str(), &toggle)) { self->showRawPayload.store(toggle); }
+        if (ImGui::Checkbox(("Show raw LoRa payload##" + self->name).c_str(), &toggle)) {
+            self->showRawPayload.store(toggle); self->saveInstanceSetting("showRawPayload", toggle);
+        }
         toggle = self->showDecryptedPayload.load(std::memory_order_relaxed);
-        if (ImGui::Checkbox(("Show decrypted payload##" + self->name).c_str(), &toggle)) { self->showDecryptedPayload.store(toggle); }
+        if (ImGui::Checkbox(("Show decrypted payload##" + self->name).c_str(), &toggle)) {
+            self->showDecryptedPayload.store(toggle); self->saveInstanceSetting("showDecryptedPayload", toggle);
+        }
         toggle = self->showNonText.load(std::memory_order_relaxed);
-        if (ImGui::Checkbox(("Show non-text packets##" + self->name).c_str(), &toggle)) { self->showNonText.store(toggle); }
+        if (ImGui::Checkbox(("Show non-text packets##" + self->name).c_str(), &toggle)) {
+            self->showNonText.store(toggle); self->saveInstanceSetting("showNonText", toggle);
+        }
         toggle = self->showUnsupportedChannels.load(std::memory_order_relaxed);
         if (ImGui::Checkbox(("Log unsupported channel packets##" + self->name).c_str(), &toggle)) {
-            self->showUnsupportedChannels.store(toggle);
+            self->showUnsupportedChannels.store(toggle); self->saveInstanceSetting("showUnsupportedChannels", toggle);
         }
         toggle = self->showDuplicates.load(std::memory_order_relaxed);
         if (ImGui::Checkbox(("Show duplicate receptions##" + self->name).c_str(), &toggle)) {
-            self->showDuplicates.store(toggle);
+            self->showDuplicates.store(toggle); self->saveInstanceSetting("showDuplicates", toggle);
         }
 
         ImGui::Separator();
@@ -472,6 +671,7 @@ private:
     dsp::channel::RxVFO fixedVfo;
     dsp::protocol::lora::LoRaDecoder loraDecoder;
     meshtastic::RadioProfile profile = meshtastic::edgeFastLowProfile();
+    std::vector<ConfiguredProfile> configuredProfiles;
     std::vector<meshtastic::Channel> channels;
     meshtastic::Decoder protocolDecoder;
     double receiveFrequency = 0.0;
@@ -513,7 +713,23 @@ private:
     std::unordered_map<uint32_t, ObservedNode> observedNodes;
 };
 
-MOD_EXPORT void _INIT_() {}
+MOD_EXPORT void _INIT_() {
+    json defaults = defaultConfig();
+    config.setPath(std::string(core::getRoot()) + "/meshtastic_decoder_config.json");
+    config.load(defaults);
+    config.acquire();
+    bool modified = false;
+    if (!config.conf.contains("profiles") || !config.conf["profiles"].is_array() || config.conf["profiles"].empty()) {
+        config.conf["profiles"] = defaults["profiles"];
+        modified = true;
+    }
+    if (!config.conf.contains("instances") || !config.conf["instances"].is_object()) {
+        config.conf["instances"] = json::object();
+        modified = true;
+    }
+    config.release(modified);
+    config.enableAutoSave();
+}
 
 MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
     return new MeshtasticDecoderModule(std::move(name));
@@ -523,4 +739,7 @@ MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
     delete static_cast<MeshtasticDecoderModule*>(instance);
 }
 
-MOD_EXPORT void _END_() {}
+MOD_EXPORT void _END_() {
+    config.disableAutoSave();
+    config.save();
+}

@@ -703,6 +703,8 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["moduleInstances"]["ABD-S Decoder"]["enabled"] = true;
     defConfig["moduleInstances"]["Meshtastic Decoder"]["module"] = "meshtastic_decoder";
     defConfig["moduleInstances"]["Meshtastic Decoder"]["enabled"] = true;
+    defConfig["moduleInstances"]["MeshCore Decoder"]["module"] = "meshcore_decoder";
+    defConfig["moduleInstances"]["MeshCore Decoder"]["enabled"] = true;
     // defConfig["moduleInstances"]["Rigctl Client"] = "rigctl_client";
     // TODO: Enable rigctl_client when ready
     // defConfig["moduleInstances"]["Scanner"] = "scanner";

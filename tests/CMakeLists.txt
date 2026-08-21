@@ -66,6 +66,28 @@ endif()
 target_compile_options(meshtastic_efl_tests PRIVATE ${SDRPP_COMPILER_FLAGS})
 add_test(NAME meshtastic_efl_tests COMMAND meshtastic_efl_tests)
 
+set(MESHCORE_CORE_SOURCES
+    ../core/src/protocol/meshcore/channel.cpp
+    ../core/src/protocol/meshcore/crypto.cpp
+    ../core/src/protocol/meshcore/decoder.cpp
+    ../core/src/protocol/meshcore/packet.cpp
+    ../core/src/protocol/meshcore/radio_profile.cpp
+)
+
+add_executable(meshcore_tests
+    meshcore_tests.cpp
+    ${MESHCORE_CORE_SOURCES}
+)
+target_include_directories(meshcore_tests PRIVATE ../core/src)
+if (WIN32)
+    target_link_libraries(meshcore_tests PRIVATE bcrypt)
+else()
+    find_package(OpenSSL REQUIRED)
+    target_link_libraries(meshcore_tests PRIVATE OpenSSL::Crypto)
+endif()
+target_compile_options(meshcore_tests PRIVATE ${SDRPP_COMPILER_FLAGS})
+add_test(NAME meshcore_tests COMMAND meshcore_tests)
+
 add_executable(lora_capture_probe
     lora_capture_probe.cpp
     ${MESHTASTIC_CORE_SOURCES}
