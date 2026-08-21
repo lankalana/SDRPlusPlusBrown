@@ -22,4 +22,25 @@ inline bool matchSyncWord(int firstSyncSymbol, int secondSyncSymbol, uint16_t co
     return firstSyncSymbol == expectedFirst && secondSyncSymbol == expectedSecond;
 }
 
+inline int firstSyncBin(uint16_t syncWord, int bins) {
+    int first = 0;
+    int second = 0;
+    normalizedSyncWord(syncWord, first, second);
+    return (first << 3u) % bins;
+}
+
+inline int secondSyncBin(uint16_t syncWord, int bins) {
+    int first = 0;
+    int second = 0;
+    normalizedSyncWord(syncWord, first, second);
+    return ((second << 3u) + bins / 2) % bins;
+}
+
+inline int syncNibbleFromBin(int bin, int bins, bool secondSymbol) {
+    if (secondSymbol) { bin -= bins / 2; }
+    bin %= bins;
+    if (bin < 0) { bin += bins; }
+    return ((bin + 4) / 8) & 0x0F;
+}
+
 }

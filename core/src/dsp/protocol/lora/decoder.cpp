@@ -24,29 +24,69 @@ namespace dsp::protocol::lora {
 namespace {
 
 void appendDecodedBlock(const uint16_t* symbols, int spreadingFactor, int codingRate, bool reducedRate,
-                        std::vector<uint8_t>& nibbles, uint32_t& corrected, uint32_t& invalid) {
+                        bool allowAdjacentRecovery, std::vector<uint8_t>& nibbles,
+                        uint32_t& corrected, uint32_t& invalid) {
     const int codewordLength = 4 + codingRate;
     const int effectiveSf = spreadingFactor - (reducedRate ? 2 : 0);
-    std::vector<uint16_t> mapped(codewordLength);
     const int bins = 1 << spreadingFactor;
-    for (int i = 0; i < codewordLength; i++) {
-        int demodulated = detail::modulo(static_cast<int>(symbols[i]) - 1, bins);
-        if (reducedRate) { demodulated /= 4; }
-        mapped[i] = grayEncode(static_cast<uint16_t>(demodulated));
-    }
+    auto decode = [&](const int* offsets, std::vector<uint8_t>& decoded, uint32_t& blockCorrected,
+                      uint32_t& blockInvalid) {
+        std::vector<uint16_t> mapped(codewordLength);
+        for (int i = 0; i < codewordLength; i++) {
+            int demodulated = detail::modulo(static_cast<int>(symbols[i]) + (offsets ? offsets[i] : 0) - 1, bins);
+            if (reducedRate) { demodulated /= 4; }
+            mapped[i] = grayEncode(static_cast<uint16_t>(demodulated));
+        }
+        std::vector<uint8_t> codewords(effectiveSf);
+        if (!deinterleave(mapped.data(), mapped.size(), spreadingFactor, codingRate, reducedRate,
+                          codewords.data(), codewords.size())) {
+            blockInvalid = effectiveSf;
+            return;
+        }
+        decoded.clear();
+        for (uint8_t codeword : codewords) {
+            const FecResult result = hammingDecode(codeword, codingRate);
+            decoded.push_back(result.nibble);
+            blockCorrected += result.corrected ? 1u : 0u;
+            blockInvalid += result.valid ? 0u : 1u;
+        }
+    };
 
-    std::vector<uint8_t> codewords(effectiveSf);
-    if (!deinterleave(mapped.data(), mapped.size(), spreadingFactor, codingRate, reducedRate,
-                      codewords.data(), codewords.size())) {
-        invalid += effectiveSf;
-        return;
+    std::vector<uint8_t> best;
+    uint32_t bestCorrected = 0;
+    uint32_t bestInvalid = 0;
+    decode(nullptr, best, bestCorrected, bestInvalid);
+    if (allowAdjacentRecovery && !reducedRate && codingRate >= 3 && bestInvalid) {
+        int bestChanges = 0;
+        int offsets[8] = {};
+        int combinations = 1;
+        for (int i = 0; i < codewordLength; i++) { combinations *= 3; }
+        for (int combination = 1; combination < combinations; combination++) {
+            int value = combination;
+            int changes = 0;
+            for (int i = 0; i < codewordLength; i++) {
+                offsets[i] = value % 3 - 1;
+                changes += offsets[i] != 0;
+                value /= 3;
+            }
+            if (bestInvalid == 0 && changes > bestChanges) { continue; }
+            std::vector<uint8_t> candidate;
+            uint32_t candidateCorrected = 0;
+            uint32_t candidateInvalid = 0;
+            decode(offsets, candidate, candidateCorrected, candidateInvalid);
+            if (candidateInvalid < bestInvalid ||
+                (candidateInvalid == bestInvalid && (changes < bestChanges ||
+                 (changes == bestChanges && candidateCorrected < bestCorrected)))) {
+                best = std::move(candidate);
+                bestCorrected = candidateCorrected;
+                bestInvalid = candidateInvalid;
+                bestChanges = changes;
+            }
+        }
     }
-    for (uint8_t codeword : codewords) {
-        const FecResult result = hammingDecode(codeword, codingRate);
-        nibbles.push_back(result.nibble);
-        corrected += result.corrected ? 1u : 0u;
-        invalid += result.valid ? 0u : 1u;
-    }
+    nibbles.insert(nibbles.end(), best.begin(), best.end());
+    corrected += bestCorrected;
+    invalid += bestInvalid;
 }
 
 std::size_t requiredSymbolCount(std::size_t payloadNibbles, int spreadingFactor, int codingRate, bool ldro) {
@@ -76,7 +116,7 @@ PhyDecodeStatus decodePhySymbols(const uint16_t* symbols, std::size_t symbolCoun
 
     std::vector<uint8_t> nibbles;
     nibbles.reserve(520);
-    appendDecodedBlock(symbols, config.spreadingFactor, 4, true, nibbles,
+    appendDecodedBlock(symbols, config.spreadingFactor, 4, true, false, nibbles,
                        frame.correctedCodewords, frame.invalidCodewords);
 
     std::size_t payloadNibbleOffset = 0;
@@ -108,7 +148,7 @@ PhyDecodeStatus decodePhySymbols(const uint16_t* symbols, std::size_t symbolCoun
     std::size_t symbolOffset = 8;
     while (nibbles.size() < totalNibbles) {
         appendDecodedBlock(symbols + symbolOffset, config.spreadingFactor, codingRate,
-                           config.lowDataRateOptimize, nibbles,
+                           config.lowDataRateOptimize, crcPresent, nibbles,
                            frame.correctedCodewords, frame.invalidCodewords);
         symbolOffset += 4 + codingRate;
     }
@@ -303,9 +343,18 @@ private:
 
         const SymbolEstimate alignedFirst = demodulator.demodulateUpchirp(samples.data() + alignedSync, symbolSamples, frequencyError);
         const SymbolEstimate alignedSecond = demodulator.demodulateUpchirp(samples.data() + alignedSync + symbolSamples, symbolSamples, frequencyError);
-        const int syncStep = derived.bins / 16;
-        const int firstNibble = detail::modulo(static_cast<int>(std::lround(alignedFirst.fractionalBin)) / syncStep, 16);
-        const int secondNibble = detail::modulo(static_cast<int>(std::lround(alignedSecond.fractionalBin)) / syncStep, 16);
+        const int firstNibble = syncNibbleFromBin(static_cast<int>(std::lround(alignedFirst.fractionalBin)), derived.bins, false);
+        const int secondNibble = syncNibbleFromBin(static_cast<int>(std::lround(alignedSecond.fractionalBin)), derived.bins, true);
+        {
+            std::lock_guard<std::mutex> lock(metricsMutex);
+            currentDiagnostics.observedSyncWord = static_cast<uint16_t>((firstNibble << 4u) | secondNibble);
+            currentDiagnostics.cfoHz = frequencyError;
+            currentDiagnostics.timingOffset = static_cast<float>(timingSamples);
+            currentDiagnostics.preambleBin = preambleBin;
+            currentDiagnostics.downchirpBin = down.fractionalBin;
+            currentDiagnostics.firstSyncBin = alignedFirst.fractionalBin;
+            currentDiagnostics.secondSyncBin = alignedSecond.fractionalBin;
+        }
         if (!matchSyncWord(firstNibble, secondNibble, config.syncWord)) {
             failSync();
             return;
@@ -340,20 +389,10 @@ private:
         const int margin = config.oversampling;
         if (frameCursor < static_cast<std::size_t>(margin) || !haveSymbol(frameCursor, margin)) { return false; }
         const float frequencyError = cfoBins * config.bandwidth / derived.bins;
-        SymbolEstimate best;
-        std::size_t bestPosition = frameCursor;
-        float bestRatio = -1.0f;
-        for (int offset = -margin; offset <= margin; offset++) {
-            const std::size_t position = static_cast<std::size_t>(static_cast<long long>(frameCursor) + offset);
-            const SymbolEstimate estimate = demodulator.demodulateUpchirp(samples.data() + position,
-                                                                          derived.samplesPerSymbol,
-                                                                          frequencyError);
-            if (estimate.peakRatio() > bestRatio) {
-                best = estimate;
-                bestRatio = estimate.peakRatio();
-                bestPosition = position;
-            }
-        }
+        const std::size_t bestPosition = frameCursor;
+        const SymbolEstimate best = demodulator.demodulateUpchirp(samples.data() + bestPosition,
+                                                                  derived.samplesPerSymbol,
+                                                                  frequencyError);
         symbol = static_cast<uint16_t>(detail::modulo(static_cast<int>(std::lround(best.fractionalBin)), derived.bins));
         frameCursor = bestPosition + derived.samplesPerSymbol;
         cursor = frameCursor;

@@ -1595,7 +1595,7 @@ void MobileMainWindow::updateFrequencyAfterChange() {
 
 void MobileMainWindow::updateAudioWaterfallPipeline() {
     if (gui::waterfall.selectedVFO != currentAudioStreamName) {
-        if (!currentAudioStreamName.empty()) {
+        if (!currentAudioStreamName.empty() && currentAudioStream) {
             currentAudioStream->stopReader();
             sigpath::sinkManager.unbindStream(currentAudioStreamName, currentAudioStream);
         }
@@ -1605,6 +1605,9 @@ void MobileMainWindow::updateAudioWaterfallPipeline() {
         } else {
             currentAudioStreamSampleRate = (int) sigpath::sinkManager.getStreamSampleRate(currentAudioStreamName);
             currentAudioStream = sigpath::sinkManager.bindStream(currentAudioStreamName);
+            if (!currentAudioStream) {
+                return;
+            }
             std::thread x([&]() {
                 SetThreadName("AudioWaterfall");
                 while (true) {
@@ -1641,7 +1644,6 @@ static TransientBookmarkManager *getTransientBookmarkManager() {
 void MobileMainWindow::draw() {
 
     auto ctm = currentTimeNanos();
-    updateAudioWaterfallPipeline();
 
     if (auto radio = getRadioModule()) {
         updateModeFromRadio(radio->getSelectedDemodId());
@@ -1665,6 +1667,7 @@ void MobileMainWindow::draw() {
         MainWindow::draw();
         return;
     }
+    updateAudioWaterfallPipeline();
     if (shouldInitialize) {
         /*
         shouldInitialize = false;

@@ -76,6 +76,17 @@ void testGray() {
     }
 }
 
+void testHardwareSyncEncoding() {
+    for (int sf = 7; sf <= 12; sf++) {
+        const int bins = 1 << sf;
+        for (uint16_t word : { 0x12u, 0x2Bu, 0xFFu }) {
+            const int first = syncNibbleFromBin(firstSyncBin(word, bins), bins, false);
+            const int second = syncNibbleFromBin(secondSyncBin(word, bins), bins, true);
+            require(matchSyncWord(first, second, word), "hardware sync encoding mismatch");
+        }
+    }
+}
+
 void testWhiteningAndCrc() {
     const uint8_t expected[] = { 0xFF, 0xFE, 0xFC, 0xF8, 0xF0, 0xE1, 0xC2, 0x85, 0x0B };
     for (std::size_t i = 0; i < sizeof(expected); i++) {
@@ -227,11 +238,8 @@ void testSyntheticIq() {
         sample.im = (static_cast<int>((noiseState >> 16u) & 0xFFFFu) - 32768) / 1638400.0f;
     }
     for (int i = 0; i < 8; i++) { appendChirp(iq, chirps, 0, true); }
-    int syncFirst = 0;
-    int syncSecond = 0;
-    normalizedSyncWord(config.syncWord, syncFirst, syncSecond);
-    appendChirp(iq, chirps, syncFirst * chirps.bins() / 16, true);
-    appendChirp(iq, chirps, syncSecond * chirps.bins() / 16, true);
+    appendChirp(iq, chirps, firstSyncBin(config.syncWord, chirps.bins()), true);
+    appendChirp(iq, chirps, secondSyncBin(config.syncWord, chirps.bins()), true);
     appendChirp(iq, chirps, 0, false);
     appendChirp(iq, chirps, 0, false);
     std::vector<complex_t> quarter(symbolSamples);
@@ -281,6 +289,7 @@ void testSyntheticIq() {
 int main() {
     try {
         testGray();
+        testHardwareSyncEncoding();
         testWhiteningAndCrc();
         testFecAndInterleaver();
         testHeader();

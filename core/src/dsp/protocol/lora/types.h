@@ -98,6 +98,11 @@ struct SyncDiagnostics {
     float timingOffset = 0.0f;
     float preambleConfidence = 0.0f;
     float fftPeakRatio = 0.0f;
+    uint16_t observedSyncWord = 0;
+    float preambleBin = 0.0f;
+    float downchirpBin = 0.0f;
+    float firstSyncBin = 0.0f;
+    float secondSyncBin = 0.0f;
 };
 
 struct SymbolEstimate {

@@ -26,6 +26,8 @@ if(BUILD_TESTS)
     file(GLOB_RECURSE TEST_SRC "../tests/*.cpp")
     list(FILTER TEST_SRC EXCLUDE REGEX "dsp_bounded_tests.cpp")
     list(FILTER TEST_SRC EXCLUDE REGEX "lora_phy_tests.cpp")
+    list(FILTER TEST_SRC EXCLUDE REGEX "meshtastic_efl_tests.cpp")
+    list(FILTER TEST_SRC EXCLUDE REGEX "lora_capture_probe.cpp")
     set(SRC ${SRC} ${TEST_SRC})
 endif()
 
@@ -133,7 +135,7 @@ if (MSVC)
     target_link_libraries(sdrpp_core PUBLIC FFTW3::fftw3 )
 
     # WinSock2
-    target_link_libraries(sdrpp_core PUBLIC wsock32 ws2_32 iphlpapi)
+    target_link_libraries(sdrpp_core PUBLIC wsock32 ws2_32 iphlpapi bcrypt)
 
     # ZSTD
     find_package(zstd CONFIG REQUIRED)
@@ -156,6 +158,7 @@ elseif (ANDROID)
 else()
     find_package(PkgConfig)
     find_package(OpenGL REQUIRED)
+    find_package(OpenSSL REQUIRED)
 
 
 
@@ -204,6 +207,7 @@ else()
         ${GLFW3_LIBRARIES}
         ${VOLK_LIBRARIES}
         ${LIBZSTD_LIBRARIES}
+        OpenSSL::Crypto
     )
 
 
