@@ -338,13 +338,15 @@ namespace dsp {
 //            std::cout << "sample: noisemu: " << sampleArr(params->noise_mu2) << std::endl;
             }
 
-            static ComplexArray logmmse_all(const ComplexArray &x, int Srate, float eta, SavedParamsC *params) {
-                int sz = x->size();
-                ALLOC_AND_CHECK(x, sz, "logmmse_all point -2.1")
+            static ComplexArray logmmse_all(const ComplexArray &x, int inputCount, int Srate, float eta, SavedParamsC *params) {
+                int sz = inputCount;
                 static long long muSum[30] = {0,}, muCount = 0; auto ctm = currentTimeNanos();long long ctm2; auto statIndex = 0;
                 ALLOC_AND_CHECK(x, sz, "logmmse_all point -1")
 
-                auto Nframes = floor(x->size() / params->len2) - floor(params->Slen / params->len2);
+                auto Nframes = (std::max)(0, inputCount / params->len2 - params->Slen / params->len2);
+                if (Nframes == 0) {
+                    return npzeros_c(0);
+                }
                 ALLOC_AND_CHECK(x, sz, "logmmse_all point -1.5")
                 ADD_STEP_STATS();
                 ALLOC_AND_CHECK(x, sz, "logmmse_all point -1.7")
@@ -435,6 +437,10 @@ namespace dsp {
                 ADD_STEP_STATS();
                 ALLOC_AND_CHECK(x, sz, "logmmse_all point 23")
                 return xfinal;
+            }
+
+            static ComplexArray logmmse_all(const ComplexArray &x, int Srate, float eta, SavedParamsC *params) {
+                return logmmse_all(x, (int)x->size(), Srate, eta, params);
             }
 
         };

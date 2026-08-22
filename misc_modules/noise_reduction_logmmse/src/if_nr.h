@@ -60,7 +60,7 @@ namespace dsp {
             shouldReset = true;
         }
 
-        void process(complex_t* in, int count, complex_t* out, int& outCount) {
+        void process(complex_t* in, int count, complex_t* out, int outputCapacity, int& outCount) {
             if (shouldReset) {
                 flog::info("Resetting IF NR LogMMSE");
                 shouldReset = false;
@@ -96,7 +96,10 @@ namespace dsp {
                           << "Sampling initially" << std::endl;
                 LogMMSE::logmmse_sample(worker1c, freq, 0.15f, &params, noiseFrames);
             }
-            auto rv = LogMMSE::logmmse_all(worker1c, freq, 0.15f, &params);
+            int overlap = (params.Slen / params.len2) * params.len2;
+            int maxInputCount = outputCapacity + overlap;
+            int inputCount = (std::min)((int)worker1c->size(), maxInputCount);
+            auto rv = LogMMSE::logmmse_all(worker1c, inputCount, freq, 0.15f, &params);
             freqMutex.unlock();
 
             int limit = rv->size();
@@ -121,14 +124,27 @@ namespace dsp {
             int count = _in->read();
             if (count < 0) { return -1; }
             int outCount;
+            long long processingTime = 0;
             long long ctm0 = currentTimeMillis();
-            process(_in->readBuf, count, out.writeBuf, outCount);
-            long long ctm = currentTimeMillis();
+            process(_in->readBuf, count, out.writeBuf, out.getBufferSize(), outCount);
+            processingTime += currentTimeMillis() - ctm0;
             _in->flush();
             if (!out.swap(outCount)) {
                 return -1;
             }
-            cpuUsed += ctm - ctm0;
+            while (outCount > 0) {
+                ctm0 = currentTimeMillis();
+                process(nullptr, 0, out.writeBuf, out.getBufferSize(), outCount);
+                processingTime += currentTimeMillis() - ctm0;
+                if (outCount == 0) {
+                    break;
+                }
+                if (!out.swap(outCount)) {
+                    return -1;
+                }
+            }
+            long long ctm = currentTimeMillis();
+            cpuUsed += processingTime;
             if (lastReport / 400 != ctm / 400) {
                 auto timeSinceLastReport = ctm - lastReport;
                 auto usedSinceLastReport = cpuUsed;
@@ -140,15 +156,10 @@ namespace dsp {
                     stopReason = "Slow CPU. Reduce sample rate.";
                 }
             }
-            return 1;
+            return count;
         }
 
         int run() override {
-            int count = _in->read();
-            if (count < 0) {
-                return -1;
-            }
-
             //            if (bypass) {
             //                memcpy(out.writeBuf, _in->readBuf, count * sizeof(complex_t));
             //                _in->flush();
@@ -156,8 +167,7 @@ namespace dsp {
             //                return count;
             //            }
             //
-            runMMSE(_in, out);
-            return count;
+            return runMMSE(_in, out);
         }
 
         void start() override {

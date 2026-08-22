@@ -3,6 +3,10 @@
 //
 #pragma once
 
+#include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <limits>
 #include <vector>
 
 class BackgroundNoiseCaltulator {
@@ -34,19 +38,39 @@ public:
         logFrame.clear();
         logFrame.reserve(fftFrame.size());
         for(float q : fftFrame) {
-            if(q != ERASED_SAMPLE) {
-                q = log10(q);
-                minn = std::min<float>(minn, q);
-                maxx = std::max<float>(maxx, q);
-                logFrame.push_back(q);
+            if(q == ERASED_SAMPLE || !std::isfinite(q) || q < 0.0f) {
+                continue;
             }
+            if (q == 0.0f) {
+                q = (std::numeric_limits<float>::min)();
+            }
+            float logged = std::log10(q);
+            if (!std::isfinite(logged)) {
+                continue;
+            }
+            minn = (std::min)(minn, logged);
+            maxx = (std::max)(maxx, logged);
+            logFrame.push_back(logged);
+        }
+        if (logFrame.empty()) {
+            return lastNoise;
         }
         auto width = maxx - minn;
         buckets.resize(NBUCKETS);
         memset(buckets.data(), 0, sizeof(int) * NBUCKETS);
-        for(auto f : logFrame) {
-            int bucket = (int) (NBUCKETS * ((f - minn) / width));
-            buckets[bucket]++;
+        if (std::isfinite(width) && width > 0) {
+            for(auto f : logFrame) {
+                float bucketPosition = (f - minn) / width;
+                if (!std::isfinite(bucketPosition)) {
+                    continue;
+                }
+                bucketPosition = (std::max)(0.0f, (std::min)(bucketPosition, 1.0f));
+                int bucket = (std::min)((int) (NBUCKETS * bucketPosition), NBUCKETS - 1);
+                buckets[bucket]++;
+            }
+        }
+        else {
+            buckets[0] = (int)logFrame.size();
         }
         auto ix = std::max_element(buckets.begin(), buckets.end()) - buckets.begin();
         double maxf = pow(10, ((((double)ix)/NBUCKETS) * width + minn));
