@@ -66,18 +66,23 @@ namespace dsp::multirate {
             return count;
         }
 
-        int run() {
-            int count = base_type::_in->read();
-            if (count < 0) { return -1; }
-
-            int outCount = process(count, base_type::_in->readBuf, base_type::out.writeBuf);
-
-            // Swap if some data was generated
-            base_type::_in->flush();
-            if (outCount) {
-                if (!base_type::out.swap(outCount)) { return -1; }
+        int getMaxInputCount() const {
+            int maxInputCount = STREAM_BUFFER_SIZE + 64000;
+            for (auto fir : decimFirs) {
+                maxInputCount = (std::min)(maxInputCount, fir->getMaxInputCount());
             }
-            return outCount;
+            return maxInputCount;
+        }
+
+        int run() {
+            return runBounded(base_type::_in, base_type::out,
+                [this]() { return getMaxInputCount(base_type::out.getBufferSize()); },
+                [this](int count, const T* in, T* out) { return process(count, in, out); });
+        }
+
+        int getMaxInputCount(int maxOutputCount) const {
+            if (_ratio == 1) { return maxOutputCount; }
+            return (std::min)(getMaxInputCount(), decimFirs[0]->getMaxInputCount(maxOutputCount));
         }
 
     protected:

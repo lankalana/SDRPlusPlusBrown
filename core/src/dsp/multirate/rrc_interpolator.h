@@ -15,12 +15,13 @@ namespace dsp::multirate {
         void init(stream<T>* in, double symbolrate, double samplerate, double rrcBeta, int rrcTapCount) {
             _symbolrate = symbolrate;
             _samplerate = samplerate;
+            _rrcBeta = rrcBeta;
             _rrcTapCount = rrcTapCount;
 
             rrcTaps = taps::rootRaisedCosine<float>(_rrcTapCount, rrcBeta, _symbolrate, _samplerate);
             resamp.init(NULL, 1, 1, rrcTaps);
             resamp.out.free();
-            genTaps();
+            genTaps(_symbolrate, _samplerate, _rrcBeta, _rrcTapCount);
 
             base_type::init(in);
         }
@@ -28,21 +29,19 @@ namespace dsp::multirate {
         void setRates(double symbolrate, double samplerate) {
             assert(base_type::_block_init);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            base_type::tempStop();
+            TempStopGuard stopGuard(*this);
+            genTaps(symbolrate, samplerate, _rrcBeta, _rrcTapCount);
             _symbolrate = symbolrate;
             _samplerate = samplerate;
-            genTaps();
-            base_type::tempStart();
         }
 
         void setRRCParam(double rrcBeta, int rrcTapCount) {
             assert(base_type::_block_init);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            base_type::tempStop();
+            TempStopGuard stopGuard(*this);
+            genTaps(_symbolrate, _samplerate, rrcBeta, rrcTapCount);
             _rrcBeta = rrcBeta;
             _rrcTapCount = rrcTapCount;
-            genTaps();
-            base_type::tempStart();
         }
 
         void reset() {
@@ -58,35 +57,32 @@ namespace dsp::multirate {
         }
 
         int run() {
-            int count = base_type::_in->read();
-            if (count < 0) { return -1; }
-
-            int outCount = process(count, base_type::_in->readBuf, base_type::out.writeBuf);
-
-            // Swap if some data was generated
-            base_type::_in->flush();
-            if (outCount) {
-                if (!base_type::out.swap(outCount)) { return -1; }
-            }
-            return outCount;
+            return runBounded(base_type::_in, base_type::out,
+                [this]() { return resamp.getMaxInputCount(base_type::out.getBufferSize()); },
+                [this](int count, const T* in, T* out) { return process(count, in, out); });
         }
 
     private:
-        void genTaps() {
-            // Free current taps if they exist
-            taps::free(rrcTaps);
-
+        void genTaps(double symbolrate, double samplerate, double rrcBeta, int rrcTapCount) {
             // Calculate the rational samplerate ratio
-            int InSR = round(_symbolrate);
-            int OutSR = round(_samplerate);
+            int InSR = round(symbolrate);
+            int OutSR = round(samplerate);
             int gcd = std::gcd(InSR, OutSR);
             int interp = OutSR / gcd;
             int decim = InSR / gcd;
 
             // Configure resampler
-            double tapSamplerate = _symbolrate * (double)interp;
-            rrcTaps = taps::rootRaisedCosine<float>(_rrcTapCount * interp, _rrcBeta, _symbolrate, tapSamplerate);
-            resamp.setRatio(interp, decim, rrcTaps);
+            double tapSamplerate = symbolrate * (double)interp;
+            tap<float> newTaps = taps::rootRaisedCosine<float>(rrcTapCount * interp, rrcBeta, symbolrate, tapSamplerate);
+            try {
+                resamp.setRatio(interp, decim, newTaps);
+            }
+            catch (...) {
+                taps::free(newTaps);
+                throw;
+            }
+            taps::free(rrcTaps);
+            rrcTaps = newTaps;
         }
 
         double _symbolrate;

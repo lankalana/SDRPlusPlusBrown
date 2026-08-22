@@ -2,12 +2,15 @@
 #include "../processor.h"
 #include "../taps/tap.h"
 #include "polyphase_bank.h"
+#include <stdexcept>
 
 namespace dsp::multirate {
     template<class T>
     class PolyphaseResampler : public Processor<T, T> {
         using base_type = Processor<T, T>;
     public:
+        static constexpr int WORK_BUFFER_SIZE = STREAM_BUFFER_SIZE + 64000;
+
         PolyphaseResampler() {}
 
         PolyphaseResampler(stream<T>* in, int interp, int decim, tap<float> taps) { init(in, interp, decim, taps); }
@@ -20,6 +23,7 @@ namespace dsp::multirate {
         }
 
         void init(stream<T>* in, int interp, int decim, tap<float> taps) {
+            validateConfiguration(interp, decim, taps);
             _interp = interp;
             _decim = decim;
             _taps = taps;
@@ -28,7 +32,7 @@ namespace dsp::multirate {
             phases = buildPolyphaseBank(_interp, _taps);
 
             // Allocate delay buffer
-            buffer = buffer::alloc<T>(STREAM_BUFFER_SIZE + 64000);
+            buffer = buffer::alloc<T>(WORK_BUFFER_SIZE);
             bufStart = &buffer[phases.tapsPerPhase - 1];
             buffer::clear<T>(buffer, phases.tapsPerPhase - 1);
 
@@ -37,8 +41,10 @@ namespace dsp::multirate {
 
         void setRatio(int interp, int decim, tap<float>& taps) {
             assert(base_type::_block_init);
+            validateConfiguration(interp, decim, taps);
+            PolyphaseBank<float> newPhases = buildPolyphaseBank(interp, taps);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            base_type::tempStop();
+            TempStopGuard stopGuard(*this);
 
             // Update settings
             _interp = interp;
@@ -47,13 +53,11 @@ namespace dsp::multirate {
 
             // Re-generate polyphase bank
             freePolyphaseBank(phases);
-            phases = buildPolyphaseBank(_interp, _taps);
+            phases = newPhases;
 
             // Reset buffer
             bufStart = &buffer[phases.tapsPerPhase - 1];
             reset();
-
-            base_type::tempStart();
         }
 
         void reset() {
@@ -98,21 +102,31 @@ namespace dsp::multirate {
             return outCount;
         }
 
+        int getMaxInputCount(int maxOutputCount) const {
+            int scratchInputCount = WORK_BUFFER_SIZE - (phases.tapsPerPhase - 1);
+            long long outputInputCount = offset + ((long long)phase + ((long long)maxOutputCount * _decim)) / _interp;
+            if (outputInputCount <= 0) { return 0; }
+            if (outputInputCount > scratchInputCount) { return scratchInputCount; }
+            return (int)outputInputCount;
+        }
+
         int run() {
-            int count = base_type::_in->read();
-            if (count < 0) { return -1; }
-
-            int outCount = process(count, base_type::_in->readBuf, base_type::out.writeBuf);
-
-            // Swap if some data was generated
-            base_type::_in->flush();
-            if (outCount) {
-                if (!base_type::out.swap(outCount)) { return -1; }
-            }
-            return outCount;
+            return runBounded(base_type::_in, base_type::out,
+                [this]() { return getMaxInputCount(base_type::out.getBufferSize()); },
+                [this](int count, const T* in, T* out) { return process(count, in, out); });
         }
 
     protected:
+        static void validateConfiguration(int interp, int decim, const tap<float>& taps) {
+            if (interp <= 0 || decim <= 0 || taps.size <= 0) {
+                throw std::invalid_argument("Polyphase resampler ratio and tap count must be positive");
+            }
+            int tapsPerPhase = (taps.size + interp - 1) / interp;
+            if (tapsPerPhase > WORK_BUFFER_SIZE) {
+                throw std::invalid_argument("Polyphase resampler tap count exceeds work buffer capacity");
+            }
+        }
+
         int _interp;
         int _decim;
         tap<float> _taps;

@@ -26,7 +26,7 @@ namespace dsp::channel {
 
             xlator.init(NULL, -_offset, _inSamplerate);
             resamp.init(NULL, _inSamplerate, _outSamplerate);
-            generateTaps();
+            ftaps = generateTaps(_bandwidth, _outSamplerate);
             filter.init(NULL, ftaps);
 
             base_type::init(in);
@@ -44,29 +44,56 @@ namespace dsp::channel {
 
         void setOutSamplerate(double outSamplerate, double bandwidth) {
             assert(base_type::_block_init);
+            bool newFilterNeeded = (bandwidth != outSamplerate);
+            tap<float> newTaps;
+            if (newFilterNeeded) {
+                newTaps = generateTaps(bandwidth, outSamplerate);
+            }
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            base_type::tempStop();
+            TempStopGuard stopGuard(*this);
+            try {
+                resamp.setOutSamplerate(outSamplerate);
+                if (newFilterNeeded) {
+                    filter.setTaps(newTaps);
+                    taps::free(ftaps);
+                    ftaps = newTaps;
+                    newTaps.taps = NULL;
+                    newTaps.size = 0;
+                }
+            }
+            catch (...) {
+                taps::free(newTaps);
+                throw;
+            }
             _outSamplerate = outSamplerate;
             _bandwidth = bandwidth;
-            filterNeeded = (_bandwidth != _outSamplerate);
-            resamp.setOutSamplerate(_outSamplerate);
-            if (filterNeeded) {
-                generateTaps();
-                filter.setTaps(ftaps);
-            }
-            base_type::tempStart();
+            filterNeeded = newFilterNeeded;
         }
 
         void setBandwidth(double bandwidth) {
             assert(base_type::_block_init);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            std::lock_guard<std::mutex> lck2(filterMtx);
-            _bandwidth = bandwidth;
-            filterNeeded = (_bandwidth != _outSamplerate);
-            if (filterNeeded) {
-                generateTaps();
-                filter.setTaps(ftaps);
+            bool newFilterNeeded = (bandwidth != _outSamplerate);
+            tap<float> newTaps;
+            if (newFilterNeeded) {
+                newTaps = generateTaps(bandwidth, _outSamplerate);
             }
+            TempStopGuard stopGuard(*this);
+            try {
+                if (newFilterNeeded) {
+                    filter.setTaps(newTaps);
+                    taps::free(ftaps);
+                    ftaps = newTaps;
+                    newTaps.taps = NULL;
+                    newTaps.size = 0;
+                }
+            }
+            catch (...) {
+                taps::free(newTaps);
+                throw;
+            }
+            _bandwidth = bandwidth;
+            filterNeeded = newFilterNeeded;
         }
 
         void setOffset(double offset) {
@@ -88,36 +115,34 @@ namespace dsp::channel {
 
         inline int process(int count, const complex_t* in, complex_t* out) {
             xlator.process(count, in, out);
-            if (!filterNeeded) {
-                return resamp.process(count, out, out);
-            }
             count = resamp.process(count, out, out);
-            {
-                std::lock_guard<std::mutex> lck(filterMtx);
+            if (filterNeeded) {
                 filter.process(count, out, out);
             }
             return count;
         }
 
         int run() {
-            int count = base_type::_in->read();
-            if (count < 0) { return -1; }
-
-            int outCount = process(count, base_type::_in->readBuf, out.writeBuf);
-
-            // Swap if some data was generated
-            base_type::_in->flush();
-            if (outCount) {
-                if (!out.swap(outCount)) { return -1; }
-            }
-            return outCount;
+            return runBounded(base_type::_in, out,
+                [this]() {
+                    int processOutputCapacity = filterNeeded ? (std::min)(out.getBufferSize(), filter.getMaxInputCount()) : out.getBufferSize();
+                    return resamp.getMaxInputCount(processOutputCapacity);
+                },
+                [this](int count, const complex_t* in, complex_t* out) { return process(count, in, out); });
         }
 
     protected:
-        void generateTaps() {
-            taps::free(ftaps);
-            double filterWidth = _bandwidth / 2.0;
-            ftaps = taps::lowPass(filterWidth, filterWidth * 0.1, _outSamplerate);
+        tap<float> generateTaps(double bandwidth, double outSamplerate) {
+            double filterWidth = bandwidth / 2.0;
+            tap<float> generatedTaps = taps::lowPass(filterWidth, filterWidth * 0.1, outSamplerate);
+            try {
+                filter.validateTapCount(generatedTaps);
+            }
+            catch (...) {
+                taps::free(generatedTaps);
+                throw;
+            }
+            return generatedTaps;
         }
 
         FrequencyXlator xlator;
@@ -131,6 +156,5 @@ namespace dsp::channel {
         double _bandwidth;
         double _offset;
 
-        std::mutex filterMtx;
     };
 }

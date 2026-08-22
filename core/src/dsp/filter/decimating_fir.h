@@ -6,6 +6,8 @@ namespace dsp::filter {
     class DecimatingFIR : public FIR<D, T> {
         using base_type = FIR<D, T>;
     public:
+        using base_type::getMaxInputCount;
+
         DecimatingFIR() {}
 
         DecimatingFIR(stream<D>* in, tap<T>& taps, int decimation) { init(in, taps, decimation); }
@@ -17,6 +19,7 @@ namespace dsp::filter {
 
         void setTaps(tap<T>& taps) {
             assert(base_type::_block_init);
+            base_type::validateTapCount(taps);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
             base_type::tempStop();
             offset = 0;
@@ -68,17 +71,15 @@ namespace dsp::filter {
         }
 
         int run() {
-            int count = base_type::_in->read();
-            if (count < 0) { return -1; }
+            return runBounded(base_type::_in, base_type::out,
+                [this]() { return getMaxInputCount(base_type::out.getBufferSize()); },
+                [this](int count, const D* in, D* out) { return process(count, in, out); });
+        }
 
-            int outCount = process(count, base_type::_in->readBuf, base_type::out.writeBuf);
-
-            // Swap if some data was generated
-            base_type::_in->flush();
-            if (outCount) {
-                if (!base_type::out.swap(outCount)) { return -1; }
-            }
-            return outCount;
+        int getMaxInputCount(int maxOutputCount) const {
+            long long outputInputCount = offset + ((long long)maxOutputCount * _decimation);
+            if (outputInputCount <= 0) { return 0; }
+            return (int)(std::min)(outputInputCount, (long long)base_type::getMaxInputCount());
         }
 
     protected:

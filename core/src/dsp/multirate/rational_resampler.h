@@ -25,9 +25,6 @@ namespace dsp::multirate {
         }
 
         void init(stream<T>* in, double inSamplerate, double outSamplerate) {
-            _inSamplerate = inSamplerate;
-            _outSamplerate = outSamplerate;
-            
             // Dummy initialization since only used for processing
             rtaps = taps::lowPass(0.25, 0.1, 1.0);
             decim.init(NULL, 2);
@@ -37,7 +34,9 @@ namespace dsp::multirate {
             resamp.out.free();
 
             // Proper configuration
-            reconfigure();
+            reconfigure(inSamplerate, outSamplerate);
+            _inSamplerate = inSamplerate;
+            _outSamplerate = outSamplerate;
 
             base_type::init(in);
         }
@@ -54,29 +53,26 @@ namespace dsp::multirate {
         void setInSamplerate(double inSamplerate) {
             assert(base_type::_block_init);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            base_type::tempStop();
+            TempStopGuard stopGuard(*this);
+            reconfigure(inSamplerate, _outSamplerate);
             _inSamplerate = inSamplerate;
-            reconfigure();
-            base_type::tempStart();
         }
 
         void setOutSamplerate(double outSamplerate) {
             assert(base_type::_block_init);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            base_type::tempStop();
+            TempStopGuard stopGuard(*this);
+            reconfigure(_inSamplerate, outSamplerate);
             _outSamplerate = outSamplerate;
-            reconfigure();
-            base_type::tempStart();
         }
 
         void setRates(double inSamplerate, double outSamplerate) {
             assert(base_type::_block_init);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            base_type::tempStop();
+            TempStopGuard stopGuard(*this);
+            reconfigure(inSamplerate, outSamplerate);
             _inSamplerate = inSamplerate;
             _outSamplerate = outSamplerate;
-            reconfigure();
-            base_type::tempStart();
         }
 
         double getInSampleRate() {
@@ -103,18 +99,24 @@ namespace dsp::multirate {
             return count;
         }
 
-        int run() {
-            int count = base_type::_in->read();
-            if (count < 0) { return -1; }
-
-            int outCount = process(count, base_type::_in->readBuf, base_type::out.writeBuf);
-
-            // Swap if some data was generated
-            base_type::_in->flush();
-            if (outCount) {
-                if (!base_type::out.swap(outCount)) { return -1; }
+        int getMaxInputCount(int maxOutputCount) const {
+            switch(mode) {
+                case Mode::BOTH:
+                    return decim.getMaxInputCount((std::min)(maxOutputCount, resamp.getMaxInputCount(maxOutputCount)));
+                case Mode::DECIM_ONLY:
+                    return decim.getMaxInputCount(maxOutputCount);
+                case Mode::RESAMP_ONLY:
+                    return resamp.getMaxInputCount(maxOutputCount);
+                case Mode::NONE:
+                    return maxOutputCount;
             }
-            return outCount;
+            return maxOutputCount;
+        }
+
+        int run() {
+            return runBounded(base_type::_in, base_type::out,
+                [this]() { return getMaxInputCount(base_type::out.getBufferSize()); },
+                [this](int count, const T* in, T* out) { return process(count, in, out); });
         }
 
     protected:
@@ -125,47 +127,55 @@ namespace dsp::multirate {
             NONE
         };
 
-        void reconfigure() {
+        void reconfigure(double inSamplerate, double outSamplerate) {
             // Calculate highest power-of-two decimation for the power decimator 
-            int predecPower = std::min<int>(floor(log2(_inSamplerate / _outSamplerate)), PowerDecimator<T>::getMaxRatio());
+            int predecPower = std::min<int>(floor(log2(inSamplerate / outSamplerate)), PowerDecimator<T>::getMaxRatio());
             int predecRatio = std::min<int>(1 << predecPower, PowerDecimator<T>::getMaxRatio());
-            double intSamplerate = _inSamplerate;
+            double intSamplerate = inSamplerate;
 
             // Configure the DDC
-            bool useDecim = (_inSamplerate > _outSamplerate && predecPower > 0);
+            bool useDecim = (inSamplerate > outSamplerate && predecPower > 0);
             if (useDecim) {
-                intSamplerate = _inSamplerate / (double)predecRatio;
-                decim.setRatio(predecRatio);
+                intSamplerate = inSamplerate / (double)predecRatio;
             }
 
             // Calculate interpolation and decimation for polyphase resampler
             int IntSR = round(intSamplerate);
-            int OutSR = round(_outSamplerate);
+            int OutSR = round(outSamplerate);
             int gcd = std::gcd(IntSR, OutSR);
             int interp = OutSR / gcd;
             int decim = IntSR / gcd;
 
             // Check for excessive error
             double actualOutSR = (double)IntSR * (double)interp / (double)decim;
-            double error = abs((actualOutSR - _outSamplerate) / _outSamplerate) * 100.0;
+            double error = abs((actualOutSR - outSamplerate) / outSamplerate) * 100.0;
             if (error > 0.01) {
                 fprintf(stderr, "Warning: resampling error is over 0.01%%: %lf\n", error);
             }
             
             // If the power decimator already did all the work, don't use the resampler
             if (interp == decim) {
+                if (useDecim) { this->decim.setRatio(predecRatio); }
                 mode = useDecim ? Mode::DECIM_ONLY : Mode::NONE;
                 return;
             }
 
             // Configure the polyphase resampler
             double tapSamplerate = intSamplerate * (double)interp;
-            double tapBandwidth = std::min<double>(_inSamplerate, _outSamplerate) / 2.0;
+            double tapBandwidth = std::min<double>(inSamplerate, outSamplerate) / 2.0;
             double tapTransWidth = tapBandwidth * 0.1;
+            tap<float> newTaps = taps::lowPass(tapBandwidth, tapTransWidth, tapSamplerate);
+            for (int i = 0; i < newTaps.size; i++) { newTaps.taps[i] *= (float)interp; }
+            try {
+                resamp.setRatio(interp, decim, newTaps);
+            }
+            catch (...) {
+                taps::free(newTaps);
+                throw;
+            }
             taps::free(rtaps);
-            rtaps = taps::lowPass(tapBandwidth, tapTransWidth, tapSamplerate);
-            for (int i = 0; i < rtaps.size; i++) { rtaps.taps[i] *= (float)interp; }
-            resamp.setRatio(interp, decim, rtaps);
+            rtaps = newTaps;
+            if (useDecim) { this->decim.setRatio(predecRatio); }
 
 //            printf("[Resamp] predec: %d, interp: %d, decim: %d, inacc: %lf%%, taps: %d\n", predecRatio, interp, decim, error, rtaps.size);
 

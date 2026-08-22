@@ -54,11 +54,12 @@ namespace dsp {
         }
 
         void initBuffers() {
-            writeBuf0 = buffer::alloc<T>(STREAM_BUFFER_SIZE);
+            bufferSize = STREAM_BUFFER_SIZE;
+            writeBuf0 = buffer::alloc<T>(bufferSize);
             if (!writeBuf0)
                 abort();
             //buffer::register_buffer_dbg(writeBuf0, origin ? origin: "stream without origin");
-            readBuf0 = buffer::alloc<T>(STREAM_BUFFER_SIZE);
+            readBuf0 = buffer::alloc<T>(bufferSize);
             if (!readBuf0)
                 abort();
             //buffer::register_buffer_dbg(readBuf0, origin ? origin: "stream without origin");
@@ -76,6 +77,7 @@ namespace dsp {
             }
             buffer::free(writeBuf0);
             buffer::free(readBuf0);
+            bufferSize = samples;
             writeBuf0 = buffer::alloc<T>(samples);
             readBuf0 = buffer::alloc<T>(samples);
             //buffer::register_buffer_dbg(writeBuf0, origin ? origin: "stream without origin, sbs");
@@ -83,6 +85,10 @@ namespace dsp {
             readBuf = readBuf0;
             writeBuf = writeBuf0;
 
+        }
+
+        int getBufferSize() const {
+            return bufferSize;
         }
 
         virtual inline bool swap(int size) {
@@ -192,6 +198,7 @@ namespace dsp {
             readBuf0 = NULL;
             writeBuf = NULL;
             readBuf = NULL;
+            bufferSize = 0;
         }
 
         T* writeBuf;
@@ -215,6 +222,7 @@ namespace dsp {
         bool writerStop = false;
 
         int dataSize = 0;
+        int bufferSize = 0;
     };
 
     template <class T>

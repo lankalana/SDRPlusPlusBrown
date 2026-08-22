@@ -2,12 +2,15 @@
 #include "../processor.h"
 #include "../taps/tap.h"
 #include <utils/flog.h>
+#include <stdexcept>
 
 namespace dsp::filter {
     template <class D, class T>
     class FIR : public Processor<D, D> {
         using base_type = Processor<D, D>;
     public:
+        static constexpr int WORK_BUFFER_SIZE = STREAM_BUFFER_SIZE + 64000;
+
         FIR() {}
 
         FIR(stream<D>* in, tap<T>& taps) { init(in, taps); }
@@ -19,10 +22,11 @@ namespace dsp::filter {
         }
 
         virtual void init(stream<D>* in, tap<T>& taps) {
+            validateTapCount(taps);
             _taps = taps;
 
             // Allocate and clear buffer
-            buffer = buffer::alloc<D>(STREAM_BUFFER_SIZE + 64000);
+            buffer = buffer::alloc<D>(WORK_BUFFER_SIZE);
             bufStart = &buffer[_taps.size - 1];
             buffer::clear<D>(buffer, _taps.size - 1);
 //            spdlog::info("FIR: Allocated buffer of size {0} at {1}", STREAM_BUFFER_SIZE + 64000, (void*)buffer);
@@ -32,6 +36,7 @@ namespace dsp::filter {
 
         virtual void setTaps(tap<T>& taps) {
             assert(base_type::_block_init);
+            validateTapCount(taps);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
             base_type::tempStop();
 
@@ -91,15 +96,20 @@ namespace dsp::filter {
             return count;
         }
 
+        int getMaxInputCount() const {
+            return WORK_BUFFER_SIZE - (_taps.size - 1);
+        }
+
         virtual int run() {
-            int count = base_type::_in->read();
-            if (count < 0) { return -1; }
+            return runBounded(base_type::_in, base_type::out,
+                [this]() { return (std::min)(base_type::out.getBufferSize(), getMaxInputCount()); },
+                [this](int count, const D* in, D* out) { return process(count, in, out); });
+        }
 
-            process(count, base_type::_in->readBuf, base_type::out.writeBuf);
-
-            base_type::_in->flush();
-            if (!base_type::out.swap(count)) { return -1; }
-            return count;
+        static void validateTapCount(const tap<T>& taps) {
+            if (taps.size <= 0 || taps.size > WORK_BUFFER_SIZE) {
+                throw std::invalid_argument("FIR tap count exceeds work buffer capacity");
+            }
         }
 
     protected:

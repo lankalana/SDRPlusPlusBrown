@@ -9,6 +9,19 @@
 #include "core.h"
 
 namespace dsp {
+    template <class B>
+    class TempStopGuard {
+    public:
+        explicit TempStopGuard(B& block) : _block(block) { _block.tempStop(); }
+        ~TempStopGuard() { _block.tempStart(); }
+
+        TempStopGuard(const TempStopGuard&) = delete;
+        TempStopGuard& operator=(const TempStopGuard&) = delete;
+
+    private:
+        B& _block;
+    };
+
     class generic_block {
     public:
         virtual ~generic_block() {}
