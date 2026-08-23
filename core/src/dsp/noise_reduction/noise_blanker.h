@@ -36,6 +36,7 @@ namespace dsp::noise_reduction {
         }
 
         inline int process(int count, complex_t* in, complex_t* out) {
+            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
             for (int i = 0; i < count; i++) {
                 // Get signal amplitude
                 float inAmp = in[i].amplitude();

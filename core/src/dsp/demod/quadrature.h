@@ -37,6 +37,7 @@ namespace dsp::demod {
         }
 
         inline int process(int count, complex_t* in, float* out) {
+            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
             for (int i = 0; i < count; i++) {
                 float cphase = in[i].phase();
                 out[i] = math::normalizePhase(cphase - phase) * _invDeviation;

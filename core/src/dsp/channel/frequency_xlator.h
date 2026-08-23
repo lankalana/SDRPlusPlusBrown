@@ -41,6 +41,7 @@ namespace dsp::channel {
         }
 
         inline int process(int count, const complex_t* in, complex_t* out) {
+            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
             if (Processor<complex_t, complex_t>::out.inputHook) {
                 Processor<complex_t, complex_t>::out.inputHook(in, count);
             }

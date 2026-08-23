@@ -32,6 +32,7 @@ namespace dsp::clock_recovery {
             generateInterpTaps();
             buffer = buffer::alloc<float>(STREAM_BUFFER_SIZE + _interpTapCount);
             bufStart = &buffer[_interpTapCount - 1];
+            buffer::clear<float>(buffer, _interpTapCount - 1);
             //buffer::register_buffer_dbg(buffer, "fd.h1");
 
             base_type::init(in);
@@ -82,6 +83,7 @@ namespace dsp::clock_recovery {
             buffer = buffer::alloc<float>(STREAM_BUFFER_SIZE + _interpTapCount);
             //buffer::register_buffer_dbg(buffer, "fd.h2");
             bufStart = &buffer[_interpTapCount - 1];
+            buffer::clear<float>(buffer, _interpTapCount - 1);
             base_type::tempStart();
         }
 
@@ -92,6 +94,7 @@ namespace dsp::clock_recovery {
             offset = 0;
             pcl.phase = 0.0f;
             pcl.freq = _omega;
+            buffer::clear<float>(buffer, _interpTapCount - 1);
             base_type::tempStart();
         }
 
