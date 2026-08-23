@@ -3,6 +3,7 @@
 #include"SearchChart.h"
 #include"time.h"
 #include<algorithm>
+#include<cstdint>
 #include <sdrpp_export.h>
 
 using namespace std;
@@ -31,125 +32,37 @@ short G_calculate::Initialize(int wlen) {
 	m_cosen_pmax = 5 * m_num_mag_pow;			// %ʵ��֤��Ҫ����1.3����ȷ�Ͻ�
 	m_cosen_pmin = 1 * m_num_mag_pow;			// %1.0~1.1֮�����
 	m_cosen_max_min = log(8) *m_num_mag_pow;
+	m_log_cosen_min = log(m_cosen_min);
+	m_log_cosen_ratio = log(static_cast<double>(m_cosen_max / m_cosen_min));
 	m_w_global = 8; m_wt_global = 17;
 
-	m_arr_temp = new int[m_lwlen];
-	if (!m_arr_temp) {
-		return -19;
-	}
-	m_S_f = new int[m_lwlen];
-	if (!m_S_f) {
-		return -20;
-	}
-	m_abs_Y = new unsigned int[m_lwlen];
-	if (!m_abs_Y) {
-		return -21;
-	}
-	m_dataBuf = new short[m_lwlen];
-	if (!m_dataBuf) {
-		return -22;
-	}
-	m_init_S = new int[m_lwlen];
-	if (!m_init_S) {
-		return -23;
-	}
-	m_Gh1 = new int[m_lwlen];
-	if (!m_Gh1) {
-		return -24;
-	}
-	m_q = new int[m_lwlen];
-	if (!m_q) {
-		return -25;
-	}
-	m_pp = new int[m_lwlen];
-	if (!m_pp) {
-		return -26;
-	}
-	m_G = new int[m_lwlen];
-	if (!m_G) {
-		return -27;
-	}
-	m_M = new unsigned int[m_lwlen];
-	if (!m_M) {
-		return -28;
-	}
-
-	m_ns_storage = new short[m_lwlen];
-	if (!m_ns_storage) {
-		return -30;
-	}
-	m_cosen_local = new int[m_lwlen];
-	if (!m_cosen_local) {
-		return -31;
-	}
-	m_cosen_global = new int[m_lwlen];
-	if (!m_cosen_local) {
-		return -32;
-	}
-	m_plocal = new int[m_lwlen];
-	if (!m_cosen_local) {
-		return -33;
-	}
-	m_pglobal = new int[m_lwlen];
-	if (!m_cosen_local) {
-		return -34;
-	}
-	m_h_global = new short[m_wt_global];
-	if (!m_cosen_local) {
-		return -35;
-	}
-	m_old_cosen = new int[m_lwlen];
-	if (!m_cosen_local) {
-		return -36;
-	}
-	m_cosen = new int[m_lwlen];
-	if (!m_cosen_local) {
-		return -37;
-	}
-	m_lamda_d = new int[N_wlen1];
-	if (!m_lamda_d) {
-		return -38;
-	}
-	m_integra = new int[m_lwlen];
-	if (!m_integra) {
-		return -39;
-	}
-	m_init_S_min = new int[m_lwlen];
-	if (!m_init_S_min) {
-		return -40;
-	}
-	m_init_S_tmp = new int[m_lwlen];
-	if (!m_init_S_tmp) {
-		return -41;
-	}
-	m_init_p1 = new int[m_lwlen];
-	if (!m_init_p1) {
-		return -42;
-	}
-	m_EN_cos = new short[m_lwlen];
-	if (!m_EN_cos) {
-		return -43;
-	}
-	m_EN_sin = new short[m_lwlen];
-	if (!m_EN_sin) {
-		return -44;
-	}
-	m_post_SNR = new int[m_lwlen];
-	if (!m_post_SNR) {
-		return -45;
-	}
-	m_pr_SNR = new int[m_lwlen];
-	if (!m_pr_SNR) {
-		return -46;
-	}
-	m_E_pr_SNR = new int[m_lwlen];
-	if (!m_E_pr_SNR) {
-		return -47;
-	}
-	m_v = new int[m_lwlen];
-	if (!m_v) {
-		return -48;
-	}
+	const size_t spectrumSize = static_cast<size_t>(N_wlen1);
+	m_arr_temp.resize(spectrumSize);
+	m_abs_Y.resize(spectrumSize);
+	m_init_S.resize(spectrumSize);
+	m_Gh1.resize(spectrumSize);
+	m_q.resize(spectrumSize);
+	m_pp.resize(spectrumSize);
+	m_G.resize(spectrumSize);
+	m_M.resize(spectrumSize);
+	m_cosen_local.resize(spectrumSize);
+	m_cosen_global.resize(spectrumSize);
+	m_plocal.resize(spectrumSize);
+	m_pglobal.resize(spectrumSize);
+	m_h_global.resize(m_wt_global);
+	m_old_cosen.resize(spectrumSize);
+	m_cosen.resize(spectrumSize);
+	m_lamda_d.resize(spectrumSize);
+	m_integra.resize(spectrumSize);
+	m_init_S_min.resize(spectrumSize);
+	m_init_S_tmp.resize(spectrumSize);
+	m_init_p1.resize(spectrumSize);
+	m_EN_cos.resize(spectrumSize);
+	m_EN_sin.resize(spectrumSize);
+	m_post_SNR.resize(spectrumSize);
+	m_pr_SNR.resize(spectrumSize);
+	m_E_pr_SNR.resize(spectrumSize);
+	m_v.resize(spectrumSize);
 	
 	for (int i = 1; i < (m_wt_global + 1); ++i)  //2^28=268435456 
 		m_h_global[i - 1] = (0.5 - 0.5 * cos(2.0 * Pi*(i) / (m_wt_global + 1))) * 16384;//2^14=16384
@@ -157,10 +70,8 @@ short G_calculate::Initialize(int wlen) {
 	for (int i = 0; i < m_lwlen; i++) 
 		m_pr_SNR[i] = 0.98*m_num_mag_pow;
 
-	memset(m_old_cosen, 0, sizeof(int)*m_lwlen);
-	memset(m_cosen, 0, sizeof(int)*m_lwlen);
-	memset(m_dataBuf, 0, sizeof(short) * m_lwlen);
-	memset(m_ns_storage, 0, sizeof(short)*m_lwlen);
+	std::fill(m_old_cosen.begin(), m_old_cosen.end(), 0);
+	std::fill(m_cosen.begin(), m_cosen.end(), 0);
 
 	//��new���Ŀռ䷵��
 	//const char* Fileexpint = "D:/exppow3.pcm";
@@ -181,7 +92,10 @@ short G_calculate::Initialize(int wlen) {
     }
 #endif
 
-	m_G_value = file_read<int>(full.c_str());
+	m_G_value = loadGainTable(full.c_str());
+	if (!m_G_value) {
+		return -29;
+	}
 	//cout << sizeof(m_G_value) << sizeof(m_G_value) / sizeof(m_G_value[0]);
 	return 0;
 }
@@ -203,7 +117,7 @@ void G_calculate::NoiseEstimation(int blockInd)
 				m_init_S_tmp[i] = m_init_S[i];
 				m_lamda_d[i] = m_init_S[i];
 			}
-			memset(m_init_p1, 0, sizeof(int)*(m_linc + 1));
+			std::fill_n(m_init_p1.begin(), m_linc + 1, 0);
 		}
 	}
 
@@ -262,14 +176,14 @@ void G_calculate::SpeechAbsenceEstm()
 		else if (m_cosen_local[k] >= m_cosen_max)
 			m_plocal[k] = m_num_mag_pow; //��ȷ�Ŵ�10000��
 		else
-			m_plocal[k] = m_num_mag_pow2 * (log(m_cosen_local[k]) - log(m_cosen_min)) / m_cosen_max_min;
+			m_plocal[k] = m_num_mag_pow2 * (log(m_cosen_local[k]) - m_log_cosen_min) / m_cosen_max_min;
 
 		if (m_cosen_global[k] <= m_cosen_min)   //% (25)
 			m_pglobal[k] = 0;
 		else if (m_cosen_global[k] >= m_cosen_max)
 			m_pglobal[k] = m_num_mag_pow;
 		else
-			m_pglobal[k] = m_num_mag_pow2 * (log(m_cosen_global[k]) - log(m_cosen_min)) / m_cosen_max_min;
+			m_pglobal[k] = m_num_mag_pow2 * (log(m_cosen_global[k]) - m_log_cosen_min) / m_cosen_max_min;
 		sum += m_cosen[k];
 	}
 
@@ -282,7 +196,7 @@ void G_calculate::SpeechAbsenceEstm()
 	else if (cosen_frame >= ((cosen_peak * m_cosen_max) >> m_amp_para_double))
 		mu = m_num_mag_pow;
 	else
-		mu = m_num_mag_pow * log(cosen_frame  * m_num_mag_pow / cosen_peak / m_cosen_min) / log(m_cosen_max / m_cosen_min);
+		mu = m_num_mag_pow * log(cosen_frame  * m_num_mag_pow / cosen_peak / m_cosen_min) / m_log_cosen_ratio;
 
 	if (cosen_frame > m_cosen_min)
 	{
@@ -310,13 +224,18 @@ short G_calculate::G_calculate_process(Complex_num* winData, int blockInd) {  //
 
 	int post_temp, w = 8;
 	for (int i = 0; i <= m_linc + w; i++) {
-		m_abs_Y[i] = sqrt(pow(winData[i].real, 2) + pow(winData[i].imag, 2));  //m_abs_Y����2^6��
+		m_abs_Y[i] = static_cast<unsigned int>(std::hypot(static_cast<double>(winData[i].real), static_cast<double>(winData[i].imag)));  //m_abs_Y����2^6��
 		m_EN_cos[i] = ((__int64)winData[i].real << 12) / (1 > m_abs_Y[i] ? 1 : m_abs_Y[i]);
 		m_EN_sin[i] = ((__int64)winData[i].imag << 12) / (1 > m_abs_Y[i] ? 1 : m_abs_Y[i]);
 	}
 	NoiseEstimation(blockInd);
 	for (int i = 0; i <= m_linc; i++) {
-		m_post_SNR[i] = min<int>((__int64)pow((((__int64)m_abs_Y[i] * m_num_mag_pow) / (1 > m_lamda_d[i] ? 1 : m_lamda_d[i])), 2) >> m_amp_para_double, 4096 << 14);
+		constexpr std::int64_t maxPostSnr = 4096LL << 14;
+		constexpr std::int64_t maxPosteriorRatio = 1LL << 20;
+		static_assert((maxPosteriorRatio * maxPosteriorRatio >> 14) == maxPostSnr, "Posterior SNR clamp must preserve the existing saturation limit");
+		const std::int64_t posteriorRatio = (static_cast<std::int64_t>(m_abs_Y[i]) * m_num_mag_pow) / (1 > m_lamda_d[i] ? 1 : m_lamda_d[i]);
+		const std::int64_t boundedPosteriorRatio = (std::min)(posteriorRatio, maxPosteriorRatio);
+		m_post_SNR[i] = static_cast<int>((boundedPosteriorRatio * boundedPosteriorRatio) >> m_amp_para_double);
 		post_temp = max<int>(m_post_SNR[i] - m_num_mag_pow, 0);
 		m_E_pr_SNR[i] = min<int>(max<int>((m_pr_SNR[i] >> 1) + (m_pr_SNR[i] >> 2) + (m_pr_SNR[i] >> 3) + (post_temp >> 3), m_snpramin), 4096 << m_amp_para_double);
 		m_E_pr_SNR[m_lwlen - i] = m_E_pr_SNR[i];                                                // 0.0001 * (2^24=16777216) =1678  167772 
@@ -338,144 +257,17 @@ short G_calculate::G_calculate_process(Complex_num* winData, int blockInd) {  //
 		m_M[i] = ((__int64)m_G[i] * m_abs_Y[i]) >> m_amp_para_double;  //��ֵ
 		winData[i].real = ((__int64)m_M[i] * m_EN_cos[i]) >> 12; 
 		winData[i].imag = ((__int64)m_M[i] * m_EN_sin[i]) >> 12;
-		m_pr_SNR[i] = min<int>(pow((__int64)m_M[i] * m_num_mag / (1 > m_lamda_d[i] ? 1 : m_lamda_d[i]), 2), 4096 << m_amp_para_double);  // 10000
+		constexpr std::int64_t maxPriorSnr = 4096LL << 14;
+		constexpr std::int64_t maxPriorRatio = 1LL << 13;
+		static_assert(maxPriorRatio * maxPriorRatio == maxPriorSnr, "Prior SNR clamp must preserve the existing saturation limit");
+		const std::int64_t priorRatio = static_cast<std::int64_t>(m_M[i]) * m_num_mag / (1 > m_lamda_d[i] ? 1 : m_lamda_d[i]);
+		const std::int64_t boundedPriorRatio = (std::min)(priorRatio, maxPriorRatio);
+		m_pr_SNR[i] = static_cast<int>(boundedPriorRatio * boundedPriorRatio);  // 10000
 		winData[m_lwlen - i].real = winData[i].real;
 		winData[m_lwlen - i].imag = -winData[i].imag;
-		aa[i] = m_G[i];
 	}
 	
 	return 0;
 }
 
 
-G_calculate::~G_calculate()
-{
-	if (!m_arr_temp) {
-		delete[] m_arr_temp;
-		m_arr_temp = NULL;
-	}
-	if (!m_S_f) {
-		delete[] m_S_f;
-		m_S_f = NULL;
-	}
-
-	if (!m_abs_Y) {
-		delete[] m_abs_Y;
-		m_abs_Y = NULL;
-	}
-	if (!m_dataBuf) {
-		delete[] m_dataBuf;
-		m_dataBuf = NULL;
-	}
-	if (!m_init_S) {
-		delete[] m_init_S;
-		m_init_S = NULL;
-	}
-	if (!m_init_S_min) {
-		delete[] m_init_S_min;
-		m_init_S_min = NULL;
-	}
-	if (!m_init_S_tmp) {
-		delete[] m_init_S_tmp;
-		m_init_S_tmp = NULL;
-	}
-	if (!m_init_p1) {
-		delete[] m_init_p1;
-		m_init_p1 = NULL;
-	}
-	if (!m_EN_cos) {
-		delete[] m_EN_cos;
-		m_EN_cos = NULL;
-	}
-	if (!m_EN_sin) {
-		delete[] m_EN_sin;
-		m_EN_sin = NULL;
-	}
-	if (!m_post_SNR) {
-		delete[] m_post_SNR;
-		m_post_SNR = NULL;
-	}
-	if (!m_pr_SNR) {
-		delete[] m_pr_SNR;
-		m_pr_SNR = NULL;
-	}
-	if (!m_E_pr_SNR) {
-		delete[] m_E_pr_SNR;
-		m_E_pr_SNR = NULL;
-	}
-	if (!m_v) {
-		delete[] m_v;
-		m_v = NULL;
-	}
-	if (!m_Gh1) {
-		delete[] m_Gh1;
-		m_Gh1 = NULL;
-	}
-	if (!m_q) {
-		delete[] m_q;
-		m_q = NULL;
-	}
-	if (!m_pp) {
-		delete[] m_pp;
-		m_pp = NULL;
-	}
-
-	if (!m_G) {
-		delete[] m_G;
-		m_G = NULL;
-	}
-
-	if (!m_M) {
-		delete[] m_M;
-		m_M = NULL;
-	}
-
-	if (!m_ns_storage) {
-		delete[] m_ns_storage;
-		m_ns_storage = NULL;
-	}
-	if (!m_cosen_local) {
-		delete[] m_cosen_local;
-		m_cosen_local = NULL;
-	}
-	if (!m_cosen_global) {
-		delete[] m_cosen_global;
-		m_cosen_global = NULL;
-	}
-	if (!m_plocal) {
-		delete[] m_plocal;
-		m_plocal = NULL;
-	}
-	if (!m_pglobal) {
-		delete[] m_pglobal;
-		m_pglobal = NULL;
-	}
-	if (!m_h_global) {
-		delete[] m_h_global;
-		m_h_global = NULL;
-	}
-	if (!m_cosen) {
-		delete[] m_cosen;
-		m_cosen = NULL;
-	}
-	if (!m_old_cosen) {
-		delete[] m_old_cosen;
-		m_old_cosen = NULL;
-	}
-	if (!m_int_value) {
-		delete[] m_int_value;
-		m_int_value = NULL;
-	}
-	if (!m_expsub_value) {
-		delete[] m_expsub_value;
-		m_expsub_value = NULL;
-	}
-	if (!m_G_value) {
-		delete[] m_G_value;
-		m_G_value = NULL;
-	}
-	if (!m_lamda_d) {
-		delete[] m_lamda_d;
-		m_lamda_d = NULL;
-	}
-}

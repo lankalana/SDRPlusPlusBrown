@@ -35,7 +35,6 @@ namespace dsp {
 
     public:
         ComplexArray worker1c;
-        std::mutex workerMutex;
         int freq = 192000;
         LogMMSE::SavedParamsC params;
         std::mutex freqMutex;
@@ -52,8 +51,6 @@ namespace dsp {
         void setDisableCpuDeactivation(bool disable) {
             disableCpuDeactivation = disable;
         }
-
-        double currentCenterFrequency = -1.0;
 
         bool shouldReset = true;
         void reset() {
@@ -76,20 +73,18 @@ namespace dsp {
                 worker1c = npzeros_c(0);
                 params.reset();
             }
-            for (int i = 0; i < count; i++) {
-                worker1c->emplace_back(in[i]);
+            if (count > 0) {
+                worker1c->insert(worker1c->end(), in, in + count);
             }
             int noiseFrames = 12;
-            int fram = freq / 100;
-            int initialDemand = fram * 2;
+            int initialDemand = (freq / 100) * 2;
             if (!params.Xk_prev) {
-                initialDemand = fram * (noiseFrames + 2) * 2;
+                initialDemand = (freq / 100) * (noiseFrames + 2) * 2;
             }
             if (worker1c->size() < initialDemand) {
                 outCount = 0;
                 return;
             }
-            int retCount = 0;
             freqMutex.lock();
             if (!params.Xk_prev) {
                 std::cout << std::endl
@@ -110,7 +105,6 @@ namespace dsp {
             }
             memmove(worker1c->data(), ((complex_t*)worker1c->data()) + rv->size(), sizeof(complex_t) * (worker1c->size() - rv->size()));
             worker1c->resize(worker1c->size() - rv->size());
-            retCount += rv->size();
             outCount = limit;
             return;
         }

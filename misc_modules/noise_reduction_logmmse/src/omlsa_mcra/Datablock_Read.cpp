@@ -13,10 +13,10 @@ Datablock_Read::Datablock_Read(int sample_rate,short channels,int MaxDataLen)
 
 short Datablock_Read::Initial(int MaxDataLen) {
 	m_maxdata = MaxDataLen;
-	if (m_sample_rate < 23000)	//²ÉÑùÂÊÐ¡ÓÚ23K
+	if (m_sample_rate < 23000)	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð¡ï¿½ï¿½23K
 	{
 		m_wlen = 256;
-		m_inc = 128;  //Ö¡³¤Îª4µÄ´Î·½
+		m_inc = 128;  //Ö¡ï¿½ï¿½Îª4ï¿½Ä´Î·ï¿½
 	}
 	else {
 		m_wlen = 1024;
@@ -27,42 +27,17 @@ short Datablock_Read::Initial(int MaxDataLen) {
 
 	m_inc_move = log(m_inc) / log(2);
 
-	m_DoubDataBuffer = new short[MaxDataLen + m_wlen];
-	if (!m_DoubDataBuffer) {
-		return -52;
-	}
-	m_data_in = new short[m_wlen15];
-	if (!m_data_in) {
-		return -53;
-	}
-	m_data_storage = new short[m_wlen15];
-	if (!m_data_storage) {
-		return -54;
-	}
-	m_process_storage=new int[m_wlen15];
-	if (!m_process_storage) {
-		return -55;
-	}
-	m_buffer = new short[m_wlen15];
-	if (!m_buffer) {
-		return -56;
-	}
-	m_data_out = new short[m_wlen15];
-	if (!m_data_out) {
-		return -57;
-	}
-	m_data_resize = new short[MaxDataLen + m_wlen];
-	if (!m_data_resize) {
-		return -58;
-	}
-
-	memset(m_process_storage, 0, m_wlen15 * sizeof(int));
-	memset(m_DoubDataBuffer, 0, (MaxDataLen + m_wlen) * sizeof(short));
+	m_DoubDataBuffer.resize(MaxDataLen + m_wlen);
+	m_data_in.resize(m_wlen15);
+	m_data_storage.resize(m_wlen15);
+	m_process_storage.resize(m_wlen15);
+	m_data_out.resize(m_wlen15);
+	m_data_resize.resize(MaxDataLen + m_wlen);
 	m_data_rest_length = 0;
 	m_blockInd = 0;
 	short m_ierr_code = LSA.Initialize(m_wlen15); //15--49
 	if (m_ierr_code < 0)return m_ierr_code;
-	//My_fft->initial(m_wlen); //	FFT³õÊ¼»¯  µ¥Àý×ª»»
+	//My_fft->initial(m_wlen); //	FFTï¿½ï¿½Ê¼ï¿½ï¿½  ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½
 	return 0;
 }
 
@@ -73,11 +48,11 @@ short Datablock_Read::Data_procese(short* pInBuffer, short* pOutBuffer,int read_
 
 	if (m_channels == 2)
 		read_length = (read_length >> 1);
-	int current_total_data = read_length + m_data_rest_length;  // ÖØ×éºóµÄÊý¾Ý¸öÊý
+	int current_total_data = read_length + m_data_rest_length;  // ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý¸ï¿½ï¿½ï¿½
 
-	if (current_total_data < m_wlen15) {	//  Êý¾Ý²»ÂúÒ»Ö¡
+	if (current_total_data < m_wlen15) {	//  ï¿½ï¿½ï¿½Ý²ï¿½ï¿½ï¿½Ò»Ö¡
 		if(m_channels==1)
-		memcpy(m_data_storage + m_data_rest_length, pInBuffer, (read_length) * sizeof(short));
+		memcpy(m_data_storage.data() + m_data_rest_length, pInBuffer, (read_length) * sizeof(short));
 		else if (m_channels == 2) {
 			for (int i = 0; i < read_length; i++) 
 				m_data_storage[i + m_data_rest_length] = (pInBuffer[i << 1] + pInBuffer[(i << 1) + 1]) >> 1;
@@ -87,12 +62,12 @@ short Datablock_Read::Data_procese(short* pInBuffer, short* pOutBuffer,int read_
 		m_data_rest_length = current_total_data;
 	}
 	else {
-	// Êý¾ÝÕûºÏ  ¿¼ÂÇµÚÒ»Ö¡Êý¾ÝµÄ´æ´¢
-	// ÏÈ½«±£ÁôÇøÊý¾Ýµ¼Èë
-	memcpy(m_data_resize, m_data_storage, (m_data_rest_length) * sizeof(short));
-	// ÔÙ½«¶ÁÈ¡Êý¾Ýµ¼Èë
+	// ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½  ï¿½ï¿½ï¿½Çµï¿½Ò»Ö¡ï¿½ï¿½ï¿½ÝµÄ´æ´¢
+	// ï¿½È½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ýµï¿½ï¿½ï¿½
+	memcpy(m_data_resize.data(), m_data_storage.data(), (m_data_rest_length) * sizeof(short));
+	// ï¿½Ù½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½Ýµï¿½ï¿½ï¿½
 	if (m_channels == 1){
-		memcpy(m_data_resize + m_data_rest_length, pInBuffer, read_length * sizeof(short));
+		memcpy(m_data_resize.data() + m_data_rest_length, pInBuffer, read_length * sizeof(short));
 	}
 	else if (m_channels == 2) {
 		for (int i = 0; i < read_length; i++) {
@@ -100,22 +75,22 @@ short Datablock_Read::Data_procese(short* pInBuffer, short* pOutBuffer,int read_
 		}
 	}
 
- 	int data_use = 0;				 // ¼ÆËã¶ÁÈ¡µÄÊý¾ÝÖÐÒÑ¾­Ê¹ÓÃ¹ýµÄÊý¾Ý-ÒÔÖ¡Í·¼ÆÊý
-	int current_frame = ((current_total_data - m_wlen) >> m_inc_move) + 1;  // µ±Ç°Êý¾ÝËùÄÜ¹¹³ÉµÄÖ¡Êý
-	//¶Ô¶Î×ÜÖ¡ÊýÈ¡Å¼Êý  ÆæÊý²¿·Ö´æ½øÔÝ´æÇø
+ 	int data_use = 0;				 // ï¿½ï¿½ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ¾ï¿½Ê¹ï¿½Ã¹ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½-ï¿½ï¿½Ö¡Í·ï¿½ï¿½ï¿½ï¿½
+	int current_frame = ((current_total_data - m_wlen) >> m_inc_move) + 1;  // ï¿½ï¿½Ç°ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ü¹ï¿½ï¿½Éµï¿½Ö¡ï¿½ï¿½
+	//ï¿½Ô¶ï¿½ï¿½ï¿½Ö¡ï¿½ï¿½È¡Å¼ï¿½ï¿½  ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ö´ï¿½ï¿½ï¿½Ý´ï¿½ï¿½ï¿½
 	current_frame = (current_frame | 1) - 1;
 
-	m_data_rest_length = current_total_data -( current_frame*m_inc);  // ¸üÐÂÊ£ÓàÊý¾Ý Î²Ö¡ÖÐÖ®ºó
-	Out_Length = current_frame * m_inc;	  // Êä³öµ½Ä©¶ÎÖÐ
+	m_data_rest_length = current_total_data -( current_frame*m_inc);  // ï¿½ï¿½ï¿½ï¿½Ê£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ Î²Ö¡ï¿½ï¿½Ö®ï¿½ï¿½
+	Out_Length = current_frame * m_inc;	  // ï¿½ï¿½ï¿½ï¿½ï¿½Ä©ï¿½ï¿½ï¿½ï¿½
 
 	for (int k = 0; k < current_frame-1; k+=2, m_blockInd+=2){
-		memcpy(m_data_in, m_data_resize + data_use, m_wlen15 * sizeof(short)); //·ÖÖ¡
-		memset(m_data_out, 0, sizeof(short)*m_wlen15);
-		m_derr_code=LSA.Denoise_process(m_data_in, m_data_out, m_blockInd);
+		memcpy(m_data_in.data(), m_data_resize.data() + data_use, m_wlen15 * sizeof(short)); //ï¿½ï¿½Ö¡
+		memset(m_data_out.data(), 0, sizeof(short)*m_wlen15);
+		m_derr_code=LSA.Denoise_process(m_data_in.data(), m_data_out.data(), m_blockInd);
 
 		if (m_derr_code < 0) return m_derr_code;
-		//Êä³öÒªÇó£ºÖØµþºÃµÄÁ½Ö¡
- 		int block_inc = k * m_inc;  //¶ÎµÄµ±Ç°Î»ÖÃ
+		//ï¿½ï¿½ï¿½Òªï¿½ï¿½ï¿½Øµï¿½ï¿½Ãµï¿½ï¿½ï¿½Ö¡
+ 		int block_inc = k * m_inc;  //ï¿½ÎµÄµï¿½Ç°Î»ï¿½ï¿½
 		if (current_frame == 2) {   
 			for (int i = 0; i < m_inc; i++) {
 				m_DoubDataBuffer[block_inc + i] += m_data_out[i];
@@ -140,61 +115,30 @@ short Datablock_Read::Data_procese(short* pInBuffer, short* pOutBuffer,int read_
 					m_process_storage[i] = m_data_out[i + m_wlen];
 				}
 			}
-			else {   //¶ÎÖÐ¼äÖ¡
+			else {   //ï¿½ï¿½ï¿½Ð¼ï¿½Ö¡
 				for (int i = 0; i < m_wlen15; i++) {
 					m_DoubDataBuffer[block_inc + i] += m_data_out[i];
 				}
 			}
 		}
-		if (m_channels == 1) {
-			for (int i = 0; i < Out_Length; i++) {
-				pOutBuffer[i] = m_DoubDataBuffer[i];
-			}
-		}
-		else if (m_channels == 2){
-			for (int i = 0; i < Out_Length; i++) {
-				pOutBuffer[i << 1] = m_DoubDataBuffer[i];
-				pOutBuffer[(i << 1) + 1] = m_DoubDataBuffer[i];  //Ë«Í¨µÀÊä³ö 
-			}
-		}
 		data_use += m_wlen;
+	}
+	if (m_channels == 1) {
+		memcpy(pOutBuffer, m_DoubDataBuffer.data(), Out_Length * sizeof(short));
+	}
+	else if (m_channels == 2){
+		for (int i = 0; i < Out_Length; i++) {
+			pOutBuffer[i << 1] = m_DoubDataBuffer[i];
+			pOutBuffer[(i << 1) + 1] = m_DoubDataBuffer[i];  //Ë«Í¨ï¿½ï¿½ï¿½ï¿½ï¿½ 
+		}
 	}
 	if (m_channels == 2)
 		Out_Length = Out_Length << 1;  
-	//´æÈë²ÐÓàÊý¾Ý   
-	memcpy(m_data_storage, m_data_resize + data_use, (m_data_rest_length) * sizeof(short));
-	memset(m_DoubDataBuffer, 0, (m_maxdata + m_wlen) * sizeof(short));
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½   
+	memcpy(m_data_storage.data(), m_data_resize.data() + data_use, (m_data_rest_length) * sizeof(short));
+	std::fill_n(m_DoubDataBuffer.begin(), current_frame * m_inc, 0);
 	}
 	return 0;
-}
-
-	 
-Datablock_Read::~Datablock_Read()
-{
-	if (!m_data_storage) {
-		delete[] m_data_storage;
-		m_data_storage = NULL;
-	}
-	if (!m_data_in) {
-		delete[] m_data_in;
-		m_data_in = NULL;
-	}
-	if (!m_data_resize) {
-		delete[] m_data_resize;
-		m_data_resize = NULL;
-	}
-	if (!m_buffer) {
-		delete[] m_buffer;
-		m_buffer = NULL;
-	}
-	if (!m_DoubDataBuffer) {
-		delete[] m_DoubDataBuffer;
-		m_DoubDataBuffer = NULL;
-	}
-	if (!m_data_out) {
-		delete[] m_data_out;
-		m_data_out = NULL;
-	}
 }
 
 

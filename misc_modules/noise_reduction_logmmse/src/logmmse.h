@@ -4,7 +4,7 @@
 #include "math.h"
 #include "bgnoise.h"
 #include <array>
-#include <list>
+#include <vector>
 #include <ctm.h>
 
 namespace dsp {
@@ -63,13 +63,18 @@ namespace dsp {
                     }
                 }
 
-                std::list<FloatArray> noise_history;      // chunks of nFFT*float
-                std::list<FloatArray> dev_history;
+                std::vector<FloatArray> noise_history;      // circular storage of nFFT*float chunks
+                std::vector<FloatArray> dev_history;
+                size_t noiseHistoryHead = 0;
+                size_t noiseHistorySize = 0;
+                size_t devHistoryHead = 0;
+                size_t devHistorySize = 0;
                 FloatArray sums;      // sliding sum of last N noise_history
                 FloatArray devs;      // sliding sum of dev_history
                 ComplexArray Xn_prev; // remaining noise
 
                 FloatArray noise_mu2;
+                FloatArray candidateNoiseMu2;
                 FloatArray Xk_prev;
                 ComplexArray x_old;
                 bool forceAudio = false;
@@ -93,21 +98,36 @@ namespace dsp {
                 float mindb = 0;
                 float maxdb = 0;
                 bool stable = false;
+                bool previousEstimateValid = false;
+
+                void clearHistories() {
+                    std::fill(noise_history.begin(), noise_history.end(), nullptr);
+                    std::fill(dev_history.begin(), dev_history.end(), nullptr);
+                    noiseHistoryHead = 0;
+                    noiseHistorySize = 0;
+                    devHistoryHead = 0;
+                    devHistorySize = 0;
+                }
+
+                const FloatArray& noiseHistoryAt(size_t index) const {
+                    return noise_history[(noiseHistoryHead + index) % noise_history.size()];
+                }
 
 //                float *devsD = nullptr;
 //                float *hiD = nullptr;
 //                float *diffD = nullptr;
 
                 void reset() {
-                    noise_history.clear();
-                    dev_history.clear();
+                    clearHistories();
                     Xk_prev.reset();
                     Xn_prev.reset();
                     noise_mu2.reset();
+                    candidateNoiseMu2.reset();
                     x_old.reset();
                     generation = 0;
                     stable = false;
-                    backgroundNoiseCaltulator.reset();
+                    previousEstimateValid = false;
+                    backgroundNoiseCalculator.reset();
 
                 }
 
@@ -119,38 +139,63 @@ namespace dsp {
                         flog::info("ERROR noise->size() != nFFT: {} {}", (int)noise->size(), nFFT);
                         return;
                     }
-                    noise_history.emplace_back(noise);
-                    volk_32f_x2_add_32f(sums->data(), sums->data(), noise->data(), nFFT);
-                    while (noise_history.size() > noise_history_len()) {
-                        volk_32f_x2_subtract_32f(sums->data(), sums->data(), noise_history.front()->data(), nFFT);
-                        noise_history.pop_front();
+                    const size_t historyCapacity = static_cast<size_t>(noise_history_len());
+                    if (noise_history.size() != historyCapacity) {
+                        noise_history.assign(historyCapacity, nullptr);
+                        dev_history.assign(historyCapacity, nullptr);
+                        noiseHistoryHead = 0;
+                        noiseHistorySize = 0;
+                        devHistoryHead = 0;
+                        devHistorySize = 0;
                     }
+                    size_t noiseIndex;
+                    if (noiseHistorySize < historyCapacity) {
+                        noiseIndex = (noiseHistoryHead + noiseHistorySize) % historyCapacity;
+                        noiseHistorySize++;
+                    }
+                    else {
+                        noiseIndex = noiseHistoryHead;
+                        volk_32f_x2_subtract_32f(sums->data(), sums->data(), noise_history[noiseIndex]->data(), nFFT);
+                        noiseHistoryHead = (noiseHistoryHead + 1) % historyCapacity;
+                    }
+                    noise_history[noiseIndex] = noise;
+                    volk_32f_x2_add_32f(sums->data(), sums->data(), noise->data(), nFFT);
 
-                    auto noiseAvg = div(sums, (float)noise_history.size());
+                    auto noiseAvg = div(sums, (float)noiseHistorySize);
 
                     auto diff = subeach(noise, noiseAvg);
                     diff = muleach(diff, diff);
-                    dev_history.emplace_back(diff);
-
-                    devs = addeach(devs, diff);
-
-                    while (dev_history.size() > noise_history_len()) {
-                        devs = subeach(devs, dev_history.front());
-                        dev_history.pop_front();
+                    size_t devIndex;
+                    if (devHistorySize < historyCapacity) {
+                        devIndex = (devHistoryHead + devHistorySize) % historyCapacity;
+                        devHistorySize++;
                     }
+                    else {
+                        devIndex = devHistoryHead;
+                        devs = subeach(devs, dev_history[devIndex]);
+                        devHistoryHead = (devHistoryHead + 1) % historyCapacity;
+                    }
+                    dev_history[devIndex] = diff;
+                    devs = addeach(devs, diff);
 
                 }
 
-                BackgroundNoiseCaltulator backgroundNoiseCaltulator;
+                BackgroundNoiseCalculator backgroundNoiseCalculator;
 
 
+#ifdef SDRPP_NR_PROFILE
 #define ADD_STEP_STATS()          ctm2 = currentTimeNanos(); muSum[statIndex++] += ctm2-ctm; ctm = ctm2
+#else
+#define ADD_STEP_STATS()          do {} while (0)
+#endif
 
                 void update_noise_mu2(const ComplexArray &x) {
                     auto sz = x->size();
                     ALLOC_AND_CHECK(x, sz, "update_noise_mu2 point 1.5a")
+#ifdef SDRPP_NR_PROFILE
                     static long long muSum[30] = {0,}, muCount = 0; auto ctm = currentTimeNanos();long long ctm2; auto statIndex = 0;
-                    auto nframes = noise_history.size();
+#endif
+                    auto nframes = noiseHistorySize;
                     bool audioFrequency = nFFT < 1200;
                     if (forceAudio) audioFrequency = true;
                     if (forceWideband) audioFrequency = false;
@@ -169,15 +214,11 @@ namespace dsp {
                                 std::vector<float> lower(nFFT, 0);
                                 ALLOC_AND_CHECK(x, sz, "update_noise_mu2 point 1.5")
                                 const int nlower = 12;
-                                int ix = 0;
-                                for(auto &it: noise_history) {
-                                    if (ix >= nframes - nlower) {
-                                        auto nhFrame = it->data();
-                                        for (auto w = 0; w < nFFT; w++) {
-                                            lower[w] += nhFrame[w];
-                                        }
+                                for (size_t ix = nframes - nlower; ix < nframes; ix++) {
+                                    auto nhFrame = noiseHistoryAt(ix)->data();
+                                    for (auto w = 0; w < nFFT; w++) {
+                                        lower[w] += nhFrame[w];
                                     }
-                                    ix++;
                                 }
                                 ALLOC_AND_CHECK(x, sz, "update_noise_mu2 point 2")
                                 for (auto w = 0; w < nFFT; w++) {
@@ -216,7 +257,10 @@ namespace dsp {
                             generation++;
                         } else {
 
-                            auto noise_mu2_copy = *noise_mu2;
+                            if (!backgroundNoiseCalculator.updateDue()) {
+                                backgroundNoiseCalculator.skipFrame();
+                                return;
+                            }
 
                             auto noiseAvg = mul(sums, 1 / (float)nframes);
 
@@ -230,16 +274,16 @@ namespace dsp {
                                 if (abs(z - nFFT/2) < nFFT * 15 / 100) {
                                     // after fft, rightmost and leftmost sides of real frequencies range are at the center of the resulting table.
                                     // We exclude middle of the table from lookup
-                                    devSquareD[z] = BackgroundNoiseCaltulator::ERASED_SAMPLE;
+                                    devSquareD[z] = BackgroundNoiseCalculator::ERASED_SAMPLE;
                                 }
                             }
-                            memset(noise_mu2->data(), 0, nFFT*sizeof(noise_mu2->at(0)));
+                            memset(candidateNoiseMu2->data(), 0, nFFT*sizeof(candidateNoiseMu2->at(0)));
                             ADD_STEP_STATS();
                             std::vector<float> devs(devSquareD, devSquareD +nFFT);
-                            float detectedNoise = backgroundNoiseCaltulator.addFrame(devs);
+                            float detectedNoise = backgroundNoiseCalculator.addFrame(devs);
                             ADD_STEP_STATS();
                             auto acceptible_stdev = detectedNoise;
-                            auto nmu2 = noise_mu2->data();
+                            auto nmu2 = candidateNoiseMu2->data();
                             auto navg =  noiseAvg->data();
                             for(int q=0; q < nFFT; q++) {
                                 if (devs[q] < acceptible_stdev) {
@@ -247,8 +291,8 @@ namespace dsp {
                                 }
                             }
 
-                            if (!linearInterpolateHoles(nmu2, nFFT)) {
-                                *noise_mu2 = noise_mu2_copy;
+                            if (linearInterpolateHoles(nmu2, nFFT)) {
+                                noise_mu2.swap(candidateNoiseMu2);
                             }
 
                             ADD_STEP_STATS();
@@ -270,6 +314,7 @@ namespace dsp {
                     // 768 mu2:        16 18 23 347 225         // after sample count instead of sort
                     // 768 mu2:        13 8 12 52 195         // after dropping each 10th frame for noise dev calculation
                     // 768 mu2:        13 8 12 52 115         // replaced at() with direct data access.
+#ifdef SDRPP_NR_PROFILE
                     muCount++;
                     if (muCount == 1000 && false) {
                         std::cout << "mu2: ";
@@ -280,6 +325,7 @@ namespace dsp {
                         std::cout << std::endl;
                         muCount = 0;
                     }
+#endif
                 }
             };
 
@@ -288,8 +334,7 @@ namespace dsp {
                 if (params->Slen % 2 == 1) params->Slen++;
                 params->PERC = 50;
                 params->len1 = floor(params->Slen * params->PERC / 100);
-                params->noise_history.clear();
-                params->dev_history.clear();
+                params->clearHistories();
                 params->len2 = params->Slen - params->len1;         // len1+len2
                 auto audioFrequency = Srate <= 24000;
                 if (params->forceAudio) audioFrequency = true;
@@ -328,10 +373,12 @@ namespace dsp {
                     params->noise_mu2 = npmavg(params->noise_mu2, 120);
                 }
                 params->noise_mu2 = muleach(params->noise_mu2, params->noise_mu2);
+                params->candidateNoiseMu2 = npzeros(params->nFFT);
 //                for (int ix = 0; ix < params->noise_mu2->size(); ix++) {
 //                    std::cout << "Noise\t" << (ix) << "\t" << params->noise_mu2->at(ix) << std::endl;
 //                }
                 params->Xk_prev = npzeros(params->len1);
+                params->previousEstimateValid = false;
                 params->Xn_prev = npzeros_c(0);
                 params->x_old = npzeros_c(params->len1);
                 params->ksi_min = ::pow(10, -25.0 / 10.0);
@@ -340,7 +387,9 @@ namespace dsp {
 
             static ComplexArray logmmse_all(const ComplexArray &x, int inputCount, int Srate, float eta, SavedParamsC *params) {
                 int sz = inputCount;
+#ifdef SDRPP_NR_PROFILE
                 static long long muSum[30] = {0,}, muCount = 0; auto ctm = currentTimeNanos();long long ctm2; auto statIndex = 0;
+#endif
                 ALLOC_AND_CHECK(x, sz, "logmmse_all point -1")
 
                 auto Nframes = (std::max)(0, inputCount / params->len2 - params->Slen / params->len2);
@@ -377,7 +426,7 @@ namespace dsp {
                     auto gammak = npminimum_(diveach(sig2, params->noise_mu2), 40);
                     ALLOC_AND_CHECK(x, sz, "logmmse_all point 6")
                     FloatArray ksi;
-                    if (!npall(params->Xk_prev)) {
+                    if (!params->previousEstimateValid) {
                         ksi = add(mul(npmaximum_(add(gammak, -1), 0), 1 - params->aa), params->aa);
                     } else {
                         const FloatArray d1 = diveach(mul(params->Xk_prev, params->aa), params->noise_mu2);
@@ -397,20 +446,23 @@ namespace dsp {
                     sig = muleach(sig, hw);
                     ALLOC_AND_CHECK(x, sz, "logmmse_all point 15")
                     params->Xk_prev = muleach(sig, sig);
+                    params->previousEstimateValid = true;
                     auto hwmulspec = muleach(hw, spec);
                     ALLOC_AND_CHECK(x, sz, "logmmse_all point 16")
                     npfftfft(hwmulspec, params->reversePlan);
                     auto xi_w0 = params->reversePlan->getOutput();
                     ALLOC_AND_CHECK(x, sz, "logmmse_all point 17")
-                    auto final = addeach(params->x_old, nparange(xi_w0, 0, params->len1));
+                    for (int i = 0; i < params->len1; i++) {
+                        (*xfinal)[k + i] = (*params->x_old)[i] + (*xi_w0)[i];
+                        (*params->x_old)[i] = (*xi_w0)[params->len1 + i];
+                    }
                     ALLOC_AND_CHECK(x, sz, "logmmse_all point 18")
-                    nparangeset(xfinal, k, final);
-                    params->x_old = nparange(xi_w0, params->len1, params->Slen);
                     ALLOC_AND_CHECK(x, sz, "logmmse_all point 19")
                 }
                 ALLOC_AND_CHECK(x, sz, "logmmse_all point 20")
                 ADD_STEP_STATS();
                 ALLOC_AND_CHECK(x, sz, "logmmse_all point 21")
+                #ifdef SDRPP_NR_PROFILE
                 muCount++;
 
                 if (muCount == 1000) {
@@ -434,6 +486,7 @@ namespace dsp {
                     }
                     muCount = 0;
                 }
+                #endif
                 ADD_STEP_STATS();
                 ALLOC_AND_CHECK(x, sz, "logmmse_all point 23")
                 return xfinal;

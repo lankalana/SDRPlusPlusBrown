@@ -5,6 +5,7 @@
 #include <fstream>
 #include "Cordic.h"
 #include "G_calculate.h"
+#include <vector>
 
 using namespace std;
 
@@ -12,7 +13,7 @@ class LSA_denoise
 {
 public:
 	LSA_denoise();
-	~LSA_denoise();
+	~LSA_denoise() = default;
 	short Initialize(short wlen);
 	short Denoise_process(short* data_in, short* data_out, int blockInd);
 	
@@ -23,7 +24,7 @@ private:
 	MY_B4_FFT MyN_fft;
 	short m_lwlen;
 	short m_linc13, m_linc23;
-	int* m_ns_hn;
-	Complex_num* m_winData;
+	std::vector<int> m_ns_hn;
+	std::vector<Complex_num> m_winData;
 };
 
