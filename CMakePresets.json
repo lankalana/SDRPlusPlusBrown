@@ -52,13 +52,15 @@
       "name": "windows-relwithdebinfo",
       "displayName": "Windows RelWithDebInfo",
       "configurePreset": "windows-vs2022",
-      "configuration": "RelWithDebInfo"
+      "configuration": "RelWithDebInfo",
+      "jobs": 0
     },
     {
       "name": "windows-release",
       "displayName": "Windows Release",
       "configurePreset": "windows-vs2022",
-      "configuration": "Release"
+      "configuration": "Release",
+      "jobs": 0
     }
   ]
 }
