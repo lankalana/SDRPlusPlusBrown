@@ -118,6 +118,7 @@ namespace dsp {
             virtual ComplexArray getInput() = 0;
             virtual ComplexArray getOutput() = 0;
             virtual ComplexArray npfftfft(const ComplexArray& in) = 0;
+            virtual void execute() = 0;
             virtual ~FFTPlan() {
 
             }
@@ -126,6 +127,7 @@ namespace dsp {
         Arg<FFTPlan> allocateFFTWPlan(bool backward, int buckets);
 
         void npfftfft(const ComplexArray& in, const Arg<FFTPlan>& plan);
+        void npfftfft(const Arg<FFTPlan>& plan);
         std::string ftos(float x);
         std::string sampleArr(const FloatArray& x);
         std::string sampleArr(const ComplexArray& x);

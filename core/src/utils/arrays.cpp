@@ -531,18 +531,20 @@ namespace dsp {
             }
 
             ComplexArray npfftfft(const ComplexArray& in) override {
-                auto in0 = resize(in, nbuckets);
-                std::copy(in0->begin(), in0->end(), input->begin());
-//                auto out0 = npzeros_c(nbuckets);
+                const size_t count = (std::min)(in->size(), static_cast<size_t>(nbuckets));
+                if (in.get() != input.get()) {
+                    std::copy_n(in->begin(), count, input->begin());
+                }
+                std::fill(input->begin() + count, input->end(), complex_t{});
+                execute();
+                return output;
+            }
+
+            void execute() override {
                 fftwf_execute(p);
-//                std::copy(output->begin(), output->end(), out0->begin());
-//                this->output->resize(nbuckets);
                 if (reverse) {
                     div_(this->output, nbuckets);
-                } else {
-                    //return out0;
                 }
-                return this->output;
             }
 
             virtual ~fftwPlanImplFFTW() {
@@ -582,9 +584,17 @@ namespace dsp {
             }
 
             ComplexArray npfftfft(const ComplexArray& in) override {
-                // Resize and copy input data to tempSplitComplex
-                auto in0 = resize(in, nbuckets);
-                auto in0P = in0->data();
+                const size_t count = (std::min)(in->size(), static_cast<size_t>(nbuckets));
+                if (in.get() != input.get()) {
+                    std::copy_n(in->begin(), count, input->begin());
+                }
+                std::fill(input->begin() + count, input->end(), complex_t{});
+                execute();
+                return output;
+            }
+
+            void execute() override {
+                auto in0P = input->data();
                 for (int i = 0; i < nbuckets; ++i) {
                     tempSplitComplex.realp[i] = in0P[i].re;
                     tempSplitComplex.imagp[i] = in0P[i].im;
@@ -609,10 +619,7 @@ namespace dsp {
 
                 if (reverse) {
                     div_(output, nbuckets);
-                } else {
-                    //return out0;
                 }
-                return this->output;
             }
 
             virtual ~vDSPPlanImpl() {
@@ -1212,6 +1219,12 @@ namespace dsp {
         void npfftfft(const ComplexArray& in, const Arg<FFTPlan>& plan) {
             auto ctm = currentTimeMillis();
             plan->npfftfft(in);
+            fftCumulativeTime += currentTimeMillis() - ctm;
+        }
+
+        void npfftfft(const Arg<FFTPlan>& plan) {
+            auto ctm = currentTimeMillis();
+            plan->execute();
             fftCumulativeTime += currentTimeMillis() - ctm;
         }
 
