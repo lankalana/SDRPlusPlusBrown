@@ -3,6 +3,7 @@
 #include <mutex>
 #include <atomic>
 #include <functional>
+#include <new>
 #include <utils/flog.h>
 #include <condition_variable>
 //#include <volk/volk.h>
@@ -13,6 +14,9 @@
 // The stream handoff is single-producer/single-consumer. Multiple independent readers are not supported.
 inline constexpr int DEFAULT_STREAM_BUFFER_SIZE = 1000000;
 #define STREAM_BUFFER_SIZE DEFAULT_STREAM_BUFFER_SIZE
+
+struct lazy_stream_t {};
+inline constexpr lazy_stream_t lazy_stream{};
 
 extern void logDebugMessage(const char *msg);
 
@@ -54,18 +58,10 @@ namespace dsp {
             this->origin = origin;
         }
 
+        stream(lazy_stream_t, const char *origin) : origin(origin) {}
+
         void initBuffers() {
-            bufferSize = STREAM_BUFFER_SIZE;
-            writeBuf0 = buffer::alloc<T>(bufferSize);
-            if (!writeBuf0)
-                abort();
-            //buffer::register_buffer_dbg(writeBuf0, origin ? origin: "stream without origin");
-            readBuf0 = buffer::alloc<T>(bufferSize);
-            if (!readBuf0)
-                abort();
-            //buffer::register_buffer_dbg(readBuf0, origin ? origin: "stream without origin");
-            readBuf = readBuf0;
-            writeBuf = writeBuf0;
+            ensureCapacity(DEFAULT_STREAM_BUFFER_SIZE);
         }
 
         virtual ~stream() {
@@ -73,35 +69,16 @@ namespace dsp {
         }
 
         virtual void setBufferSize(int samples) {
-            if (samples <= 0) {
-                flog::error("Cannot set stream {} capacity to {} samples", origin, samples);
-                assert(samples > 0);
-                return;
-            }
-            std::scoped_lock<std::mutex, std::mutex> lck(swapMtx, rdyMtx);
-            bool idle = canSwap && !dataReady && nReaders == 0;
-            if (!idle) {
-                flog::error("Cannot resize active stream {}", origin);
-                assert(idle);
-                return;
-            }
-            T* newWriteBuf = buffer::alloc<T>(samples);
-            T* newReadBuf = buffer::alloc<T>(samples);
-            if (!newWriteBuf || !newReadBuf) {
-                if (newWriteBuf) { buffer::free(newWriteBuf); }
-                if (newReadBuf) { buffer::free(newReadBuf); }
-                throw std::bad_alloc();
-            }
-            buffer::free(writeBuf0);
-            buffer::free(readBuf0);
-            bufferSize = samples;
-            writeBuf0 = newWriteBuf;
-            readBuf0 = newReadBuf;
-            //buffer::register_buffer_dbg(writeBuf0, origin ? origin: "stream without origin, sbs");
-            //buffer::register_buffer_dbg(readBuf0, origin ? origin: "stream without origin, sbs");
-            readBuf = readBuf0;
-            writeBuf = writeBuf0;
+            resizeCapacity(samples, true);
+        }
 
+        void ensureCapacity(int samples) {
+            if (samples <= bufferSize) { return; }
+            resizeCapacity(samples, false);
+        }
+
+        bool isAllocated() const {
+            return writeBuf0 && readBuf0;
         }
 
         int getBufferSize() const {
@@ -226,14 +203,43 @@ namespace dsp {
             bufferSize = 0;
         }
 
-        T* writeBuf;
-        T* readBuf;
-        T* writeBuf0;
-        T* readBuf0;
+        T* writeBuf = NULL;
+        T* readBuf = NULL;
+        T* writeBuf0 = NULL;
+        T* readBuf0 = NULL;
 
     private:
-
-        int initialized = 0;
+        void resizeCapacity(int samples, bool allowShrink) {
+            if (samples <= 0) {
+                flog::error("Cannot set stream {} capacity to {} samples", origin, samples);
+                assert(samples > 0);
+                return;
+            }
+            if (!allowShrink && samples <= bufferSize) { return; }
+            std::scoped_lock<std::mutex, std::mutex> lck(swapMtx, rdyMtx);
+            bool idle = canSwap && !dataReady && nReaders == 0;
+            if (!idle) {
+                flog::error("Cannot resize active stream {}", origin);
+                assert(idle);
+                return;
+            }
+            T* newWriteBuf = buffer::alloc<T>(samples);
+            T* newReadBuf = buffer::alloc<T>(samples);
+            if (!newWriteBuf || !newReadBuf) {
+                if (newWriteBuf) { buffer::free(newWriteBuf); }
+                if (newReadBuf) { buffer::free(newReadBuf); }
+                throw std::bad_alloc();
+            }
+            buffer::free(writeBuf0);
+            buffer::free(readBuf0);
+            bufferSize = samples;
+            writeBuf0 = newWriteBuf;
+            readBuf0 = newReadBuf;
+            //buffer::register_buffer_dbg(writeBuf0, origin ? origin: "stream without origin, sbs");
+            //buffer::register_buffer_dbg(readBuf0, origin ? origin: "stream without origin, sbs");
+            readBuf = readBuf0;
+            writeBuf = writeBuf0;
+        }
 
         std::mutex swapMtx;
         std::condition_variable swapCV;
