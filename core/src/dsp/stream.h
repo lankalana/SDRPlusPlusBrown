@@ -1,4 +1,5 @@
 #pragma once
+#include <assert.h>
 #include <string.h>
 #include <mutex>
 #include <atomic>
@@ -262,13 +263,14 @@ namespace dsp {
         std::mutex lock;
         std::vector<T> data;
         std::atomic_int dataSize = 0;
+        size_t readOffset = 0;
 
         void fillFrom(const T*ptr, int size) {
             std::lock_guard lck(lock);
             int pos = data.size();
             data.resize(size + pos);
             memcpy(&data[pos], ptr, size * sizeof(T));
-            dataSize = data.size();
+            dataSize = (int)(data.size() - readOffset);
         }
 
         int maybeFillFrom(const dsp::stream<T> &str) {
@@ -287,7 +289,7 @@ namespace dsp {
                 data.resize(size + pos);
                 memcpy(&data[pos], str.readBuf, size * sizeof(T));
                 str.flush();
-                dataSize = data.size();
+                dataSize = (int)(data.size() - readOffset);
             }
             return size;
         }
@@ -305,11 +307,18 @@ namespace dsp {
         }
 
         bool consume_(T *dest, int size) {
-            if (dest) {
-                memcpy(dest, &data[0], size * sizeof(T));
+            if (size < 0 || size > dataSize) {
+                return false;
             }
-            data.erase(data.begin(), data.begin() + size);
-            dataSize = data.size();
+            if (dest) {
+                memcpy(dest, data.data() + readOffset, size * sizeof(T));
+            }
+            readOffset += size;
+            if (readOffset >= 1024 && readOffset >= data.size() / 2) {
+                data.erase(data.begin(), data.begin() + readOffset);
+                readOffset = 0;
+            }
+            dataSize = (int)(data.size() - readOffset);
             return true;
         }
 

@@ -152,10 +152,10 @@ TEST_CASE("RingBuffer wraps around the end of its storage", "[dsp][buffer][ring]
     // Push more than RING_BUF_SZ samples through so the read and write cursors
     // wrap past the end of the backing allocation at least once.
     dsp::buffer::RingBuffer<float> ring;
-    ring.init(4096);
-
     const int chunk = 4096;
-    const int chunks = (RING_BUF_SZ / chunk) + 8;
+    ring.init(4096, 2 * chunk);
+
+    const int chunks = (2 * chunk) + 8;
     const long long total = (long long)chunk * chunks;
 
     std::atomic<long long> verified{ 0 };
