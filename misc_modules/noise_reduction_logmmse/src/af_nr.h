@@ -13,6 +13,7 @@
 #include "logmmse.h"
 #include "omlsa_mcra.h"
 #include "utils/stream_tracker.h"
+#include <array>
 
 namespace dsp {
 
@@ -21,46 +22,48 @@ namespace dsp {
 
     template <int V>
     struct SMAStream {
-        std::vector<dsp::complex_t> input;
+        std::array<dsp::complex_t, V> delayLine{};
+        dsp::complex_t runningSum{};
+        size_t delaySize = 0;
+        size_t delayPosition = 0;
         std::vector<dsp::complex_t> output;
-        void write(dsp::complex_t* values, size_t size) {
-            int oldSize = input.size();
-            input.resize(oldSize + size);
-            memmove(input.data() + oldSize, values, size * sizeof(dsp::complex_t));
-            produceSMA();
-        }
+        size_t outputReadOffset = 0;
 
-        void produceSMA() {
-            while (output.size() < V && input.size() > V) {
-                output.emplace_back(input[output.size()]);
-            }
-            if (output.size() < V) {
-                return;
-            }
-            complex_t s = { 0.0, 0.0 };
-            for (int q = output.size() - V; q < output.size(); q++) {
-                s += input[q];
-            }
-            for (int q = output.size(); q < input.size(); q++) {
-                s.re -= input[q - V].re;
-                s.im -= input[q - V].im;
-                s.re += input[q].re;
-                s.im += input[q].im;
-                output.emplace_back(complex_t{ s.re / V, s.im / V });
+        void write(dsp::complex_t* values, size_t size) {
+            output.reserve(output.size() + size);
+            for (size_t q = 0; q < size; q++) {
+                const auto value = values[q];
+                if (delaySize < V) {
+                    delayLine[delaySize++] = value;
+                    runningSum += value;
+                    output.emplace_back(value);
+                }
+                else {
+                    runningSum.re -= delayLine[delayPosition].re;
+                    runningSum.im -= delayLine[delayPosition].im;
+                    delayLine[delayPosition] = value;
+                    runningSum += value;
+                    delayPosition = (delayPosition + 1) % V;
+                    output.emplace_back(complex_t{ runningSum.re / V, runningSum.im / V });
+                }
             }
         }
 
         void read(dsp::complex_t* values, size_t size) {
-            if (output.size() < size) {
+            if (output.size() - outputReadOffset < size) {
                 abort();
             }
-            memmove(values, output.data(), size * sizeof(dsp::complex_t));
-            output.erase(output.begin(), output.begin() + size);
-            input.erase(input.begin(), input.begin() + size);
+            memmove(values, output.data() + outputReadOffset, size * sizeof(dsp::complex_t));
+            outputReadOffset += size;
+            if (outputReadOffset * 2 >= output.size()) {
+                output.erase(output.begin(), output.begin() + outputReadOffset);
+                outputReadOffset = 0;
+            }
         }
 
         size_t available() {
-            return output.size() - V;
+            const size_t pending = output.size() - outputReadOffset;
+            return pending > V ? pending - V : 0;
         }
     };
 
@@ -70,6 +73,9 @@ namespace dsp {
         bool failed = false;
         dsp::omlsa_mcra omlsa_mcra;
         std::vector<stereo_t> buffer;
+        size_t bufferReadOffset = 0;
+        std::vector<short> processIn;
+        std::vector<short> processOut;
         bool allowed = false;
         bool allowed2 = true;       // just convenient for various conditions
         float preAmpGain = 0.0f;
@@ -103,6 +109,9 @@ namespace dsp {
 
 
             omlsa_mcra.setSampleRate(48000);
+            const int size = omlsa_mcra.blockSize();
+            processIn.resize(size);
+            processOut.resize(3 * size);
             sigpath::txState.bindHandler(&txHandler);
             block::start();
         }
@@ -116,38 +125,37 @@ namespace dsp {
         float scaled = 32767.0;      // amplitude shaper
 
         void process(stereo_t *readBuf, int count, stereo_t *writeBuf, int &wrote) {
-            auto mult = pow(10, preAmpGain/20);
+            auto mult = std::pow(10.0f, preAmpGain/20.0f);
             for(int q=0; q<count; q++) {
                 readBuf[q].l *= mult;
-                readBuf[q].l *= mult;
+                readBuf[q].r *= mult;
             }
-            if (!allowed | !allowed2) {
+            if (!allowed || !allowed2) {
                 std::copy(readBuf, readBuf+count, writeBuf);
                 wrote = count;
                 buffer.clear();
+                bufferReadOffset = 0;
                 return;
             } else {
                 buffer.reserve(buffer.size() + count);
                 buffer.insert(buffer.end(), readBuf, readBuf + count);
                 int blockSize = omlsa_mcra.blockSize();
-                if (buffer.size() >= blockSize) {
+                if (buffer.size() - bufferReadOffset >= blockSize) {
                     double max = 0;
-                    std::vector<short> processIn(blockSize, 0);
-                    std::vector<short> processOut(3 * blockSize, 0);
                     if (scaled < 32757) {
                         scaled += 10;
                     }
                     for(int q=0; q<blockSize; q++) {
-                        if (fabs(buffer[q].l) > max) {
-                            max = fabs(buffer[q].l);
+                        if (fabs(buffer[bufferReadOffset + q].l) > max) {
+                            max = fabs(buffer[bufferReadOffset + q].l);
                         }
-                        processIn[q] = buffer[q].l * scaled;
+                        processIn[q] = buffer[bufferReadOffset + q].l * scaled;
                     }
                     bool processedOk = true;
                     if (max > 32767/scaled) {
                         float newScaled = 32767 / max;
                         for (int q = 0; q < blockSize; q++) {
-                            processIn[q] = buffer[q].l * newScaled;
+                            processIn[q] = buffer[bufferReadOffset + q].l * newScaled;
                         }
                         scaled = newScaled;
                     }
@@ -162,12 +170,17 @@ namespace dsp {
                     if (!processedOk) {
                         flog::warn("OMLSA !processedOk");
                         omlsa_mcra.reset();
-                        std::copy(buffer.begin(), buffer.end(), writeBuf);
-                        wrote = buffer.size();
+                        std::copy(buffer.begin() + bufferReadOffset, buffer.end(), writeBuf);
+                        wrote = buffer.size() - bufferReadOffset;
                         buffer.clear();
+                        bufferReadOffset = 0;
                     }
                     else {
-                        buffer.erase(buffer.begin(), buffer.begin() + blockSize);
+                        bufferReadOffset += blockSize;
+                        if (bufferReadOffset * 2 >= buffer.size()) {
+                            buffer.erase(buffer.begin(), buffer.begin() + bufferReadOffset);
+                            bufferReadOffset = 0;
+                        }
                         for(int q=0; q<wrote; q++) {
                             writeBuf[q].r = writeBuf[q].l = processOut[q] / scaled;
                         }
@@ -314,7 +327,7 @@ namespace dsp {
             int size1 = worker1c->size();
             if (worker1c->size() >= 4 * params.Slen && params.noise_mu2) {
                 ALLOC_AND_CHECK(worker1c, size1, "afnr point -5")
-                auto rv = LogMMSE::logmmse_all(worker1c, processingBandwidthHz, 0.15f, &params);
+                auto rv = LogMMSE::logmmse_all(worker1c, size1, processingBandwidthHz, 0.15f, &params);
                 int limit = rv->size();
                 auto dta = rv->data();
                 ALLOC_AND_CHECK(worker1c, size1, "afnr point -3")
@@ -364,7 +377,6 @@ namespace dsp {
             int wrote;
             process(_in->readBuf, count, out.writeBuf, wrote);
             _in->flush();
-            flog::info("afnr.mmse: input = {}, output = {}", count, wrote);
             if (!out.swap(wrote)) {
                 flog::info("afnr.mmse: swap failed");
                 return 0;

@@ -4,10 +4,17 @@
 #include<iostream>
 #include "G_calculate.h"
 #include <utils/flog.h>
+#include <mutex>
 using namespace std;
 
-template<class T>
-T* G_calculate::file_read(const char* Filename) {
+std::shared_ptr<const std::vector<int>> G_calculate::loadGainTable(const char* Filename) {
+	constexpr size_t gainTableSize = 700000;
+	static std::weak_ptr<const std::vector<int>> cached;
+	static std::mutex cacheMutex;
+	std::lock_guard<std::mutex> lock(cacheMutex);
+	if (auto table = cached.lock()) {
+		return table;
+	}
 	FILE* ff;
 	fopen_s(&ff,Filename, "rb");
 	if (NULL == ff) {
@@ -15,12 +22,22 @@ T* G_calculate::file_read(const char* Filename) {
         return nullptr;
 	}
 	fseek(ff, 0, 2);
-	int DataLength = ftell(ff);
+	long DataLength = ftell(ff);
 	fseek(ff, 0, 0);
-	T* T_int_value = new T[DataLength / sizeof(T)];
-	int filecount=fread(T_int_value, sizeof(T), DataLength / sizeof(T), ff);
+	if (DataLength < 0 || DataLength % sizeof(int) != 0 || static_cast<size_t>(DataLength / sizeof(int)) != gainTableSize) {
+		fclose(ff);
+		flog::error("OMLSA gain table has an invalid size: {} bytes", std::to_string(DataLength));
+		return nullptr;
+	}
+	auto values = std::make_shared<std::vector<int>>(gainTableSize);
+	size_t filecount=fread(values->data(), sizeof(int), gainTableSize, ff);
 	fclose(ff);
-	return T_int_value;
+	if (filecount != gainTableSize) {
+		flog::error("OMLSA gain table could not be read completely");
+		return nullptr;
+	}
+	cached = values;
+	return values;
 }
 
 int G_calculate::expintpow_solution(int v_subscript) {
@@ -65,6 +82,6 @@ int G_calculate::Gvalue_solution(int Gh1_subscript,int pp_subscript) {
 //        flog::info("OMLSA: New bit: {}", index);
 //        bits[index] = true;
 //    }
-	g = m_G_value[index];
+	g = (*m_G_value)[index];
 	return g;
 }

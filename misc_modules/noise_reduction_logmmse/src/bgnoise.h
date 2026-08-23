@@ -9,7 +9,7 @@
 #include <limits>
 #include <vector>
 
-class BackgroundNoiseCaltulator {
+class BackgroundNoiseCalculator {
 
     double lastNoise = ERASED_SAMPLE;
     static constexpr auto NBUCKETS = 1000;
@@ -22,16 +22,20 @@ public:
 
     static constexpr auto ERASED_SAMPLE = 1e9f;
 
+    bool updateDue() const {
+        return frameCount == 0 || frameCount % SKIP_FRAMES == 0;
+    }
+
+    void skipFrame() {
+        frameCount++;
+    }
+
     void reset() {
         lastNoise = ERASED_SAMPLE;
         frameCount = 0;
     }
 
     float addFrame(const std::vector<float> &fftFrame) {
-        if (frameCount > 0 && frameCount % SKIP_FRAMES != 0) {
-            frameCount++;
-            return lastNoise;
-        }
         frameCount++;
         float minn = ERASED_SAMPLE;
         float maxx = -ERASED_SAMPLE;

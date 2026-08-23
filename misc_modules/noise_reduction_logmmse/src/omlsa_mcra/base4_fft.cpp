@@ -6,57 +6,29 @@ MY_B4_FFT::MY_B4_FFT() {
 }
 
 short MY_B4_FFT::initial(int N) {
-	m_fwlen = N;  //ÕæÊµÖ¡³¤µÄ³õÊ¼»¯
+	m_fwlen = N;  //ï¿½ï¿½ÊµÖ¡ï¿½ï¿½ï¿½Ä³ï¿½Ê¼ï¿½ï¿½
 	m_finc = m_fwlen>>1;
-	m_M4 = log(m_fwlen) / log(4);
-	int N_pow = pow(4, m_M4);
-	if (N_pow - m_fwlen!=0  || m_fwlen<=0|| m_fwlen> 16384) {  //2^14 =16384   2^12=4096
+	m_M4 = 0;
+	int N_pow = 1;
+	while (N_pow < m_fwlen && N_pow <= 16384 / 4) {
+		N_pow <<= 2;
+		m_M4++;
+	}
+	if (N_pow != m_fwlen || m_fwlen <= 0 || m_fwlen > 16384) {  //2^14 =16384   2^12=4096
 		return -1;
 	}  
-	m_Buffer_cos = new int[m_fwlen], m_Buffer_sin = new int[m_fwlen];
-	m_sort4_count = new int[m_fwlen];
-	m_sort_temp_r = new int[m_fwlen];
-	m_sort_temp_i = new int[m_fwlen];
-	if (!m_Buffer_cos) {
-		return -2;
-	}
-	if (!m_Buffer_sin) {
-		return -3;
-	}
-	if (!m_sort4_count) {
-		return -4;
-	}
-	if (!m_sort_temp_i) {
-		return -5;
-	}
-	if (!m_sort_temp_r) {
-		return -6;
-	}
-	m_e1_position = new int[m_fwlen];
-	if (!m_e1_position) {
-		return -7;
-	}
-	m_o1_position = new int[m_fwlen];
-	if (!m_o1_position) {
-		return -8;
-	}
-	m_e2_position = new int[m_fwlen];
-	if (!m_e2_position) {
-		return -9;
-	}
-	m_o2_position = new int[m_fwlen];
-	if (!m_o2_position) {
-		return -10;
-	}
-	m_yr = new int[m_fwlen];
-	if (!m_yr) {
-		return -11;
-	}
-	m_yi = new int[m_fwlen];
-	if (!m_yi) {
-		return -12;
-	}
-	m_ifft_move_bit = m_M4<<1;  // µÈ¼ÛÓÚ  /m_fwlen
+	m_Buffer_cos.resize(m_fwlen);
+	m_Buffer_sin.resize(m_fwlen);
+	m_sort4_count.resize(m_fwlen);
+	m_sort_temp_r.resize(m_fwlen);
+	m_sort_temp_i.resize(m_fwlen);
+	m_e1_position.resize(m_fwlen);
+	m_o1_position.resize(m_fwlen);
+	m_e2_position.resize(m_fwlen);
+	m_o2_position.resize(m_fwlen);
+	m_yr.resize(m_fwlen);
+	m_yi.resize(m_fwlen);
+	m_ifft_move_bit = m_M4<<1;  // ï¿½È¼ï¿½ï¿½ï¿½  /m_fwlen
 
 	for (int i = 0; i < m_fwlen; i++) {  
 		m_Buffer_cos[i] = (coc.cordic_cos((int)(-2 * Pi*i * 32768)>>m_ifft_move_bit));
@@ -68,15 +40,15 @@ short MY_B4_FFT::initial(int N) {
 
 void MY_B4_FFT::Base4_Sort(){
 	int  bit_rest, space, add;
-	memset(m_sort4_count, 0, sizeof(int)*m_fwlen);
+	std::fill(m_sort4_count.begin(), m_sort4_count.end(), 0);
 	for (int l = 0; l < m_M4; l++)
 	{
-		space = pow(4, l);
-		add = pow(4, m_M4 - l - 1);
+		space = 1 << (2 * l);
+		add = 1 << (2 * (m_M4 - l - 1));
 		for (int i = 0; i < m_fwlen; i++){
 			bit_rest = (i / space) % 4;
 			if (bit_rest != 0)			   
-				m_sort4_count[i] += add * bit_rest;// Î»ÓàÏî£¬ÓÃÓÚ³ËÉÏÄæÐòºóµÄ¶ÔÓ¦Î»
+				m_sort4_count[i] += add * bit_rest;// Î»ï¿½ï¿½ï¿½î£¬ï¿½ï¿½ï¿½Ú³ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¶ï¿½Ó¦Î»
 		}
 	}
 }
@@ -89,7 +61,7 @@ short MY_B4_FFT::base4_fft(Complex_num *x, int sign) {
 	if (!abs(sign)) {
 		return -14;//
 	}
-	//¶ÔÓÚÊäÈëÊý¾ÝÐòÁÐ½øÐÐµ¹Î»Ðò±ä»»
+	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ð½ï¿½ï¿½Ðµï¿½Î»ï¿½ï¿½ä»»
 	int ctemp;
 	for (int i = 0; i < m_fwlen; i++){
 		m_sort_temp_r[i] = x[i].real;
@@ -103,16 +75,16 @@ short MY_B4_FFT::base4_fft(Complex_num *x, int sign) {
 
 	int BlockLen, BlockNum, BlockLen2;  int wi, F1, F2; int F3, F0; Complex_num X0, X1, X2, X3;
 	for (i = 1; i <= m_M4; i++) {
-		BlockNum = pow(4, m_M4 - i);
-		BlockLen = pow(4, i);		// ×é¼ä¼ä¸ô+×éÄÚÊý¾Ý¸öÊý  interval_2
-		BlockLen2 = BlockLen >> 2;	// ×éÄÚµûÐÎ¸öÊý  interval_1
-		for (j = 0; j < BlockNum; j++) {	  // ¶ÔÃ¿Ò»¸ö×éµÄ»ù4µûÐÎÑ­»·¼ÆËã
-			for (k = 0; k < BlockLen2; k++) { // Îª×éÄÚµÄµÚk¸öµûÐÎ
-				F0 = k + j * BlockLen;		  // Ã¿Ò»µûÐÎµÄµÚÒ»¸öÊý¾Ý
+		BlockNum = 1 << (2 * (m_M4 - i));
+		BlockLen = 1 << (2 * i);		// ï¿½ï¿½ï¿½ï¿½ï¿½+ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ý¸ï¿½ï¿½ï¿½  interval_2
+		BlockLen2 = BlockLen >> 2;	// ï¿½ï¿½ï¿½Úµï¿½ï¿½Î¸ï¿½ï¿½ï¿½  interval_1
+		for (j = 0; j < BlockNum; j++) {	  // ï¿½ï¿½Ã¿Ò»ï¿½ï¿½ï¿½ï¿½Ä»ï¿½4ï¿½ï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+			for (k = 0; k < BlockLen2; k++) { // Îªï¿½ï¿½ï¿½ÚµÄµï¿½kï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+				F0 = k + j * BlockLen;		  // Ã¿Ò»ï¿½ï¿½ï¿½ÎµÄµï¿½Ò»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 				F1 = F0 + BlockLen2;
 				F2 = F1 + BlockLen2;
 				F3 = F2 + BlockLen2;
-				wi = BlockNum * k;			  // Ðý×ªÒò×ÓµÄÖ¸Êý
+				wi = BlockNum * k;			  // ï¿½ï¿½×ªï¿½ï¿½ï¿½Óµï¿½Ö¸ï¿½ï¿½
 				wi2 = wi << 1;
 				wi3 = (wi << 1) + wi;
 
@@ -151,7 +123,7 @@ short MY_B4_FFT::base4_fft(Complex_num *x, int sign) {
 		}
 	}
 	else if (sign == 1) {  
-		//¶ÔÓÚÁ½ÊµÐòÁÐ¸µÀïÒ¶±ä»»µÄ»¹Ô­  
+		//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Êµï¿½ï¿½ï¿½Ð¸ï¿½ï¿½ï¿½Ò¶ï¿½ä»»ï¿½Ä»ï¿½Ô­  
 		for (int i = 0; i < m_fwlen; i++) {
 			if (i == 0) {
 				m_yr[i] = x[i].real; 
@@ -176,70 +148,23 @@ short MY_B4_FFT::base4_fft(Complex_num *x, int sign) {
 	return 0;
 }
 
-MY_B4_FFT::~MY_B4_FFT() {
-	if (!m_Buffer_cos) {
-		delete[] m_Buffer_cos;
-		m_Buffer_cos = NULL;
-	}
-	if (!m_Buffer_sin) {
-		delete[] m_Buffer_sin;
-		m_Buffer_sin = NULL;
-	}
-	if (!m_sort4_count) {
-		delete[] m_sort4_count;
-		m_sort4_count = NULL;
-	}
-	if (!m_sort_temp_r) {
-		delete[] m_sort_temp_r;
-		m_sort_temp_r = NULL;
-	}
-	if (!m_sort_temp_i) {
-		delete[] m_sort_temp_i;
-		m_sort_temp_i = NULL;
-	}
-	if (!m_e1_position) {
-		delete[] m_e1_position;
-		m_e1_position = NULL;
-	}
-	if (!m_o1_position) {
-		delete[] m_o1_position;
-		m_o1_position = NULL;
-	}
-	if (!m_yr) {
-		delete[] m_yr;
-		m_yr = NULL;
-	}
-	if (!m_e2_position) {
-		delete[] m_e2_position;
-		m_e2_position = NULL;
-	}
-	if (!m_o2_position) {
-		delete[] m_o2_position;
-		m_o2_position = NULL;
-	}
-	if (!m_yi) {
-		delete[] m_yi;
-		m_yi = NULL;
-	}
-}
-
 void MY_B4_FFT::fftfix(Complex_num *x, int sign) {
 
 	//--------------------------------------------------------------------------
-	//°´Ê±¼ä³éÈ¡·¨µÄfft±ä»»£¬ÊäÈë·´Ðò£¬Êä³öÕýÐò
+	//ï¿½ï¿½Ê±ï¿½ï¿½ï¿½È¡ï¿½ï¿½ï¿½ï¿½fftï¿½ä»»ï¿½ï¿½ï¿½ï¿½ï¿½ë·´ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 
-	int i, j, k, u = 0, l = 0, wi = 0, n1, tr, ti, N = m_fwlen; //jµÚ¶þ²ãÑ­»·£¨×Ó¿éÖÐµÄÃ¿¸öµûÐÎµÄÑ­»·¼ÆÊý£©
-									 //kµÚÒ»²ãÑ­»·£¨ºáÏòfft±ä»»½×Êý£¬Îªlog2£¨N£©NÎª×Ü²ÉÑùµãÊý
-									 //u µûÐÎÉÏ±êx[upper],l µûÐÎÏÂ±êx[lower]£¬wiÐý×ªÒò×ÓÏÂ±êwn[wi]
+	int i, j, k, u = 0, l = 0, wi = 0, n1, tr, ti, N = m_fwlen; //jï¿½Ú¶ï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½Ó¿ï¿½ï¿½Ðµï¿½Ã¿ï¿½ï¿½ï¿½ï¿½ï¿½Îµï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+									 //kï¿½ï¿½Ò»ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½fftï¿½ä»»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Îªlog2ï¿½ï¿½Nï¿½ï¿½NÎªï¿½Ü²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+									 //u ï¿½ï¿½ï¿½ï¿½ï¿½Ï±ï¿½x[upper],l ï¿½ï¿½ï¿½ï¿½ï¿½Â±ï¿½x[lower]ï¿½ï¿½wiï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½ï¿½Â±ï¿½wn[wi]
 	int SubBlockNum, SubBlockStep = 1;
-	//SubBlockNumµ±Ç°k²ã×Ó¿éÊýÁ¿£¬SubBlockStepµ±Ç°k²ã²»Í¬×Ó¿éµÄÏàÍ¬Î»ÖÃÔªËØ¼ä¼ä¸ô
+	//SubBlockNumï¿½ï¿½Ç°kï¿½ï¿½ï¿½Ó¿ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½SubBlockStepï¿½ï¿½Ç°kï¿½ã²»Í¬ï¿½Ó¿ï¿½ï¿½ï¿½ï¿½Í¬Î»ï¿½ï¿½Ôªï¿½Ø¼ï¿½ï¿½ï¿½
 
 	int tempr, tempi;
 	N = N << 1;
 
 	n1 = m_fwlen - 1;
 	for (j = 0, i = 0; i < n1; i++)
-	{              // Î»·´×ªÔËËã
+	{              // Î»ï¿½ï¿½×ªï¿½ï¿½ï¿½ï¿½
 		if (i < j)
 		{
 			tr = x[i].real;
@@ -260,28 +185,28 @@ void MY_B4_FFT::fftfix(Complex_num *x, int sign) {
 		j = j + k;
 	}
 
-	for (k = N; k > 1; k = (k >> 1)) {				//µÚÒ»¸öÑ­»·£¬´ú±ílog2(k)½×µÄ±ä»»
+	for (k = N; k > 1; k = (k >> 1)) {				//ï¿½ï¿½Ò»ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½log2(k)ï¿½×µÄ±ä»»
 
-		SubBlockNum = k >> 1;				//×Ó¿é¸öÊýÎªËù×öµãÊýµÄÒ»°ë
-		SubBlockStep = SubBlockStep << 1;	//×Ó¿é¼äÍ¬µÈµØÎ»µÄÔªËØ¼ä¸ôÒÔ2Îª±¶ÊýµÝÔö
-		wi = 0;							//Ðý×ªÒò×Ó³õÊ¼»¯
-		for (j = 0; j < SubBlockStep >> 1; j++) {	//µÚ¶þ²ãÑ­»·£¬¸üÐÂjÖµ£¬j±íÊ¾¸÷¸ö×Ó¿éµÄµÚj¸öµûÐÎ¡£
-			//ÒòÎªÃ¿¸ö×Ó¿éµÄÍ¬µØÎ»µûÐÎ¾ßÓÐÏàÍ¬µÄwn£¬ËùÒÔÓÃµÚ¶þ²ãÑ­»·¿ØÖÆwn
-			for (u = j; u < N; u += SubBlockStep) {	//µÚÈý²ãÑ­»·£¬Ñ­»·ÓÚ¸÷¸ö×Ó¿é¼äµÄµÚj¸öµûÐÎ£¬¼ÆËãËùÓÐµûÐÎ¡£
-				//Ö±µ½ÏÂ±êuÔ½½ç¡£(u>N)		
-				l = u + (SubBlockStep >> 1);//ÏÂ±êl¼ÆËã
+		SubBlockNum = k >> 1;				//ï¿½Ó¿ï¿½ï¿½ï¿½ï¿½Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½
+		SubBlockStep = SubBlockStep << 1;	//ï¿½Ó¿ï¿½ï¿½Í¬ï¿½Èµï¿½Î»ï¿½ï¿½Ôªï¿½Ø¼ï¿½ï¿½ï¿½ï¿½2Îªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
+		wi = 0;							//ï¿½ï¿½×ªï¿½ï¿½ï¿½Ó³ï¿½Ê¼ï¿½ï¿½
+		for (j = 0; j < SubBlockStep >> 1; j++) {	//ï¿½Ú¶ï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½jÖµï¿½ï¿½jï¿½ï¿½Ê¾ï¿½ï¿½ï¿½ï¿½ï¿½Ó¿ï¿½Äµï¿½jï¿½ï¿½ï¿½ï¿½ï¿½Î¡ï¿½
+			//ï¿½ï¿½ÎªÃ¿ï¿½ï¿½ï¿½Ó¿ï¿½ï¿½Í¬ï¿½ï¿½Î»ï¿½ï¿½ï¿½Î¾ï¿½ï¿½ï¿½ï¿½ï¿½Í¬ï¿½ï¿½wnï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ÃµÚ¶ï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½wn
+			for (u = j; u < N; u += SubBlockStep) {	//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½Ú¸ï¿½ï¿½ï¿½ï¿½Ó¿ï¿½ï¿½Äµï¿½jï¿½ï¿½ï¿½ï¿½ï¿½Î£ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ðµï¿½ï¿½Î¡ï¿½
+				//Ö±ï¿½ï¿½ï¿½Â±ï¿½uÔ½ï¿½ç¡£(u>N)		
+				l = u + (SubBlockStep >> 1);//ï¿½Â±ï¿½lï¿½ï¿½ï¿½ï¿½
 
-				//Í¬Ê±¼ÆËãÁ½ÊµÐòÁÐµÄFFT  cos-isin
+				//Í¬Ê±ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Êµï¿½ï¿½ï¿½Ðµï¿½FFT  cos-isin
 				tempr = (((__int64)x[l].real*m_Buffer_cos[wi]) >> 30) - (((__int64)x[l].imag*m_Buffer_sin[wi]) >> 30);
-				//µûÐÎx[u]=x[u]+x[l]*Wn,x[l]=x[u]-x[l]*WnµÄ¸´Êý¼ÆËã
+				//ï¿½ï¿½ï¿½ï¿½x[u]=x[u]+x[l]*Wn,x[l]=x[u]-x[l]*Wnï¿½Ä¸ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 				tempi = (((__int64)x[l].imag*m_Buffer_cos[wi]) >> 30) + (((__int64)x[l].real*m_Buffer_sin[wi]) >> 30);
 
-				x[l].real = x[u].real - tempr;  //µü´ú£¬Ã¿´Î¸üÐÂÒ»´ÎÐý×ªÒò×Ó´øÀ´µÄ±ä»¯
+				x[l].real = x[u].real - tempr;  //ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ã¿ï¿½Î¸ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½ï¿½×ªï¿½ï¿½ï¿½Ó´ï¿½ï¿½ï¿½ï¿½Ä±ä»¯
 				x[l].imag = x[u].imag - tempi;
 				x[u].real = x[u].real + tempr;
 				x[u].imag = x[u].imag + tempi;
 			}
-			wi += SubBlockNum;	//µÚ¶þ²ãÑ­»·¸üÐÂwiÖµ
+			wi += SubBlockNum;	//ï¿½Ú¶ï¿½ï¿½ï¿½Ñ­ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½wiÖµ
 		}
 	}
 

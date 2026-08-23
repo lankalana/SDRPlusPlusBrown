@@ -16,14 +16,8 @@ short LSA_denoise::Initialize(short wlen)
 	m_lwlen = wlen;
 	m_linc13 = m_lwlen/3;
 	m_linc23 = m_linc13<<1;//��׼֡��
-	m_winData = new Complex_num[m_lwlen<<1];
-	if (!m_winData) {
-		return -15;
-	}
-	m_ns_hn = new int[m_lwlen];
-	if (!m_ns_hn) {
-		return -16;
-	}
+	m_winData.resize(m_lwlen<<1);
+	m_ns_hn.resize(m_lwlen);
 	m_lerr_code=Gc.Initialize(m_linc23);//��������wlen���ȴ���
 	if (m_lerr_code < 0) return m_lerr_code;
 	m_lerr_code=MyN_fft.initial(m_linc23);  // 1--14
@@ -46,17 +40,17 @@ short  LSA_denoise::Denoise_process( short* data_in, short* data_out , int block
 		m_winData[i].real = ((__int64)data_in[i] *m_ns_hn[i]) >> 9; //�Ŵ�2^6 
 		m_winData[i].imag = ((__int64)data_in[i + m_linc13] * m_ns_hn[i]) >> 9; //�Ŵ�2^6 
 	} 
- 	m_lerr_code=MyN_fft.base4_fft(m_winData, 1);  //����֡��ȫ�ֿ�
+ 	m_lerr_code=MyN_fft.base4_fft(m_winData.data(), 1);  //����֡��ȫ�ֿ�
 	if (m_lerr_code < 0) return m_lerr_code;
 
-	m_lerr_code=Gc.G_calculate_process(m_winData, blockInd);  //19--49
+	m_lerr_code=Gc.G_calculate_process(m_winData.data(), blockInd);  //19--49
     if (m_lerr_code <0) return m_lerr_code;
-	m_lerr_code=Gc.G_calculate_process(m_winData + m_linc23, blockInd+1);
+	m_lerr_code=Gc.G_calculate_process(m_winData.data() + m_linc23, blockInd+1);
 	if (m_lerr_code <0) return m_lerr_code;
 
-	m_lerr_code=MyN_fft.base4_fft(m_winData, -1);
+	m_lerr_code=MyN_fft.base4_fft(m_winData.data(), -1);
     if (m_lerr_code <0) return m_lerr_code;
-	m_lerr_code = MyN_fft.base4_fft(m_winData + m_linc23, -1);
+	m_lerr_code = MyN_fft.base4_fft(m_winData.data() + m_linc23, -1);
 	if (m_lerr_code < 0) return m_lerr_code;
 
 	for (int i = 0; i < m_linc23; i++) {
@@ -66,20 +60,6 @@ short  LSA_denoise::Denoise_process( short* data_in, short* data_out , int block
 
 	return 0;
 }
-LSA_denoise::~LSA_denoise()
-{
-	if (!m_ns_hn) {
-		delete[] m_ns_hn;
-		m_ns_hn = NULL;
-	}
-	if (!m_winData) {
-		delete[] m_winData;
-		m_winData = NULL;
-	}
-
-	//fout.close();
-}
-
 //abc[i] = m_G[i] / 1.6384;;
 //bcd[i] = m_Gh1[i] / 1.6384;
 //cde[i] = m_pr_SNR[i] / 1.6384;
