@@ -44,10 +44,9 @@ namespace dsp::buffer {
         void setKeep(int keep) {
             assert(base_type::_block_init);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            base_type::tempStop();
-            _keep = keep;
+            TempStopGuard stopGuard(*this);
             ringBuf.setMaxLatency(keep * 2);
-            base_type::tempStart();
+            _keep = keep;
         }
 
         void setSkip(int skip) {

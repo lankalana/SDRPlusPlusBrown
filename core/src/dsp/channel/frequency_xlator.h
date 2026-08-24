@@ -35,9 +35,7 @@ namespace dsp::channel {
         void reset() {
             assert(base_type::_block_init);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            tempStop();
             phase = lv_cmake(1.0f, 0.0f);
-            tempStart();
         }
 
         inline int process(int count, const complex_t* in, complex_t* out) {
