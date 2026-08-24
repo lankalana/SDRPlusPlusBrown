@@ -5,6 +5,7 @@
 #include "../taps/low_pass.h"
 #include "../taps/high_pass.h"
 #include "../taps/band_pass.h"
+#include "../taps/from_array.h"
 #include "../convert/mono_to_stereo.h"
 
 namespace dsp::demod {

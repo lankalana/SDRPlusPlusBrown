@@ -1,8 +1,10 @@
 #pragma once
+#include <cstdio>
+#include <cstring>
 #include <string>
 
 namespace utils {
-    std::string formatFreq(double freq) {
+    inline std::string formatFreq(double freq) {
         char str[128];
         if (freq >= 1000000.0) {
             snprintf(str, sizeof str, "%.06lf", freq / 1000000.0);

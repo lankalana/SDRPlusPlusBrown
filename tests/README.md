@@ -37,15 +37,31 @@ the test rather than the whole binary.
 
 ```
 tests/
-├── support/     test harness: signal generators, measurements, stream plumbing
-├── core/        top level control plane (config, CLI args, module_com, ...)
-├── dsp/         the streaming DSP framework and its blocks
-├── utils/       shared utilities
-└── tools/       diagnostics that are not tests (see "Known issues")
+├── support/      test harness: signal generators, measurements, stream plumbing
+├── core/         top level control plane (config, CLI args, module_com, ...)
+├── dsp/          the streaming DSP framework and its blocks
+├── signal_path/  IQFrontEnd and friends
+├── utils/        shared utilities
+├── perf/         throughput benchmarks, hidden by default
+└── tools/        diagnostics that are not tests (see "Known issues")
 ```
 
 Sources are globbed, so a new `tests/<area>/test_foo.cpp` is picked up without
 editing the build.
+
+## Benchmarks
+
+`tests/perf/` holds Catch2 benchmarks for the hot kernels: the frequency
+xlator, the FIR and decimating FIR, the resamplers, the full `RxVFO` chain, the
+DC blocker, the FM demodulator, the AGC and the raw stream swap. Every case is
+tagged `[.]`, so a normal run and `ctest` skip them. Run them on purpose:
+
+```sh
+./out/build/windows-vs2022/RelWithDebInfo/sdrpp_core_tests.exe "[benchmark]"
+```
+
+Nothing there asserts a timing, so they can't fail on a loaded machine. Capture
+the output before a refactor and compare after — that is the whole point.
 
 ## Writing tests
 
@@ -86,17 +102,40 @@ Left alone this hangs both CTest and Catch2's build-time test discovery, so
 results have been written. That workaround should be removed when the teardown
 is fixed — it is one of the more valuable things the refactor could clean up.
 
+## Memory footprint
+
+Some blocks size their work buffers off `STREAM_BUFFER_SIZE` (1M samples)
+regardless of how much data actually flows, which makes a single instance
+expensive:
+
+| block | allocation |
+| --- | --- |
+| `dsp::buffer::SampleFrameBuffer<complex_t>` (one per `IQFrontEnd`) | 256 MB |
+| `dsp::clock_recovery::MM<complex_t>` / `FD` | 8 MB / 4 MB |
+| `dsp::noise_reduction::FMIF` | ~8.5 MB |
+| `dsp::multirate::PolyphaseResampler<T>` | 8.5 MB (complex) |
+| `wav::Writer` (int16, stereo) | 4 MB |
+
+Tests that construct these keep one instance alive at a time and say so in a
+comment. Making these proportional to the configured latency is one of the
+clearer wins available to the refactor.
+
 ## Not covered yet
 
-The suite covers the DSP framework and the parts of `utils` that are pure
-functions. Still open, roughly in order of value:
+Still open, roughly in order of value:
 
 * `config.cpp` (load/save/autosave round trips), `command_args.cpp`,
   `module_com.cpp`, `server_protocol.h` packing.
-* `utils/arrays.cpp` (the FFT abstraction and array ops), `riff`/`wav` writers,
-  `cty`, `kmeans`, `pbkdf2_sha256`, `optionlist`, `event`/`new_event`.
-* `signal_path/` — `IQFrontEnd`, `VFOManager`, `SinkManager`, `SourceManager`.
-  These reach into GUI globals today; testing them is likely to require (and
-  motivate) breaking that dependency, which is refactor work in itself.
+* `VFOManager`, `SinkManager` and `SourceManager`. These include
+  `gui/widgets/waterfall.h` and therefore ImGui, so they cannot be linked into
+  a headless test binary at all today. `IQFrontEnd` is covered except for
+  `setFFTSize()` and `setDecimation()`, which reach into `gui::waterfall` and
+  `core::setInputSampleRate` respectively — see the header comment in
+  `tests/signal_path/test_iq_frontend.cpp`. Breaking those dependencies is
+  refactor work that would immediately pay for itself in test coverage.
+* `utils/mpeg`, `utils/networking` (the older wrapper), `utils/stream_tracker`
+  and `utils/flog` — all either thin wrappers over third-party code or
+  logging-only.
+* `dsp/compression/experimental_fft_compressor` and its decompressor.
 * `gui/` is only reachable through the HTTP debug server; the Python end-to-end
   tests under `e2e/` cover that path.

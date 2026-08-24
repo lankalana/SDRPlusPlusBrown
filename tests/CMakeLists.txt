@@ -13,7 +13,9 @@ file(GLOB_RECURSE SDRPP_TEST_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/support/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/core/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/dsp/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/signal_path/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/utils/*.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/perf/*.cpp"
 )
 
 add_executable(sdrpp_core_tests ${SDRPP_TEST_SOURCES})
@@ -37,6 +39,9 @@ target_compile_definitions(sdrpp_core_tests PRIVATE
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tmp")
 
 if (MSVC)
+    # windows.h (pulled in transitively by core headers) defines min/max macros
+    # that break std::min/std::max and std::numeric_limits<>::max().
+    target_compile_definitions(sdrpp_core_tests PRIVATE NOMINMAX)
     set_target_properties(sdrpp_core_tests PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>"
     )

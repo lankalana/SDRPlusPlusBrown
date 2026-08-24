@@ -881,6 +881,10 @@ namespace dsp {
             return retval;
         }
 
+        void div_(const FloatArray& v, float e) {
+            volk_32f_s32f_multiply_32f(v->data(), v->data(), 1.0 / e, v->size());
+        }
+
         FloatArray npminimum(const FloatArray& v, const FloatArray& w) {
             auto retval = std::make_shared<std::vector<float>>();
             retval->reserve(v->size());
