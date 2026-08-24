@@ -49,6 +49,13 @@
   ],
   "buildPresets": [
     {
+      "name": "windows-debug",
+      "displayName": "Windows Debug",
+      "configurePreset": "windows-vs2022",
+      "configuration": "Debug",
+      "jobs": 0
+    },
+    {
       "name": "windows-relwithdebinfo",
       "displayName": "Windows RelWithDebInfo",
       "configurePreset": "windows-vs2022",
