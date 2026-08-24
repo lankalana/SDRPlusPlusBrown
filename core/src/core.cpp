@@ -22,8 +22,6 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "../../tests/test_utils.h"
-
 #ifdef __APPLE__
 #include <sys/wait.h>
 #include <signal.h>
@@ -61,10 +59,6 @@ void setproctitle(const char* fmt, ...) {
 #include <stb_image_resize.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
-
-#ifdef BUILD_TESTS
-#include "../../tests/test_runner.h"
-#endif
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -489,18 +483,6 @@ int sdrpp_main(int argc, char* argv[]) {
             flog::info("  - {}", plugin);
         }
     }
-    // Handle test mode if requested
-    if (core::args["test"].type == CLI_ARG_TYPE_STRING && !core::args["test"].s().empty()) {
-        std::string testName = core::args["test"].s();
-        flog::info("Running in test mode: {}", testName);
-
-        // Run the specified test
-        sdrpp::test::TestRegistry::runTest(testName);
-    }
-    else {
-        sdrpp::test::renderLoopHook.verifyResultsFrames = -1;
-    }
-
 #endif
 
     bool serverMode = (bool)core::args["server"];
@@ -930,21 +912,7 @@ int sdrpp_main(int argc, char* argv[]) {
     core::configManager.save();
 #endif
 
-#ifdef BUILD_TESTS
-    if (core::args["test"].type == CLI_ARG_TYPE_STRING && !core::args["test"].s().empty()) {
-        std::string testName = core::args["test"].s();
-        if (sdrpp::test::failed) {
-            flog::error("TEST FAILED");
-            return 1;
-        }
-        else {
-            flog::info("TEST OK");
-            return 0;
-        }
-    }
-#else
     flog::info("Exiting successfully");
-#endif
 
 
     return 0;

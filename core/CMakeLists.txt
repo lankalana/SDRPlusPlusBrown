@@ -20,12 +20,10 @@ list(FILTER SRC EXCLUDE REGEX "sdrpp_ft8_mshv_main.cpp" )
 add_definitions(-DSDRPP_IS_CORE)
 add_definitions(-DFLOG_ANDROID_TAG="SDR++")
 
-# Add BUILD_TESTS definition if tests are enabled
+# The test suite lives in its own target (see tests/CMakeLists.txt) and links
+# against sdrpp_core, so no test source is compiled into the core itself.
 if(BUILD_TESTS)
     add_definitions(-DBUILD_TESTS)
-    file(GLOB_RECURSE TEST_SRC "../tests/*.cpp")
-    list(FILTER TEST_SRC EXCLUDE REGEX "dsp_bounded_tests.cpp")
-    set(SRC ${SRC} ${TEST_SRC})
 endif()
 
 if(MSVC)
@@ -44,10 +42,6 @@ if (OPT_BACKEND_ANDROID)
     file(GLOB_RECURSE BACKEND_SRC "backends/android/*.cpp" "backends/android/*.c")
     set(BACKEND_SRC ${BACKEND_SRC} ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
 endif (OPT_BACKEND_ANDROID)
-
-if(BUILD_TESTS)
-    set(SRC ${SRC} ../tests/test_utils.cpp)
-endif ()
 
 # Add code to dyn lib
 add_library(sdrpp_core SHARED ${SRC} ${BACKEND_SRC})

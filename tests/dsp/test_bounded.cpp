@@ -1,3 +1,4 @@
+#include <catch2/catch_test_macros.hpp>
 #include <dsp/multirate/polyphase_resampler.h>
 #include <dsp/multirate/power_decimator.h>
 #include <dsp/multirate/rational_resampler.h>
@@ -75,13 +76,6 @@ namespace {
         int offset = 0;
     };
 
-    void require(bool condition, const char* message) {
-        if (!condition) {
-            std::cerr << message << '\n';
-            std::exit(1);
-        }
-    }
-
     dsp::tap<float> makeTaps() {
         dsp::tap<float> taps = dsp::taps::alloc<float>(12);
         for (int i = 0; i < 12; i++) { taps.taps[i] = (float)(i + 1); }
@@ -91,7 +85,7 @@ namespace {
     void warmResampler(dsp::multirate::PolyphaseResampler<float>& resampler) {
         float input[3] = { 0.25f, -0.5f, 0.75f };
         float output[8];
-        require(resampler.process(3, input, output) == 8, "unexpected warm-up output count");
+        REQUIRE(resampler.process(3, input, output) == 8);
     }
 
     void testStateDependentBound() {
@@ -107,14 +101,12 @@ namespace {
             },
             [&](int count, const float*, float*) { return resampler.process(count); });
 
-        require(result == std::accumulate(outputStream.chunkSizes.begin(), outputStream.chunkSizes.end(), 0),
-            "bounded processing did not return the total output count");
-        require(inputStream.flushed, "bounded processing did not flush the input");
-        require(boundCalls == (int)outputStream.chunkSizes.size(), "input bound was not recalculated for every chunk");
-        require(boundCalls >= 3, "state-dependent test did not exercise multiple chunks");
-        require(outputStream.chunkSizes[0] == 1000000, "first chunk did not fill the output buffer");
-        require(*std::max_element(outputStream.chunkSizes.begin(), outputStream.chunkSizes.end()) <= outputStream.getBufferSize(),
-            "a chunk exceeded the output capacity");
+        REQUIRE(result == std::accumulate(outputStream.chunkSizes.begin(), outputStream.chunkSizes.end(), 0));
+        REQUIRE(inputStream.flushed);
+        REQUIRE(boundCalls == (int)outputStream.chunkSizes.size());
+        REQUIRE(boundCalls >= 3);
+        REQUIRE(outputStream.chunkSizes[0] == 1000000);
+        REQUIRE(*std::max_element(outputStream.chunkSizes.begin(), outputStream.chunkSizes.end()) <= outputStream.getBufferSize());
 
     }
 
@@ -144,20 +136,20 @@ namespace {
         while (inputOffset < sampleCount) {
             randomState = randomState * 1103515245u + 12345u;
             int blockSize = (std::min)(sampleCount - inputOffset, 1 + (int)(randomState % 37u));
-            std::vector<float> block(&input[inputOffset], &input[inputOffset + blockSize]);
+            std::vector<float> block(input.begin() + inputOffset, input.begin() + inputOffset + blockSize);
             InputStream inputStream(block);
             int result = dsp::runBounded(&inputStream, outputStream,
                 [&]() { return bounded.getMaxInputCount(outputStream.getBufferSize()); },
                 [&](int count, const float* in, float* out) { return bounded.process(count, in, out); });
-            require(result >= 0 && inputStream.flushed, "random input block was not consumed");
+            REQUIRE(result >= 0);
+            REQUIRE(inputStream.flushed);
             totalOutCount += result;
             inputOffset += blockSize;
         }
 
-        require(totalOutCount == expectedCount, "bounded processing returned the wrong total output count");
-        require(outputStream.samples == expected, "bounded output differs from unsplit processing");
-        require(*std::max_element(outputStream.chunkSizes.begin(), outputStream.chunkSizes.end()) <= outputStream.getBufferSize(),
-            "tiny-buffer processing exceeded the output capacity");
+        REQUIRE(totalOutCount == expectedCount);
+        REQUIRE(outputStream.samples == expected);
+        REQUIRE(*std::max_element(outputStream.chunkSizes.begin(), outputStream.chunkSizes.end()) <= outputStream.getBufferSize());
 
         dsp::taps::free(boundedTaps);
         dsp::taps::free(referenceTaps);
@@ -179,8 +171,8 @@ namespace {
             [&]() { return bounded.getMaxInputCount(outputStream.getBufferSize()); },
             [&](int count, const float* in, float* out) { return bounded.process(count, in, out); });
 
-        require(result == expectedCount, "power decimator returned the wrong output count");
-        require(outputStream.samples == expected, "bounded power decimator output differs from unsplit processing");
+        REQUIRE(result == expectedCount);
+        REQUIRE(outputStream.samples == expected);
     }
 
     void testRationalResamplerBoundedProcessing() {
@@ -199,8 +191,8 @@ namespace {
             [&]() { return bounded.getMaxInputCount(outputStream.getBufferSize()); },
             [&](int count, const float* in, float* out) { return bounded.process(count, in, out); });
 
-        require(result == expectedCount, "rational resampler returned the wrong output count");
-        require(outputStream.samples == expected, "bounded rational resampler output differs from unsplit processing");
+        REQUIRE(result == expectedCount);
+        REQUIRE(outputStream.samples == expected);
     }
 
     void testConcurrentRxVFOReconfiguration() {
@@ -220,15 +212,31 @@ namespace {
         std::vector<dsp::complex_t> input(64);
         std::vector<dsp::complex_t> output(64);
         int outCount = vfo.process((int)input.size(), input.data(), output.data());
-        require(outCount >= 0 && outCount <= (int)output.size(), "RxVFO failed after concurrent reconfiguration");
+        REQUIRE(outCount >= 0);
+        REQUIRE(outCount <= (int)output.size());
     }
 }
 
-int main() {
+TEST_CASE("runBounded handles state-dependent bounds", "[dsp][bounded]") {
     testStateDependentBound();
+}
+
+TEST_CASE("runBounded matches unsplit processing for random blocks",
+          "[dsp][bounded]") {
     testRandomBlocksMatchUnsplitProcessing();
+}
+
+TEST_CASE("PowerDecimator supports bounded processing",
+          "[dsp][bounded][multirate]") {
     testPowerDecimatorBoundedProcessing();
+}
+
+TEST_CASE("RationalResampler supports bounded processing",
+          "[dsp][bounded][multirate]") {
     testRationalResamplerBoundedProcessing();
+}
+
+TEST_CASE("RxVFO survives concurrent reconfiguration",
+          "[dsp][bounded][channel]") {
     testConcurrentRxVFOReconfiguration();
-    return 0;
 }
