@@ -1,4 +1,5 @@
 #pragma once
+#include <memory>
 #include <stdexcept>
 #include "../filter/decimating_fir.h"
 #include "../taps/from_array.h"
@@ -125,14 +126,39 @@ namespace dsp::multirate {
             if (ratio > 1) {
                 int planId = planIndex(ratio);
                 decim::plan plan = decim::plans[planId];
+                firs.reserve(firs.size() + plan.stageCount);
+                tapsList.reserve(tapsList.size() + plan.stageCount);
                 newStageCount = plan.stageCount;
+
+                struct TapGuard {
+                    explicit TapGuard(tap<float> taps) : taps(taps) {}
+
+                    ~TapGuard() {
+                        if (owned) {
+                            dsp::taps::free(taps);
+                        }
+                    }
+
+                    tap<float> taps;
+                    bool owned = true;
+                };
+
                 try {
                     for (int i = 0; i < newStageCount; i++) {
-                        tap<float> newTaps = dsp::taps::fromArray<float>(plan.stages[i].tapcount, plan.stages[i].taps);
-                        auto fir = new filter::DecimatingFIR<T, float>(NULL, newTaps, plan.stages[i].decimation);
+                        TapGuard newTaps(dsp::taps::fromArray<float>(plan.stages[i].tapcount, plan.stages[i].taps));
+                        auto fir = std::make_unique<filter::DecimatingFIR<T, float>>(nullptr, newTaps.taps, plan.stages[i].decimation);
                         fir->out.free();
-                        tapsList.push_back(newTaps);
-                        firs.push_back(fir);
+                        tapsList.push_back(newTaps.taps);
+                        newTaps.owned = false;
+                        try {
+                            firs.push_back(fir.get());
+                        }
+                        catch (...) {
+                            dsp::taps::free(tapsList.back());
+                            tapsList.pop_back();
+                            throw;
+                        }
+                        fir.release();
                     }
                 }
                 catch (...) {
