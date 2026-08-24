@@ -24,7 +24,7 @@ namespace dsp::channel {
 
         void setOffset(double offset) {
             assert(base_type::_block_init);
-            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
+            std::lock_guard<std::mutex> lck(stateMtx);
             phaseDelta = lv_cmake(cos(offset), sin(offset));
         }
 
@@ -34,20 +34,24 @@ namespace dsp::channel {
 
         void reset() {
             assert(base_type::_block_init);
-            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
+            std::lock_guard<std::mutex> lck(stateMtx);
             phase = lv_cmake(1.0f, 0.0f);
         }
 
         inline int process(int count, const complex_t* in, complex_t* out) {
-            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
             if (Processor<complex_t, complex_t>::out.inputHook) {
                 Processor<complex_t, complex_t>::out.inputHook(in, count);
             }
+
+            {
+                std::lock_guard<std::mutex> lck(stateMtx);
 #if VOLK_VERSION >= 030100
-            volk_32fc_s32fc_x2_rotator2_32fc((lv_32fc_t*)out, (lv_32fc_t*)in, &phaseDelta, &phase, count);
+                volk_32fc_s32fc_x2_rotator2_32fc((lv_32fc_t*)out, (lv_32fc_t*)in, &phaseDelta, &phase, count);
 #else
-            volk_32fc_s32fc_x2_rotator_32fc((lv_32fc_t*)out, (lv_32fc_t*)in, phaseDelta, &phase, count);
+                volk_32fc_s32fc_x2_rotator_32fc((lv_32fc_t*)out, (lv_32fc_t*)in, phaseDelta, &phase, count);
 #endif
+            }
+
             if (Processor<complex_t, complex_t>::out.outputHook) {
                 Processor<complex_t, complex_t>::out.outputHook(out, count);
             }
@@ -66,6 +70,7 @@ namespace dsp::channel {
         }
 
     protected:
+        std::mutex stateMtx;
         lv_32fc_t phase;
         lv_32fc_t phaseDelta;
     };
