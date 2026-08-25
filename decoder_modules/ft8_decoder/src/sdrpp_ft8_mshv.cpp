@@ -12,7 +12,6 @@
 #include "dsp/multirate/rational_resampler.h"
 
 #include "ft8_etc/mshv_support.h"
-#include "ft8_etc/mscore.h"
 #include "ft8_etc/decoderms.h"
 
 #ifdef __linux__
@@ -68,8 +67,6 @@ namespace ft8 {
             converted.emplace_back(samples[q].l * 16383.52);
         }
 
-        //    auto core = std::make_shared<MsCore>();
-        //    core->ResampleAndFilter(converted.data(), converted.size());
         auto dms = std::make_shared<DecoderMs>();
         if (std::string("ft8") == mode) {
             dms->setMode(DMS_FT8);

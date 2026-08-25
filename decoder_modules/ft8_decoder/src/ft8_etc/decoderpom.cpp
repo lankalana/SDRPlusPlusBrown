@@ -12,70 +12,20 @@
 #define MN_NM_NRW_FT_174_91
 #include "bpdecode_ft8_174_91.h"
 
-//#include <QtGui>
-//// F2A ///
-//nflags=FFTW_ESTIMATE;
-//if (npatience==1) nflags=FFTW_ESTIMATE_PATIENT;
-//if (npatience==2) nflags=FFTW_MEASURE;
-//if (npatience==3) nflags=FFTW_PATIENT;
-//if (npatience==4) nflags=FFTW_EXHAUSTIVE;
-// MSK144 four2a_c2c nfft=32768  7  plans        four2a_d2c none
-// MSKMS  four2a_c2c nfft=32768  7  plans        four2a_d2c none
-// JTMS   four2a_c2c nfft=20552  20 plans        four2a_d2c nfft=524288  4 plans + ZAP only
-// FSK441 four2a_c2c nfft=32768  8  plans        four2a_d2c nfft=524288  4 plans + ZAP only
-// ISCAT  four2a_c2c nfft=73728  2  plans        four2a_d2c nfft=524288  4 plans + ZAP only
-// JT6M   four2a_c2c nfft=512	 1  plans		 four2a_d2c nfft=524288  4 plans + ZAP only
-// FT8    four2a_c2c nfft=180000 4  plans        four2a_d2c nfft=192000  3 plans
-// FT4    four2a_c2c nfft=72576  4  plans        four2a_d2c nfft=72576   2 plans
-// JT65   four2a_c2c nfft=2048   2  plans        four2a_d2c nfft=8192    1 plans
-// PI4    four2a_c2c none                        four2a_d2c nfft=768000  3 plans
-// Q65    four2a_c2c 1440000 for x120sec
+// FT8    four2a_c2c nfft=180000 4 plans, four2a_d2c nfft=192000 3 plans
+// FT4    four2a_c2c nfft=72576  4 plans, four2a_d2c nfft=72576  2 plans
 
-//static int retr = 0;
-//static int cplu = 0;
-#define SLPAMIN  2000 //2000 importent SLPAMIN > SLPASTEP
-#define SLPASTEP 1000 //1000 importent SLPAMIN > SLPASTEP
-static bool _block_th_all_ = false;        //need to be static for all
-static int _wait_t_ = SLPAMIN - SLPASTEP;  //need to be static for all
-static int setup_c2c_d2c_(bool &wait,FFT_PLAN &p,std::complex<float> *a,int nfft,int isign,int iform,float *d = 0)
+static void setup_c2c_d2c_(FFT_PLAN &plan,int nfft,int isign,int iform)
 {
-    // debugPrintf("setup_c2c_d2c_ begin isign %d iform %d sizeof(p)=%d, &p=%p", isign, iform, sizeof(p), &p);
-    if (_block_th_all_ || !wait)
-    {
-        // debugPrintf("setup_c2c_d2c_ ret: %d %d ", _block_th_all_, wait);
-        _wait_t_ += SLPASTEP;
-        wait = true; //retr++; qDebug()<<"retry---->"<<retr<<_wait_t_;
-        return _wait_t_;
-    }
-    _block_th_all_ = true; //if (cplu == 0) qDebug()<<"----------------------"; cplu++; qDebug()<<"PLANS="<<cplu<<nfft;
-
-    //unsigned int flag = FFTW_ESTIMATE_PATIENT;
-//    unsigned int flag = FFTW_ESTIMATE;
-//    if (nfft > 6000) {
-//        flag = FFTW_ESTIMATE;
-//    }
     if (isign==-1 && iform==1)
-            p = fftplug_allocate_plan_c2c(nfft, true);
-        // p=fftwf_plan_dft_1d(nfft,(fftwf_complex *)a,(fftwf_complex *)a,FFTW_FORWARD, flag);
+        plan = fftplug_allocate_plan_c2c(nfft,true);
     else if (isign==1 && iform==1)
-        p = fftplug_allocate_plan_c2c(nfft, false);
-        //p=fftwf_plan_dft_1d(nfft,(fftwf_complex *)a,(fftwf_complex *)a,FFTW_BACKWARD, flag);
-    else if (isign==-1 && iform==0) {
-        // debugPrintf("before fftplug_allocate_plan_r2c");
-        auto zz = fftplug_allocate_plan_r2c(nfft);
-        //debugPrintf("Returned from native, zz = %d", zz.handle);
-        p = zz;
-    }
-        //p=fftwf_plan_dft_r2c_1d(nfft, d,(fftwf_complex *)a, flag);
-    else if (isign==1 && iform==-1)
-        //p=fftwf_plan_dft_c2r_1d(nfft,(fftwf_complex *)a,d, flag);
-            abort();
-        //p = fftplug_allocate_plan_c2r(nfft);
-    //debugPrintf("setup_c2c_d2c_ ok");
-    _block_th_all_ = false;
-    return 0;
+        plan = fftplug_allocate_plan_c2c(nfft,false);
+    else if (isign==-1 && iform==0)
+        plan = fftplug_allocate_plan_r2c(nfft);
+    else
+        abort();
 }
-
 
 std::string complexToString(const std::complex<float>& c) {
     std::string s = std::to_string(c.real());
@@ -139,12 +89,7 @@ void HvThr::four2a_c2c(std::complex<float> *a,std::complex<float> *a1,FFT_PLAN *
         nn_c2c[z]=nfft;
         ns_c2c[z]=isign;
         nf_c2c[z]=iform;
-        int slpp = 1000;
-        bool wait = false; //if (nthreads==1) wait = false; ??? hv
-        while (slpp!=0)
-        {
-            slpp = setup_c2c_d2c_(wait,pc[z],a1,nfft,isign,iform);
-        }
+        setup_c2c_d2c_(pc[z],nfft,isign,iform);
         cpc++;  //qDebug()<<"c2c====="<<cpc<<nfft;
     }
 
@@ -183,13 +128,10 @@ void HvThr::four2a_c2c(std::complex<float> *a,std::complex<float> *a1,FFT_PLAN *
 // input/output: d
 // temp: d1
 
-int four2a_d2c_cnt = 0;
-
 void HvThr::four2a_d2c(std::complex<float> *a,std::complex<float> *a1,float *d,float *d1,FFT_PLAN *pd,int &cpd,
                        int nfft,int isign,int iform)
 {
     std::vector<std::complex<double>> aa(NSMALL+10);
-    four2a_d2c_cnt++;
 
 
     if (cpd>NPMAX || nfft>NPAMAX) return;
@@ -230,12 +172,7 @@ void HvThr::four2a_d2c(std::complex<float> *a,std::complex<float> *a1,float *d,f
         ns_d2c[z]=isign;
         nf_d2c[z]=iform;
 //        std::cout << "created double plan: " << cpd << " " << nfft << " " << isign << " " << iform << std::endl;
-        int slpp = 1000;
-        bool wait = false; //if (nthreads==1) wait = false; ??? hv
-        while (slpp!=0)
-        {
-            slpp = setup_c2c_d2c_(wait,pd[z],a1,nfft,isign,iform,d1);
-        }
+        setup_c2c_d2c_(pd[z],nfft,isign,iform);
         cpd++;  //qDebug()<<"d2c="<<cpd<<nfft;
     }
 
@@ -290,7 +227,7 @@ void HvThr::four2a_c2c(std::complex<double> *a, std::complex<float> *a1, FFT_PLA
 
 }
 
-#define NPLIM 20 // reset if > 20 JTMS
+#define NPLIM 20 // maximum number of cached plans
 void HvThr::DestroyPlans(FFT_PLAN *pc,int &cpc,FFT_PLAN *pd,int &cpd,bool imid)
 {
     if (cpc > NPLIM || imid)
@@ -299,7 +236,6 @@ void HvThr::DestroyPlans(FFT_PLAN *pc,int &cpc,FFT_PLAN *pd,int &cpd,bool imid)
         for (int z = 0; z < cpc; ++z)
             fftplug_free_plan(pc[z]);
         cpc = 0;
-        _wait_t_ = SLPAMIN - SLPASTEP;
     }
     if (cpd > NPLIM || imid)
     {
@@ -307,7 +243,6 @@ void HvThr::DestroyPlans(FFT_PLAN *pc,int &cpc,FFT_PLAN *pd,int &cpd,bool imid)
         for (int z = 0; z < cpd; ++z)
             fftplug_free_plan(pd[z]);
         cpd = 0;
-        _wait_t_ = SLPAMIN - SLPASTEP;
     }
 }
 //// END class HvThr ///

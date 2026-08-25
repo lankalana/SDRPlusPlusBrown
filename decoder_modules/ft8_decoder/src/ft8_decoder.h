@@ -32,7 +32,6 @@
 
 #ifdef NEW_BUILTIN_MODE
 #include "ft8_etc/mshv_support.h"
-#include "ft8_etc/mscore.h"
 #include "ft8_etc/decoderms.h"
 #include "symbolic.h"
 #endif

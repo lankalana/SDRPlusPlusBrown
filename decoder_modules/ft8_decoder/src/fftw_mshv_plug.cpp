@@ -8,34 +8,16 @@
 #include "fftw_mshv_plug_original.h"
 
 
-struct LocalAllocs {
-    static float *arrayAllocatorFloat(int count) {
-        return new float[count];
-    }
-    static fftwf_complex *arrayAllocatorComplex(int count) {
-        return new fftwf_complex[count];
-    }
-    static void deallocatorFloat(float *f) {
-        return delete[] f;
-    }
-    static void deallocatorComplex(fftwf_complex *f) {
-        return delete[] f;
-    }
-};
-
-
 std::shared_ptr<PlanStorage> nativeStorage=std::make_shared<PlanStorage>();
-LocalAllocs localAllocs;
 
 
-// not thread safe
 extern "C" {
     FFT_PLAN fftplug_allocate_plan_c2c(int nfft, bool forward) {
-        return Fftplug_allocate_plan_c2c<>(*nativeStorage, nfft, forward, localAllocs);
+        return Fftplug_allocate_plan_c2c(*nativeStorage, nfft, forward);
     }
 
     FFT_PLAN fftplug_allocate_plan_r2c(int nfft) {
-        return Fftplug_allocate_plan_r2c<>(*nativeStorage, nfft, localAllocs);
+        return Fftplug_allocate_plan_r2c(*nativeStorage, nfft);
     }
 
     // FFT_PLAN fftplug_allocate_plan_c2r(int nfft) {
@@ -52,9 +34,6 @@ extern "C" {
     }
 
 }
-
-long long planAllocTime;
-long long planExecTime;
 
 
 #endif

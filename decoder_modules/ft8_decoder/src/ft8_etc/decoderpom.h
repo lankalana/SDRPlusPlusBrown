@@ -42,7 +42,7 @@ private:
     int nf_d2c[NPMAX+10];
 };
 
-#define NPAMAX 1441000  //q65 max=1440000 PI4 max 768000
+#define NPAMAX 192000  //FT8 maximum FFT size
 
 class F2a
 {
@@ -102,6 +102,7 @@ public:
     }
 
     ~F2a() {
+        DestroyPlansAll(true);
     }
     void four2a_c2c(std::complex<double> *a,int nfft,int isign,int iform,int thr = 0);
     void four2a_d2c(std::complex<double> *a,double *d,int nfft,int isign,int iform,int thr = 0);

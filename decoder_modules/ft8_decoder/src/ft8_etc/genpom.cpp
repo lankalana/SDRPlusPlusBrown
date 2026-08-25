@@ -34,8 +34,7 @@ void gen_pulse_gfsk_(double *pulse,double k,double bt,int nsps)
 
 #include "bpdecode_ft8_174_91.h"
 
-#include "boost/crc.hpp"
-#include "boost/boost_14.hpp"
+#include <cstdint>
 
 
 void GenPomFt::initGenPomFt()
@@ -45,7 +44,21 @@ void GenPomFt::initGenPomFt()
 
 short crc14_ft(unsigned char const * data, int length)
 {
-    return boost::augmented_crc<14, TRUNCATED_POLYNOMIAL14>(data, length);
+    constexpr std::uint16_t polynomial = 0x2757;
+    constexpr std::uint16_t topBit = 1U << 13;
+    constexpr std::uint16_t mask = (1U << 14)-1;
+    std::uint16_t remainder = 0;
+
+    for (int byte = 0; byte < length; ++byte) {
+        for (int bit = 7; bit >= 0; --bit) {
+            const bool divide = (remainder & topBit) != 0;
+            remainder = ((remainder << 1) | ((data[byte] >> bit) & 1U)) & mask;
+            if (divide) {
+                remainder ^= polynomial;
+            }
+        }
+    }
+    return static_cast<short>(remainder);
 }
 
 short GenPomFt::crc14(unsigned char const * data, int length)

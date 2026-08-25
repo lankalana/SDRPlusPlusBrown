@@ -1,6 +1,7 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
+#ifndef _USE_MATH_DEFINES
 #define _USE_MATH_DEFINES
-#include <imgui.h>
+#endif
 #include <imgui.h>
 #include <config.h>
 #include <core.h>
@@ -15,7 +16,6 @@
 #include <gui/widgets/folder_select.h>
 #include <fstream>
 #include <chrono>
-#include <future>
 #include <unordered_map>
 #include <unordered_set>
 #include "ft8_decoder.h"
@@ -158,7 +158,7 @@ struct CallHashCache {
     }
 };
 
-bool removeFiles = true;
+std::atomic_bool removeFiles = true;
 
 struct DecodedResult {
     DecodedMode mode;
@@ -288,13 +288,14 @@ struct SingleDecoder {
     std::vector<dsp::stereo_t> reader;
     double ADJUST_PERIOD = 0.1; // seconds before adjusting the vfo offset after user changed the center freq
     int beforeAdjust = (int)(VFO_SAMPLE_RATE * ADJUST_PERIOD);
-    int previousCenterOffset = 0;
-    bool onTheFrequency = false;
+    std::atomic_int previousCenterOffset = 0;
+    std::atomic_bool onTheFrequency = false;
     dsp::stream<dsp::complex_t> iqdata = "singledecoder.iqdata";
     std::atomic_bool running;
-    bool processingEnabled = true;
+    std::atomic_bool processingEnabled = true;
     FT8DecoderModule *mod2;
-    char decodeError[1000] = {0};
+    std::string decodeError;
+    std::mutex decodeErrorMutex;
 
     void handleData(int rd, dsp::stereo_t* inputData);
 
@@ -323,7 +324,8 @@ struct SingleDecoder {
 
     double prevBlockNumber = 0;
     std::shared_ptr<std::vector<dsp::stereo_t>> fullBlock;
-    std::mutex processingBlockMutex;
+    std::jthread readerThread;
+    std::jthread processorThread;
     double vfoOffset = 0.0;
     std::atomic_int blockProcessorsRunning = 0;
     std::atomic_int lastDecodeTime0 = 0;
@@ -344,6 +346,11 @@ struct SingleDecoder {
     void handleIFData(const std::vector<dsp::stereo_t>& data);
 
     void startBlockProcessing(const std::shared_ptr<std::vector<dsp::stereo_t>>& block, int blockNumber, int originalOffset);
+
+    std::string getDecodeError() {
+        std::lock_guard lock(decodeErrorMutex);
+        return decodeError;
+    }
 
     virtual std::pair<int,int> calculateVFOCenterOffsetForMode(double centerFrequency, double ifBandwidth) = 0;
 
@@ -790,8 +797,11 @@ public:
     void drawDebugMenu(ImGuiContext *gctx) {
         ImGui::LeftLabel("Remove FT8 WAVs");
         ImGui::FillWidth();
-        ImGui::Checkbox("##keep_ft8_wavs", &removeFiles);
-        ImGui::Text("ft8en %d onfreq %d", allDecoders[0]->mod->enabled, allDecoders[0]->onTheFrequency);
+        bool shouldRemoveFiles = removeFiles.load();
+        if (ImGui::Checkbox("##keep_ft8_wavs", &shouldRemoveFiles)) {
+            removeFiles = shouldRemoveFiles;
+        }
+        ImGui::Text("ft8en %d onfreq %d", allDecoders[0]->mod->enabled.load(), allDecoders[0]->onTheFrequency.load());
     }
 
 
@@ -849,13 +859,14 @@ public:
         //
         // FT8
         //
-        // TODO: Enable when multithreading works (decoder_modules\ft8_decoder\src\ft8_etc\decoderms.cpp:2886)
-        // ImGui::FillWidth();
-        // if (ImGui::SliderInt("##ft8_threads", &_this->nthreads, 1, 6, "%d threads decode", 0)) {
-        //     config.acquire();
-        //     config.conf[_this->name]["nthreads"] = _this->nthreads;
-        //     config.release(true);
-        // }
+        int decodeThreads = _this->nthreads.load();
+        ImGui::FillWidth();
+        if (ImGui::SliderInt("##ft8_threads", &decodeThreads, 1, 6, "%d threads decode", 0)) {
+            _this->nthreads = decodeThreads;
+            config.acquire();
+            config.conf[_this->name]["nthreads"] = decodeThreads;
+            config.release(true);
+        }
 
         auto ft8processing = _this->ft8decoder.blockProcessorsRunning.load();
         if (ft8processing) {
@@ -865,11 +876,13 @@ public:
         if (ft8processing) {
             ImGui::PopStyleColor();
         }
-        if (ImGui::Checkbox(CONCAT("##_processing_enabled_ft8_", _this->name), &_this->ft8decoder.processingEnabled)) {
+        bool processingEnabledFT8 = _this->ft8decoder.processingEnabled.load();
+        if (ImGui::Checkbox(CONCAT("##_processing_enabled_ft8_", _this->name), &processingEnabledFT8)) {
+            _this->ft8decoder.processingEnabled = processingEnabledFT8;
             config.acquire();
-            config.conf[_this->name]["processingEnabledFT8"] = _this->ft8decoder.processingEnabled;
+            config.conf[_this->name]["processingEnabledFT8"] = processingEnabledFT8;
             config.release(true);
-            if (!_this->ft8decoder.processingEnabled) {
+            if (!processingEnabledFT8) {
                 _this->clearDecodedResults(_this->ft8decoder.getModeDM());
             }
         }
@@ -881,9 +894,10 @@ public:
             stat += "[-]";
         }
         ImGui::Text("%s Count: %d(%d) in %d..%d msec", stat.c_str(), _this->ft8decoder.lastDecodeCount.load(), _this->ft8decoder.totalCallsignsDisplayed.load(), _this->ft8decoder.lastDecodeTime0.load(), _this->ft8decoder.lastDecodeTime.load());
-        if (_this->ft4decoder.decodeError[0]) {
+        auto ft8DecodeError = _this->ft8decoder.getDecodeError();
+        if (!ft8DecodeError.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0, 0, 1.0f));
-            ImGui::Text("Error: %s", _this->ft4decoder.decodeError);
+            ImGui::Text("Error: %s", ft8DecodeError.c_str());
             ImGui::PopStyleColor();
         }
         //
@@ -898,25 +912,28 @@ public:
             ImGui::PopStyleColor();
         }
         ImGui::FillWidth();
-        if (ImGui::Checkbox(CONCAT("##_processing_enabled_ft4_", _this->name), &_this->ft4decoder.processingEnabled)) {
+        bool processingEnabledFT4 = _this->ft4decoder.processingEnabled.load();
+        if (ImGui::Checkbox(CONCAT("##_processing_enabled_ft4_", _this->name), &processingEnabledFT4)) {
+            _this->ft4decoder.processingEnabled = processingEnabledFT4;
             config.acquire();
-            config.conf[_this->name]["processingEnabledFT4"] = _this->ft4decoder.processingEnabled;
+            config.conf[_this->name]["processingEnabledFT4"] = processingEnabledFT4;
             config.release(true);
-            if (!_this->ft4decoder.processingEnabled) {
+            if (!processingEnabledFT4) {
                 _this->clearDecodedResults(_this->ft4decoder.getModeDM());
             }
         }
         ImGui::SameLine();
         stat = "";
-        if (_this->ft8decoder.onTheFrequency) {
+        if (_this->ft4decoder.onTheFrequency) {
             stat += "[+]";
         } else {
             stat += "[-]";
         }
         ImGui::Text("%s Count: %d(%d) in %d..%d msec", stat.c_str(), _this->ft4decoder.lastDecodeCount.load(), _this->ft4decoder.totalCallsignsDisplayed.load(), _this->ft4decoder.lastDecodeTime0.load(), _this->ft4decoder.lastDecodeTime.load());
-        if (_this->ft4decoder.decodeError[0]) {
+        auto ft4DecodeError = _this->ft4decoder.getDecodeError();
+        if (!ft4DecodeError.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0, 0, 1.0f));
-            ImGui::Text("Error: %s", _this->ft4decoder.decodeError);
+            ImGui::Text("Error: %s", ft4DecodeError.c_str());
             ImGui::PopStyleColor();
         }
         if (false) {
@@ -965,7 +982,7 @@ public:
     }
 
     std::string name;
-    bool enabled = false;
+    std::atomic_bool enabled = false;
     char myGrid[10];
     char myCallsign[13];
     bool enablePSKReporter = true;
@@ -973,12 +990,14 @@ public:
     char allTxtPath[1024];
     std::string allTxtPathError;
     int secondsToKeepResults = 120;
-    int nthreads = 1;
+    std::atomic_int nthreads = 1;
 
     std::string  lastLocation;
     LatLng _myPos = LatLng::invalid();
+    std::mutex locationMutex;
 
     LatLng getMyPos() {
+        std::lock_guard lock(locationMutex);
         if (sigpath::iqFrontEnd.operatorLocation != lastLocation) {
             lastLocation = sigpath::iqFrontEnd.operatorLocation;
             _myPos = utils::gridToLatLng(lastLocation);
@@ -1170,28 +1189,37 @@ void SingleDecoder::handleData(int rd, dsp::stereo_t* inputData) {
     }
 }
 void SingleDecoder::startBlockProcessing(const std::shared_ptr<std::vector<dsp::stereo_t>>& block, int blockNumber, int originalOffset) {
-    std::thread processor([=]() {
+    int expected = 0;
+    if (!blockProcessorsRunning.compare_exchange_strong(expected, 1)) {
+        return;
+    }
+    if (processorThread.joinable()) {
+        processorThread.join();
+    }
+    processorThread = std::jthread([this, block, blockNumber, originalOffset]() {
         SetThreadName(getModeString()+"_startBlockProcessing");
         std::time_t bst = (std::time_t)(blockNumber * getBlockDuration());
 //        flog::info("Start processing block ({}), size={}, block time: {}", this->getModeString(), (int64_t)block->size(), std::asctime(std::gmtime(&bst)));
-        blockProcessorsRunning.fetch_add(1);
-        auto started = currentTimeMillis();
-        std::unique_ptr<int, std::function<void(int*)>> myPtr(new int, [&](int* p) {
-            delete p;
-            auto prev = blockProcessorsRunning.fetch_add(-1);
-//            flog::info("blockProcessorsRunning ({}) released after {} msec, prev={}", getModeString(), (int64_t)(currentTimeMillis() - started), prev);
-        });
         int count = 0;
         long long time0 = 0;
         auto poss = mod->getMyPos();
-        auto handler = [&](int mode, std::vector<std::string> result, std::atomic<const char *> &progress) {
+        std::mutex handlerMutex;
+        auto handler = [&](int, std::vector<std::string> result, std::atomic<const char *> &progress) {
+            std::lock_guard handlerLock(handlerMutex);
             progress ="in-handler";
             if (result.size() == 2 && result[0] == "ERROR") {
-                strcpy(decodeError, result[1].c_str());
+                std::lock_guard errorLock(decodeErrorMutex);
+                decodeError = result[1];
             } else if (result.size() == 1 && result[0] == "DECODE_EOF") {
                 //
+            } else if (result.size() < 5) {
+                std::lock_guard errorLock(decodeErrorMutex);
+                decodeError = "Decoder returned a malformed result";
             } else {
-                strcpy(decodeError , "");
+                {
+                    std::lock_guard errorLock(decodeErrorMutex);
+                    decodeError.clear();
+                }
                 if (time0 == 0) {
                     time0 = currentTimeMillis();
                 }
@@ -1210,21 +1238,19 @@ void SingleDecoder::startBlockProcessing(const std::shared_ptr<std::vector<dsp::
                     if (callsignsV.size() > 1) {
                         progress = "pipe4";
                         callsign = callsignsV[1];
-                        callHashCacheMutex.lock();
+                        std::lock_guard cacheLock(callHashCacheMutex);
                         progress = "pipe5";
                         callHashCache.addCall(callsignsV[0], bst * 1000);
                         callHashCache.addCall(callsignsV[1], bst * 1000);
-                        callHashCacheMutex.unlock();
                         progress = "pipe6";
                     }
                     if (!callsign.empty() && callsign[0] == '<') {
                         progress = "pipe7";
-                        callHashCacheMutex.lock();
+                        std::lock_guard cacheLock(callHashCacheMutex);
                         auto ncallsign = callHashCache.findCall(callsign, bst * 1000);
                         progress = "pipe8";
 //                        flog::info("Found call: {} -> {}", callsign, ncallsign);
                         callsign = ncallsign;
-                        callHashCacheMutex.unlock();
                         progress = "pipe9";
                     }
                 }
@@ -1260,7 +1286,7 @@ void SingleDecoder::startBlockProcessing(const std::shared_ptr<std::vector<dsp::
                     std::vector<std::string> splitMessage;
                     splitStringV(message, " ", splitMessage);
                     for(auto &s : splitMessage) {
-                        if (s[0] == '<' && s[s.size()-1] == '>') {
+                        if (!s.empty() && s[0] == '<' && s[s.size()-1] == '>') {
                             s = callsign;   // inject
                         }
                         newmsg += s + " ";
@@ -1281,12 +1307,17 @@ void SingleDecoder::startBlockProcessing(const std::shared_ptr<std::vector<dsp::
                 decodedResult.intensity = 0;
 
                 time_t blocktimeUnix = blockNumber * getBlockDuration();
-                tm* ltm = std::gmtime(&blocktimeUnix);
+                tm ltm;
+#ifdef _WIN32
+                gmtime_s(&ltm, &blocktimeUnix);
+#else
+                gmtime_r(&blocktimeUnix, &ltm);
+#endif
 
                 char buf[100];
-                snprintf(buf, sizeof buf, "%02d%02d%02d_%02d%02d%02d", ltm->tm_year % 100, ltm->tm_mon + 1, ltm->tm_mday, ltm->tm_hour, ltm->tm_min, ltm->tm_sec);
+                snprintf(buf, sizeof buf, "%02d%02d%02d_%02d%02d%02d", ltm.tm_year % 100, ltm.tm_mon + 1, ltm.tm_mday, ltm.tm_hour, ltm.tm_min, ltm.tm_sec);
                 decodedResult.decodedBlock = buf;
-                snprintf(buf, sizeof buf,  "%0.3f", (previousCenterOffset - USB_BANDWIDTH) / 1000000.0);
+                snprintf(buf, sizeof buf,  "%0.3f", (originalOffset - USB_BANDWIDTH) / 1000000.0);
                 decodedResult.frequencyBand = buf;
 
                 // (random() % 100) / 100.0;
@@ -1301,38 +1332,29 @@ void SingleDecoder::startBlockProcessing(const std::shared_ptr<std::vector<dsp::
         };
         std::atomic<const char *> progress;
         progress = "Starting";
-        std::thread t0([&]() {
-            SetThreadName(getModeString()+"_callDecode");
-            auto start = currentTimeMillis();
-            dsp::ft8::decodeFT8(mod->nthreads, getModeString(), VFO_SAMPLE_RATE, block->data(), block->size(), handler, progress, removeFiles);
-            auto end = currentTimeMillis();
-            if (noisy_ft8) {
-                flog::info("FT8 decoding ({}) took {} ms", this->getModeString(), (int64_t) (end - start));
-            }
-            lastDecodeCount = (int)count;
-            lastDecodeTime = (int)(end - start);
-            if (time0 == 0) {
-                lastDecodeTime0 = 0;
-            } else {
-                lastDecodeTime0 = (int)(time0 - start);
-            }
-        });
-
-        auto future = std::async(std::launch::async, &std::thread::join, &t0);
-        int count0=0;
-        while(true) {
-            if (future.wait_for(std::chrono::seconds(1)) == std::future_status::timeout) {
-//                flog::info("outside progress({}: decoding ({}) : {}", count0, this->getModeString(), progress.load());
-                count0++;
-            } else {
-                break;
-            }
+        SetThreadName(getModeString()+"_callDecode");
+        auto start = currentTimeMillis();
+        try {
+            dsp::ft8::decodeFT8(mod->nthreads.load(), getModeString(), VFO_SAMPLE_RATE, block->data(), block->size(), handler, progress, removeFiles.load());
+        } catch (const std::exception &e) {
+            std::lock_guard errorLock(decodeErrorMutex);
+            decodeError = e.what();
+        } catch (...) {
+            std::lock_guard errorLock(decodeErrorMutex);
+            decodeError = "Unknown decoder error";
         }
+        auto end = currentTimeMillis();
+        if (noisy_ft8) {
+            flog::info("FT8 decoding ({}) took {} ms", this->getModeString(), (int64_t) (end - start));
+        }
+        lastDecodeCount = count;
+        lastDecodeTime = (int)(end - start);
+        lastDecodeTime0 = time0 == 0 ? 0 : (int)(time0 - start);
+        blockProcessorsRunning = 0;
 
 //        flog::info("blockProcessorsRunning ({}) gracefully completed {}", getModeString(), blockNumber);
 
     });
-    processor.detach();
 }
 
 void SingleDecoder::init(const std::string &name) {
@@ -1369,7 +1391,7 @@ void SingleDecoder::init(const std::string &name) {
 
 
 
-    std::thread reader([thiz=this]() {
+    readerThread = std::jthread([thiz=this]() {
         SetThreadName(thiz->getModeString()+"_ssb_reader");
 
 //        auto _this = this;
@@ -1387,14 +1409,19 @@ void SingleDecoder::init(const std::string &name) {
             thiz->usbDemod->getOutput()->flush();
         }
     });
-    reader.detach();
 }
 
 void SingleDecoder::destroy() {
     sigpath::iqFrontEnd.onEffectiveSampleRateChange.unbindHandler(&iqSampleRateListener);
     gui::mainWindow.onPlayStateChange.unbindHandler(&onPlayStateChange);
-    ifChain.out->stopReader();
     running = false;
+    ifChain.out->stopReader();
+    if (readerThread.joinable()) {
+        readerThread.join();
+    }
+    if (processorThread.joinable()) {
+        processorThread.join();
+    }
 }
 
 

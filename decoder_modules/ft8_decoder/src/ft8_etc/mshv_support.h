@@ -8,7 +8,9 @@
 
 #include "wasm_defines.h"
 
+#ifndef _USE_MATH_DEFINES
 #define _USE_MATH_DEFINES
+#endif
 #include <cmath>
 #include <vector>
 #include <string>
@@ -17,8 +19,6 @@
 //#define complex		_Complex
 #include <memory>
 #include <cstring>
-#include <thread>
-
 #ifdef I
 #undef I
 #endif
@@ -26,12 +26,6 @@
 #ifdef _WIN32
 #include <stdlib.h>
 #include <malloc.h>
-#include <windows.h>
-
-typedef std::thread pthread_t;
-#define pthread_create(pThrVar, NU, fun, arg) std::swap(*pThrVar, std::thread([=] { fun(arg); }))
-#define pthread_detach(thr)                   thr.detach();
-#define pthread_exit(thr)                     TerminateThread(GetCurrentThread(), 0)
 #else
 #include <unistd.h>
 #endif
@@ -453,11 +447,10 @@ void mshv_init();
     auto name = (name##0).data();
 
 
-extern std::function<void(const char *line)> decodeResultOutputFun;
 #ifdef __wasm__
 WASM_IMPORT("decodeResultOutput") void decodeResultOutput(const char *line);
 #else
-inline void decodeResultOutput(const char *line) { if (noisy_ft8) printf("%s\n", line); if (decodeResultOutputFun) decodeResultOutputFun(line); }
+inline void decodeResultOutput(const char *line) { if (noisy_ft8) printf("%s\n", line); }
 #endif
 
 void debugPrintf(const char *fmt, ...);
