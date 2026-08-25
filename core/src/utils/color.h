@@ -11,15 +11,16 @@ namespace color {
 
         // Calculate the hue
         if (delta == 0) { h = 0; }
-        else if (r > g && r > b) {
+        else if (cmax == r) {
             h = 60.0f * fmodf((g - b) / delta, 6.0f);
         }
-        else if (g > r && g > b) {
+        else if (cmax == g) {
             h = 60.0f * (((b - r) / delta) + 2.0f);
         }
         else {
             h = 60.0f * (((r - g) / delta) + 4.0f);
         }
+        if (h < 0.0f) { h += 360.0f; }
 
         // Calculate lightness
         l = (cmin + cmax) / 2.0f;

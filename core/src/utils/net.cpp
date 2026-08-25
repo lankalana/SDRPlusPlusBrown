@@ -438,6 +438,18 @@ namespace net {
         }
 #endif
 
+        int connectError = 0;
+        socklen_t connectErrorSize = sizeof(connectError);
+#ifdef _WIN32
+        int connectStatus = getsockopt(s, SOL_SOCKET, SO_ERROR, (char*)&connectError, &connectErrorSize);
+#else
+        int connectStatus = getsockopt(s, SOL_SOCKET, SO_ERROR, &connectError, &connectErrorSize);
+#endif
+        if (connectStatus != 0 || connectError != 0) {
+            closeSocket(s);
+            throw std::runtime_error("Could not connect");
+        }
+
         // Return socket class
         return std::make_shared<Socket>(s);
     }

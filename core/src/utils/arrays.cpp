@@ -889,7 +889,7 @@ namespace dsp {
             auto retval = std::make_shared<std::vector<float>>();
             retval->reserve(v->size());
             //            int ix = 0;
-            for (int q = 0; q < retval->size(); q++) {
+            for (int q = 0; q < v->size(); q++) {
                 if (v->at(q) < w->at(q)) {
                     retval->emplace_back(v->at(q));
                 }
@@ -920,14 +920,13 @@ namespace dsp {
         }
 
         FloatArray npminimum_(const FloatArray& v, float lim) {
-            auto retval = std::make_shared<std::vector<float>>(v->data(), v->data() + v->size());
-            auto rvD = retval->data();
-            for (int q = 0; q < retval->size(); q++) {
+            auto rvD = v->data();
+            for (int q = 0; q < v->size(); q++) {
                 if (rvD[q] > lim) {
                     rvD[q] = lim;
                 }
             }
-            return retval;
+            return v;
         }
 
 
