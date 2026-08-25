@@ -1,9 +1,8 @@
 #pragma once
 
 #include <string>
-#include <functional>
-#include <vector>
+#include <string_view>
 
-std::string extractCallsignFromFT8(const std::string &message);
+std::string extractCallsignFromFT8(std::string_view message);
 
 

@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 project(ft8_decoder)
 
 
-file(GLOB_RECURSE SRC "src/*.cpp" "src/*.c" ../../misc_modules/recorder/src/wav.cpp ../../misc_modules/recorder/src/riff.cpp)
+file(GLOB_RECURSE SRC "src/*.cpp" "src/*.c")
 
 include(${SDRPP_MODULE_CMAKE})
 

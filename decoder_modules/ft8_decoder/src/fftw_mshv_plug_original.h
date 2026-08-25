@@ -3,7 +3,6 @@
 #include <fftw3.h>
 #include "fftw_mshv_plug.h"
 #include <vector>
-#include <memory>
 #include <mutex>
 #include <shared_mutex>
 #include <utils/flog.h>
@@ -92,4 +91,4 @@ inline void Fftplug_execute_plan(PlanStorage &s, FFT_PLAN plan, void *source, in
 
 
 
-extern std::shared_ptr<PlanStorage> nativeStorage;
+extern PlanStorage nativeStorage;

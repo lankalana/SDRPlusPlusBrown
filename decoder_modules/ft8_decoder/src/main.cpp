@@ -2,6 +2,14 @@
 #ifndef _USE_MATH_DEFINES
 #define _USE_MATH_DEFINES
 #endif
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <cassert>
+#include <charconv>
+#include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <imgui.h>
 #include <config.h>
 #include <core.h>
@@ -10,18 +18,24 @@
 #include <gui/widgets/waterfall.h>
 #include <signal_path/signal_path.h>
 #include <module/module_api.h>
-#include <filesystem>
 #include <dsp/stream.h>
 #include <dsp/types.h>
-#include <gui/widgets/folder_select.h>
-#include <fstream>
-#include <chrono>
+#include <memory>
+#include <mutex>
+#include <span>
+#include <string>
+#include <string_view>
+#include <thread>
 #include <unordered_map>
 #include <unordered_set>
-#include "ft8_decoder.h"
+#include <utility>
+#include <vector>
+#include "mshv_decoder.h"
+#include "symbolic.h"
 #include "../../radio/src/demodulators/usb.h"
 #include <utils/kmeans.h>
 #include <utils/cty.h>
+#include <utils/strings.h>
 #include "module_interface.h"
 #include "ft8_etc/gen_ft8.h"
 
@@ -90,14 +104,19 @@ struct CallHashCache {
     }
 
     std::string findCall(const std::string &hashed, long long ctm) { // hashed: <1:2983> or <2:2983> or <0:3498>
-        if (hashed.size() == 0) {
-            return "";
+        if (hashed.empty()) {
+            return {};
         }
         if (hashed.size() < 3) {
             return hashed;
         }
-        if (hashed.front() == '<' && hashed.back() == '>' && hashed[2] == ':' && hashed[1] >= '1' && hashed[1] <= '3') {
-            int hash = std::stoi(hashed.substr(3, hashed.size()-4));
+        if (hashed.front() == '<' && hashed.back() == '>' && hashed[2] == ':' && hashed[1] >= '0' && hashed[1] <= '2') {
+            int hash = 0;
+            const auto hashText = std::string_view(hashed).substr(3, hashed.size() - 4);
+            const auto [end, error] = std::from_chars(hashText.data(), hashText.data() + hashText.size(), hash);
+            if (error != std::errc{} || end != hashText.data() + hashText.size()) {
+                return hashed;
+            }
             int mode = hashed[1] - '0';
             for (auto &c : calls) {
                 if (mode == 0 && c.hash10 == hash) {
@@ -118,22 +137,16 @@ struct CallHashCache {
     }
 
     std::string trim(std::string in) {
-        while (in.size() > 0 && in[0] == ' ') {
-            in.erase(0, 1);
-        }
-        while (in.size() > 0 && in[in.size()-1] == ' ') {
-            in.erase(in.end() - 1);
-        }
+        const auto first = in.find_first_not_of(' ');
+        if (first == std::string::npos) return {};
+        const auto last = in.find_last_not_of(' ');
+        in = in.substr(first, last - first + 1);
         return in;
     }
 
     std::string normcall(std::string call) {
-        while(call.size() > 0 && call[0] == ' ')
-            call.erase(0, 1);
-        while(call.size() > 0 && call[call.size()-1] == ' ')
-            call.erase(call.end() - 1);
-        while(call.size() < 11)
-            call += " ";
+        call = trim(std::move(call));
+        call.resize((std::max)(call.size(), std::size_t{11}), ' ');
         return call;
     }
 
@@ -157,8 +170,6 @@ struct CallHashCache {
         return x;
     }
 };
-
-std::atomic_bool removeFiles = true;
 
 struct DecodedResult {
     DecodedMode mode;
@@ -197,10 +208,7 @@ struct DecodedResult {
 
 
 struct DrawableDecodedResult {
-    virtual long long getDecodeEndTimestamp() = 0;
-    virtual long long getFrequency() = 0;
     ImVec2 layout;
-    const char *info;
     virtual void draw(const ImVec2& origin, ImGuiWindow* pWindow) = 0;
     static constexpr int TOTAL_STEPS = 4 * 60;
     virtual void planTo(ImVec2 n) {
@@ -212,8 +220,6 @@ struct FT8DrawableDecodedResult : DrawableDecodedResult {
 
     DecodedResult* result;
     FT8DrawableDecodedResult(DecodedResult* result);
-    long long int getDecodeEndTimestamp() override;
-    long long int getFrequency() override;
     void draw(const ImVec2& origin, ImGuiWindow* pWindow) override;
 };
 
@@ -222,11 +228,8 @@ struct FT8DrawableDecodedDistRange : DrawableDecodedResult {
 
     static std::unordered_map<std::string, ImVec2> lastCoords; // by title
 
-    long long freq;
-    explicit FT8DrawableDecodedDistRange(const std::string& extraText, long long freq);
+    explicit FT8DrawableDecodedDistRange(const std::string& extraText);
 
-    long long int getDecodeEndTimestamp() override;
-    long long int getFrequency() override;
     void draw(const ImVec2& origin, ImGuiWindow* pWindow) override;
 };
 
@@ -265,7 +268,7 @@ static int rangeContainsInclusive(double largeRangeStart, double largeRangeEnd, 
     return 0;
 }
 
-static std::pair<int,int> calculateVFOCenterOffset(const std::vector<int> &frequencies, double centerFrequency, double ifBandwidth) {
+static std::pair<int,int> calculateVFOCenterOffset(std::span<const int> frequencies, double centerFrequency, double ifBandwidth) {
     int rangeStart = centerFrequency - ifBandwidth/2;
     int rangeEnd = centerFrequency + ifBandwidth/2;
     for (auto q = std::begin(frequencies); q != std::end(frequencies); q++) {
@@ -281,19 +284,18 @@ static std::pair<int,int> calculateVFOCenterOffset(const std::vector<int> &frequ
 
 
 class FT8DecoderModule;
-static std::vector<int> ft8Frequencies = { 1840000, 3573000, 5357000, 7074000, 10136000, 14074000, 18100000, 21074000, 24915000, 28074000, 50323000, 144174000, 222065000, 432065000  };
+static constexpr std::array ft8Frequencies = { 1840000, 3573000, 5357000, 7074000, 10136000, 14074000, 18100000, 21074000, 24915000, 28074000, 50323000, 144174000, 222065000, 432065000  };
 
 struct SingleDecoder {
     FT8DecoderModule *mod;
     std::vector<dsp::stereo_t> reader;
-    double ADJUST_PERIOD = 0.1; // seconds before adjusting the vfo offset after user changed the center freq
+    static constexpr double ADJUST_PERIOD = 0.1; // seconds before adjusting the vfo offset after user changed the center freq
     int beforeAdjust = (int)(VFO_SAMPLE_RATE * ADJUST_PERIOD);
     std::atomic_int previousCenterOffset = 0;
     std::atomic_bool onTheFrequency = false;
     dsp::stream<dsp::complex_t> iqdata = "singledecoder.iqdata";
     std::atomic_bool running;
     std::atomic_bool processingEnabled = true;
-    FT8DecoderModule *mod2;
     std::string decodeError;
     std::mutex decodeErrorMutex;
 
@@ -319,7 +321,7 @@ struct SingleDecoder {
     virtual std::string getModeString() = 0;
 
     dsp::chain<dsp::complex_t> ifChain;
-    dsp::channel::RxVFO* vfo;
+    std::unique_ptr<dsp::channel::RxVFO> vfo;
     ConfigManager usbDemodConfig;
 
     double prevBlockNumber = 0;
@@ -377,7 +379,7 @@ struct SingleFT8Decoder : SingleDecoder {
     }
 };
 
-const std::vector<int> wsprFrequencies = { 136000, 474200, 1836600, 3568600, 7038600, 10138700, 14095600, 21094600, 24924600, 28124600, 50293000, 70091000, 144489000, 129650000, 181046000, 249246000, 281246000, 432300000 };
+constexpr std::array wsprFrequencies = { 136000, 474200, 1836600, 3568600, 7038600, 10138700, 14095600, 21094600, 24924600, 28124600, 50293000, 70091000, 144489000, 129650000, 181046000, 249246000, 281246000, 432300000 };
 
 struct SingleFT4Decoder : SingleDecoder {
 
@@ -398,7 +400,7 @@ struct SingleFT4Decoder : SingleDecoder {
         return "ft4";
     }
     std::pair<int,int> calculateVFOCenterOffsetForMode(double centerFrequency, double ifBandwidth) override {
-        static std::vector<int> frequencies = { 7047500, 10140000, 14080000, 18104000, 21140000, 28180000 };
+        static constexpr std::array frequencies = { 7047500, 10140000, 14080000, 18104000, 21140000, 28180000 };
         return calculateVFOCenterOffset(frequencies, centerFrequency, ifBandwidth);
     }
 
@@ -410,7 +412,7 @@ class FT8DecoderModule : public ModuleInstance, public FT8ModuleInterface {
     SingleFT8Decoder ft8decoder;
     SingleFT4Decoder ft4decoder;
 
-    std::vector<SingleDecoder *>allDecoders = { &ft8decoder, &ft4decoder };
+    std::array<SingleDecoder*, 2> allDecoders = { &ft8decoder, &ft4decoder };
 
     //    const int CAPTURE_SAMPLE_RATE = 12000;
 
@@ -483,7 +485,6 @@ public:
                     snprintf(modeString, sizeof modeString, "???");
                     break;
                 }
-                auto band = atof(incoming.frequencyBand.c_str());   // band in mhz
                 fprintf(f, "%s%10s Rx %s%7d  0.0%5d %s\n",
                         incoming.decodedBlock.c_str(),
                         incoming.frequencyBand.c_str(),
@@ -514,32 +515,25 @@ public:
 
     void clearDecodedResults(DecodedMode mode) {
         std::lock_guard g(decodedResultsLock);
-        decodedResults.erase(std::remove_if(decodedResults.begin(), decodedResults.end(), [mode](const DecodedResult& x) { return x.mode == mode; }), decodedResults.end());
+        std::erase_if(decodedResults, [mode](const DecodedResult& x) { return x.mode == mode; });
         decodedResultsDrawables.clear();
     }
 
 
     void drawDecodedResults(const ImGui::WaterFall::WaterfallDrawArgs &args) {
 
-//        auto ctm = currentTimeMillis();
-        decodedResultsLock.lock();
-//        auto wfHeight = args.wfMax.y - args.wfMin.y;
-//        auto wfWidth = args.wfMax.x - args.wfMin.x;
-//        double timePerLine = 1000.0 / sigpath::iqFrontEnd.getFFTRate();
+        std::lock_guard lock(decodedResultsLock);
         auto currentTime = sigpath::iqFrontEnd.getCurrentStreamTime();
 
 
 
         // delete obsolete ones, and detect relayout
-        for(int i=0; i<decodedResults.size(); i++) {
-            auto& result = decodedResults[i];
-            auto resultTimeDelta = currentTime - result.decodeEndTimestamp;
-            if (resultTimeDelta > (2*secondsToKeepResults)*1000 + 5000) { // this deletes anyway when new results came.
-                decodedResults.erase(decodedResults.begin() + i);
-                decodedResultsDrawables.clear();
-                i--;
-                continue;
-            }
+        const auto previousSize = decodedResults.size();
+        std::erase_if(decodedResults, [&](const DecodedResult& result) {
+            return currentTime - result.decodeEndTimestamp > (2*secondsToKeepResults)*1000 + 5000;
+        });
+        if (decodedResults.size() != previousSize) {
+            decodedResultsDrawables.clear();
         }
         if (baseTextSize.y == 0) {
             ImGui::PushFont(style::baseFont);
@@ -553,15 +547,9 @@ public:
 
         if (!decodedResults.empty() && decodedResultsDrawables.empty()) {
 
-            for(int i=0; i<decodedResults.size(); i++) {                // this clear obsolete as soon as new batch arrives, not earlier (not in the middle of cycle).
-                auto& result = decodedResults[i];
-                auto resultTimeDelta = currentTime - result.decodeEndTimestamp;
-                if (resultTimeDelta > secondsToKeepResults*1000 + 5000) {
-                    decodedResults.erase(decodedResults.begin() + i);
-                    i--;
-                    continue;
-                }
-            }
+            std::erase_if(decodedResults, [&](const DecodedResult& result) {
+                return currentTime - result.decodeEndTimestamp > secondsToKeepResults*1000 + 5000;
+            });
 
             static int distances[] = {1000, 2000, 3000, 4000, 5000, 6000, 8000, 10000, 13000, 15000, 18000};
             static auto getGroup = [](int distance) -> int {
@@ -665,17 +653,15 @@ public:
 
                 }
                 if (!insideGroup.empty()) {
-                    auto freqq = (double)(*insideGroup.begin())->frequency;
                     auto label = "<= " + std::to_string((int)maxDistance) + " KM";
                     if (!getMyPos().isValid()) {
                         label = "=> setup your GRID SQUARE";
                     }
-                    auto fdr2 = std::make_shared<FT8DrawableDecodedDistRange>(label, freqq);
+                    auto fdr2 = std::make_shared<FT8DrawableDecodedDistRange>(label);
                     auto &that = FT8DrawableDecodedDistRange::lastCoords[label];
                     fdr2->layout = that;
                     fdr2->planTo(ImVec2(scanX, scanY));
 
-//                    flog::info("closing: {} {} {}", i, fdr2->layoutX, fdr2->layoutY);
                     decodedResultsDrawables.emplace_back(fdr2);
                     usedDistances.emplace(label);
                     scanX = 0;
@@ -693,7 +679,6 @@ public:
 
             double maxy = 0;
             for (auto& result : decodedResultsDrawables) {
-                //                mdf = std::min<long long>(result->getFrequency(), mdf);
                 maxy = std::max<double>(maxy, result->layout.y);
             }
             for (auto& result : decodedResultsDrawables) {
@@ -704,31 +689,15 @@ public:
 
 
 
-        std::vector<ImRect> rects;
-
-        // place new ones
-
         if (!decodedResultsDrawables.empty()) {
-//            auto mdf = decodedResultsDrawables[0]->getFrequency();
             for (int i = 0; i < decodedResultsDrawables.size(); i++) {
                 auto& result = decodedResultsDrawables[i];
-
-//                auto df = mdf - gui::waterfall.getCenterFrequency();
-//                auto dx = (wfWidth / 2) + df / (gui::waterfall.getViewBandwidth() / 2) * (wfWidth / 2); // in pixels, on waterfall
-
-//                auto drawX = 0;
-//                auto drawY = 20;
                 result->draw(args.wfMin, args.window);
             }
         }
-
-        decodedResultsLock.unlock();
     }
 
     EventHandler<ImGui::WaterFall::WaterfallDrawArgs> afterWaterfallDrawListener;
-    EventHandler<ImGuiContext *> debugDrawHandler;
-
-
     void *getInterface(const char *name) override {
         if (!strcmp(name, "FT8ModuleInterface")) {
             return dynamic_cast<FT8ModuleInterface *>(this);
@@ -738,16 +707,14 @@ public:
 
     FT8DecoderModule(std::string name) {
         this->name = name;
-        ft8decoder.mod = ft8decoder.mod2 = this;
-        ft4decoder.mod = ft4decoder.mod2 = this;
+        ft8decoder.mod = this;
+        ft4decoder.mod = this;
         gui::waterfall.afterWaterfallDraw.bindHandler(&afterWaterfallDrawListener);
         afterWaterfallDrawListener.ctx = this;
         afterWaterfallDrawListener.handler = [](ImGui::WaterFall::WaterfallDrawArgs args, void* ctx) {
             ((FT8DecoderModule*)ctx)->drawDecodedResults(args);
         };
         decodedResults.reserve(2000);  // to keep addresses constant.
-
-        //        mshv_init();
 
         // Load config
         config.acquire();
@@ -769,9 +736,6 @@ public:
         if (config.conf[name].find("processingEnabledFT4") != config.conf[name].end()) {
             ft4decoder.processingEnabled = config.conf[name]["processingEnabledFT4"].get<bool>();
         }
-        if (config.conf[name].find("enablePSKReporter") != config.conf[name].end()) {
-            enablePSKReporter = config.conf[name]["enablePSKReporter"].get<bool>();
-        }
         if (config.conf[name].find("enableALLTXT") != config.conf[name].end()) {
             enableAllTXT = config.conf[name]["enableALLTXT"].get<bool>();
         }
@@ -783,25 +747,7 @@ public:
             d->init(name);
         });
 
-        gui::mainWindow.onDebugDraw.bindHandler(&debugDrawHandler);
-        debugDrawHandler.ctx = this;
-        debugDrawHandler.handler = [](ImGuiContext *gctx, void* ctx) {
-            FT8DecoderModule* _this = (FT8DecoderModule*)ctx;
-            _this->drawDebugMenu(gctx);
-        };
-
-
         enable();
-    }
-
-    void drawDebugMenu(ImGuiContext *gctx) {
-        ImGui::LeftLabel("Remove FT8 WAVs");
-        ImGui::FillWidth();
-        bool shouldRemoveFiles = removeFiles.load();
-        if (ImGui::Checkbox("##keep_ft8_wavs", &shouldRemoveFiles)) {
-            removeFiles = shouldRemoveFiles;
-        }
-        ImGui::Text("ft8en %d onfreq %d", allDecoders[0]->mod->enabled.load(), allDecoders[0]->onTheFrequency.load());
     }
 
 
@@ -936,28 +882,6 @@ public:
             ImGui::Text("Error: %s", ft4DecodeError.c_str());
             ImGui::PopStyleColor();
         }
-        if (false) {
-            //
-            // PSK Reporter not completed yet
-            //
-            ImGui::LeftLabel("PSKReporter");
-            ImGui::BeginDisabled();
-            if (ImGui::Checkbox(CONCAT("##_enable_psk_reporter_", _this->name), &_this->enablePSKReporter)) {
-                config.acquire();
-                config.conf[_this->name]["enablePSKReporter"] = _this->enablePSKReporter;
-                config.release(true);
-            }
-            ImGui::EndDisabled();
-            ImGui::SameLine();
-            ImGui::Text("using callsign:");
-            ImGui::SameLine();
-            ImGui::FillWidth();
-            if (sigpath::iqFrontEnd.operatorCallsign == "") {
-                ImGui::Text("[set up in source menu]");
-            } else {
-                ImGui::Text("%s", sigpath::iqFrontEnd.operatorCallsign.c_str());
-            }
-        }
         ImGui::LeftLabel("ALL.TXT log");
         if (ImGui::Checkbox(CONCAT("##_enable_alltxt_", _this->name), &_this->enableAllTXT)) {
             config.acquire();
@@ -983,9 +907,6 @@ public:
 
     std::string name;
     std::atomic_bool enabled = false;
-    char myGrid[10];
-    char myCallsign[13];
-    bool enablePSKReporter = true;
     bool enableAllTXT = false;
     char allTxtPath[1024];
     std::string allTxtPathError;
@@ -1005,14 +926,6 @@ public:
         return _myPos;
     }
 
-
-
-    //    dsp::buffer::Reshaper<float> reshape;
-    //    dsp::sink::Handler<float> diagHandler;
-    //    dsp::multirate::RationalResampler<dsp::stereo_t> resamp;
-    //
-
-    std::chrono::time_point<std::chrono::high_resolution_clock> lastUpdated;
 };
 
 
@@ -1020,13 +933,6 @@ DecodedResult::DecodedResult(DecodedMode mode, long long int decodeEndTimestamp,
     : mode(mode), decodeEndTimestamp(decodeEndTimestamp), frequency(frequency), shortString(shortString), detailedString(detailedString) {
 
 }
-long long int FT8DrawableDecodedResult::getDecodeEndTimestamp() {
-    return result->decodeEndTimestamp;
-}
-long long int FT8DrawableDecodedResult::getFrequency() {
-    return result->frequency;
-}
-
 static int toColor(double coss) {
     if (coss < 0) {
         return 0;
@@ -1127,18 +1033,9 @@ void FT8DrawableDecodedResult::draw(const ImVec2& _origin, ImGuiWindow* window) 
 
 }
 FT8DrawableDecodedResult::FT8DrawableDecodedResult(DecodedResult* result) : result(result) {
-    info = result->shortString.c_str();
 }
 
-FT8DrawableDecodedDistRange::FT8DrawableDecodedDistRange(const std::string& extraText, long long freq) : extraText(extraText), freq(freq) {
-    info = "range";
-
-}
-long long int FT8DrawableDecodedDistRange::getDecodeEndTimestamp() {
-    return 0;
-}
-long long int FT8DrawableDecodedDistRange::getFrequency() {
-    return freq;
+FT8DrawableDecodedDistRange::FT8DrawableDecodedDistRange(const std::string& extraText) : extraText(extraText) {
 }
 void FT8DrawableDecodedDistRange::draw(const ImVec2& _origin, ImGuiWindow* window) {
     ImVec2 origin = _origin;
@@ -1199,7 +1096,6 @@ void SingleDecoder::startBlockProcessing(const std::shared_ptr<std::vector<dsp::
     processorThread = std::jthread([this, block, blockNumber, originalOffset]() {
         SetThreadName(getModeString()+"_startBlockProcessing");
         std::time_t bst = (std::time_t)(blockNumber * getBlockDuration());
-//        flog::info("Start processing block ({}), size={}, block time: {}", this->getModeString(), (int64_t)block->size(), std::asctime(std::gmtime(&bst)));
         int count = 0;
         long long time0 = 0;
         auto poss = mod->getMyPos();
@@ -1249,7 +1145,6 @@ void SingleDecoder::startBlockProcessing(const std::shared_ptr<std::vector<dsp::
                         std::lock_guard cacheLock(callHashCacheMutex);
                         auto ncallsign = callHashCache.findCall(callsign, bst * 1000);
                         progress = "pipe8";
-//                        flog::info("Found call: {} -> {}", callsign, ncallsign);
                         callsign = ncallsign;
                         progress = "pipe9";
                     }
@@ -1335,7 +1230,8 @@ void SingleDecoder::startBlockProcessing(const std::shared_ptr<std::vector<dsp::
         SetThreadName(getModeString()+"_callDecode");
         auto start = currentTimeMillis();
         try {
-            dsp::ft8::decodeFT8(mod->nthreads.load(), getModeString(), VFO_SAMPLE_RATE, block->data(), block->size(), handler, progress, removeFiles.load());
+            mshv::decode(mod->nthreads.load(), getModeString(), VFO_SAMPLE_RATE, *block,
+                [&](mshv::DecodeResult result) { handler(0, std::move(result), progress); });
         } catch (const std::exception &e) {
             std::lock_guard errorLock(decodeErrorMutex);
             decodeError = e.what();
@@ -1352,18 +1248,15 @@ void SingleDecoder::startBlockProcessing(const std::shared_ptr<std::vector<dsp::
         lastDecodeTime0 = time0 == 0 ? 0 : (int)(time0 - start);
         blockProcessorsRunning = 0;
 
-//        flog::info("blockProcessorsRunning ({}) gracefully completed {}", getModeString(), blockNumber);
-
     });
 }
 
 void SingleDecoder::init(const std::string &name) {
-    vfo = new dsp::channel::RxVFO(&iqdata, sigpath::iqFrontEnd.getEffectiveSamplerate(), VFO_SAMPLE_RATE, USB_BANDWIDTH, vfoOffset);
+    vfo = std::make_unique<dsp::channel::RxVFO>(&iqdata, sigpath::iqFrontEnd.getEffectiveSamplerate(), VFO_SAMPLE_RATE, USB_BANDWIDTH, vfoOffset);
 
     sigpath::iqFrontEnd.onEffectiveSampleRateChange.bindHandler(&iqSampleRateListener);
     iqSampleRateListener.ctx = this;
     iqSampleRateListener.handler = [](double newSampleRate, void* ctx) {
-//        flog::info("FT8 decoder: effective sample rate changed to {}", newSampleRate);
         ((SingleDecoder*)ctx)->vfo->setInSamplerate(newSampleRate);
     };
 
@@ -1377,8 +1270,6 @@ void SingleDecoder::init(const std::string &name) {
     //        usbDemod->setFrozen(true);
     ifChain.setInput(&vfo->out, [&](auto ifchainOut) {
         usbDemod->setInput(ifchainOut);
-//        flog::info("ifchain change out");
-        // next
     });
 
     gui::mainWindow.onPlayStateChange.bindHandler(&onPlayStateChange);
@@ -1394,14 +1285,10 @@ void SingleDecoder::init(const std::string &name) {
     readerThread = std::jthread([thiz=this]() {
         SetThreadName(thiz->getModeString()+"_ssb_reader");
 
-//        auto _this = this;
         while (thiz->running.load()) {
             int rd = thiz->usbDemod->getOutput()->read();
             if (rd < 0) {
                 break;
-            }
-            if (thiz->mod != thiz->mod2) {
-                abort();
             }
             if (thiz->processingEnabled) {
                 thiz->handleData(rd, thiz->usbDemod->getOutput()->readBuf);
@@ -1422,6 +1309,7 @@ void SingleDecoder::destroy() {
     if (processorThread.joinable()) {
         processorThread.join();
     }
+    vfo.reset();
 }
 
 
@@ -1489,29 +1377,7 @@ void SingleDecoder::handleIFData(const std::vector<dsp::stereo_t>& data) {
         fullBlock->reserve((getBlockDuration() + 1) * VFO_SAMPLE_RATE);
     }
     fullBlock->insert(std::end(*fullBlock), std::begin(data), std::end(data));
-    //        flog::info("{} Got {} samples: {}", blockNumber, data.size(), data[0].l);
 }
 
-
-#ifdef NEW_BUILTIN_MODE
-
-extern void doDecode(const char *mode, const char *path, int threads, std::function<void(int mode, std::vector<std::string> result)> callback);
-namespace dsp {
-    namespace ft8 {
-        void invokeDecoder(int nthreads, const std::string &mode, const std::string &wavPath, const std::string &outPath,
-                           const std::string &errPath,
-                           std::function<void(int mode, std::vector<std::string> result, std::atomic<const char *> &progress)> callback1,
-                           std::atomic<const char *> &progress)
-        {
-            ::doDecode(mode.c_str(), wavPath.c_str(), nthreads, [&](int mode2, std::vector<std::string> result) {
-                callback1(mode2, result, progress);
-            });
-        }
-
-    }
-}
-
-
-#endif
 
 SDRPP_MODULE_EXPORT_API;
