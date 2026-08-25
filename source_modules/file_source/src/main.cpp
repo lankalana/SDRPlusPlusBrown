@@ -8,11 +8,12 @@
 #include <core.h>
 #include <gui/widgets/file_select.h>
 #include <filesystem>
+#include <chrono>
 #include <regex>
+#include <thread>
 #include <gui/tuner.h>
 #include <time.h>
 #include "gui/smgui.h"
-#include "utils/usleep.h"
 #include "utils/optionlist.h"
 #include "utils/wstr.h"
 #include <algorithm>
@@ -420,7 +421,7 @@ private:
                 auto now = currentTimeMillis();
                 auto delay = ctm - now;
                 if (delay > 0) {
-                    usleep(delay * 1000);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(delay));
                 }
             }
         }
@@ -466,7 +467,7 @@ private:
         std::string dateTimeStre = filename.substr(pos + 3, 19);
         std::tm tm;
         memset(&tm, 0, sizeof(tm));
-        char* end;
+        const char* end;
 #ifdef _WIN32
         int n = sscanf(dateTimeStre.c_str(), "%d-%d-%d_%d-%d-%d", &tm.tm_hour, &tm.tm_min, &tm.tm_sec, &tm.tm_mday, &tm.tm_mon, &tm.tm_year);
         tm.tm_mon--;

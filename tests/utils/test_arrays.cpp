@@ -487,16 +487,12 @@ TEST_CASE("dsp::math::sma smooths with the given window", "[utils][arrays][math]
     }
 }
 
-TEST_CASE("dsp::math::sma divides by zero on the first sample",
-          "[utils][arrays][math][characterization]") {
-    // KNOWN BUG, pinned: before the window fills, the running sum is divided by
-    // the loop index, which is zero for the very first sample. The result is an
-    // infinity (or a NaN for an all-zero input) at index 0. Callers happen to
-    // discard the head of the array, which is why nobody has noticed.
+TEST_CASE("dsp::math::sma averages partial windows at the beginning",
+          "[utils][arrays][math]") {
     std::vector<float> src(8, 2.0f);
     auto out = dsp::math::sma(4, src);
-    REQUIRE_FALSE(std::isfinite(out[0]));
-    REQUIRE(std::isfinite(out[1]));
+    REQUIRE(out[0] == Approx(2.0f));
+    REQUIRE(out[1] == Approx(2.0f));
 }
 
 TEST_CASE("dsp::math::maxeach decimates by the window size", "[utils][arrays][math]") {
@@ -517,6 +513,14 @@ TEST_CASE("dsp::math::maxeach flushes a partial trailing window", "[utils][array
     REQUIRE(out.size() == 2);
     REQUIRE(out[0] == Approx(3.0f));
     REQUIRE(out[1] == Approx(7.0f));
+}
+
+TEST_CASE("dsp::math::maxeach handles all-negative windows", "[utils][arrays][math]") {
+    std::vector<float> src = { -5, -2, -7, -1 };
+    auto out = dsp::math::maxeach(3, src);
+    REQUIRE(out.size() == 2);
+    REQUIRE(out[0] == Approx(-2.0f));
+    REQUIRE(out[1] == Approx(-1.0f));
 }
 
 TEST_CASE("dsp::math::sinc matches its definition", "[utils][arrays][math]") {

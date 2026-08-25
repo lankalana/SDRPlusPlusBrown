@@ -12,6 +12,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -73,7 +74,7 @@ TEST_CASE("riff::Writer back-patches chunk sizes", "[utils][riff]") {
         REQUIRE(w.open(file.path(), "TEST"));
         w.beginChunk("data");
         const uint8_t payload[10] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-        w.write(payload, sizeof payload);
+        w.write(std::span{payload});
         w.endChunk();
         w.close();
     }
@@ -97,7 +98,7 @@ TEST_CASE("riff::Writer accumulates sizes across several writes", "[utils][riff]
         w.beginChunk("blob");
         for (int i = 0; i < 5; i++) {
             uint8_t b = (uint8_t)i;
-            w.write(&b, 1);
+            w.write(std::span{&b, size_t{1}});
         }
         w.endChunk();
         w.close();
@@ -116,7 +117,7 @@ TEST_CASE("riff::Writer nests LIST chunks and rolls sizes up", "[utils][riff]") 
         w.beginList("INFO");
         w.beginChunk("aaaa");
         const uint8_t payload[4] = { 1, 2, 3, 4 };
-        w.write(payload, 4);
+        w.write(std::span{payload});
         w.endChunk();
         w.endList();
         w.close();
@@ -153,7 +154,7 @@ TEST_CASE("riff::Writer refuses to write outside a chunk", "[utils][riff]") {
     riff::Writer w;
     const uint8_t b = 0;
     // Nothing opened at all: the chunk stack is empty.
-    REQUIRE_THROWS_AS(w.write(&b, 1), std::runtime_error);
+    REQUIRE_THROWS_AS(w.write(std::span{&b, size_t{1}}), std::runtime_error);
 }
 
 TEST_CASE("riff::Writer open reports failure on an unwritable path", "[utils][riff]") {

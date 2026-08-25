@@ -9,7 +9,9 @@
 #include <gui/smgui.h>
 #include <utils/optionlist.h>
 #include <codecvt>
+#include <chrono>
 #include <locale>
+#include <thread>
 #include <aaroniartsaapi.h>
 
 #ifndef _WIN32
@@ -288,7 +290,7 @@ private:
 #ifdef _WIN32
             Sleep(1);
 #else
-            usleep(1000);
+            std::this_thread::sleep_for(std::chrono::microseconds(1000));
 #endif
         }
 
@@ -411,7 +413,7 @@ private:
 #ifdef _WIN32
                 Sleep(1);
 #else
-                usleep(1000);
+                std::this_thread::sleep_for(std::chrono::microseconds(1000));
 #endif
             }
 

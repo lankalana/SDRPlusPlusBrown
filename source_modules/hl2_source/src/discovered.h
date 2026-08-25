@@ -34,7 +34,6 @@ typedef int socklen_t;
 
 #endif
 
-#include <utils/usleep.h>
 
 
 #ifdef SOAPYSDR

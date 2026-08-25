@@ -116,8 +116,8 @@ namespace displaymenu {
         showWaterfall ? gui::waterfall.showWaterfall() : gui::waterfall.hideWaterfall();
         std::string colormapName = core::configManager.conf["colorMap"];
         if (colormaps::maps.find(colormapName) != colormaps::maps.end()) {
-            colormaps::Map map = colormaps::maps[colormapName];
-            gui::waterfall.updatePalletteFromArray(map.map, map.entryCount);
+            const colormaps::Map& map = colormaps::maps[colormapName];
+            gui::waterfall.updatePalletteFromArray(map.map.data(), map.entryCount);
         }
 
         for (auto const& [name, map] : colormaps::maps) {
@@ -405,8 +405,8 @@ namespace displaymenu {
             ImGui::LeftLabel("Color Map");
             ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
             if (ImGui::Combo("##_sdrpp_color_map_sel", &colorMapId, colorMapNamesTxt.c_str())) {
-                colormaps::Map map = colormaps::maps[colorMapNames[colorMapId]];
-                gui::waterfall.updatePalletteFromArray(map.map, map.entryCount);
+                const colormaps::Map& map = colormaps::maps[colorMapNames[colorMapId]];
+                gui::waterfall.updatePalletteFromArray(map.map.data(), map.entryCount);
                 core::configManager.acquire();
                 core::configManager.conf["colorMap"] = colorMapNames[colorMapId];
                 core::configManager.release(true);

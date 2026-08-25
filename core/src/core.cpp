@@ -893,6 +893,7 @@ int sdrpp_main(int argc, char* argv[]) {
 
     backend::renderLoop();
 
+    httpdebug::stopHttpServer();
     gui::mainWindow.end();
 
     // On android, none of this shutdown should happen due to the way the UI works

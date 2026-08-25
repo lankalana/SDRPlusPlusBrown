@@ -1,20 +1,14 @@
 #include <gui/widgets/image.h>
+#include <algorithm>
 
 namespace ImGui {
-    ImageDisplay::ImageDisplay(int width, int height) {
+    ImageDisplay::ImageDisplay(int width, int height)
+        : writeBuffer(width * height * 4, 0), activeBuffer(width * height * 4, 0) {
         _width = width;
         _height = height;
-        buffer = malloc(_width * _height * 4);
-        activeBuffer = malloc(_width * _height * 4);
-        memset(buffer, 0, _width * _height * 4);
-        memset(activeBuffer, 0, _width * _height * 4);
+        buffer = writeBuffer.data();
 
         glGenTextures(1, &textureId);
-    }
-
-    ImageDisplay::~ImageDisplay() {
-        free(buffer);
-        free(activeBuffer);
     }
 
     void ImageDisplay::draw(const ImVec2& size_arg) {
@@ -46,11 +40,10 @@ namespace ImGui {
 
     void ImageDisplay::swap() {
         std::lock_guard<std::mutex> lck(bufferMtx);
-        void* tmp = activeBuffer;
-        activeBuffer = buffer;
-        buffer = tmp;
+        writeBuffer.swap(activeBuffer);
+        buffer = writeBuffer.data();
         newData = true;
-        memset(buffer, 0, _width * _height * 4);
+        std::ranges::fill(writeBuffer, uint8_t{});
     }
 
     void ImageDisplay::updateTexture() {
@@ -58,7 +51,7 @@ namespace ImGui {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, _width, _height, 0, GL_RGBA, GL_UNSIGNED_BYTE, activeBuffer);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, _width, _height, 0, GL_RGBA, GL_UNSIGNED_BYTE, activeBuffer.data());
     }
 
 }

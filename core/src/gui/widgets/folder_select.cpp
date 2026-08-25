@@ -1,4 +1,5 @@
 #include <gui/widgets/folder_select.h>
+#include <cstdio>
 #include <regex>
 #include <filesystem>
 #include <gui/file_dialogs.h>
@@ -11,6 +12,13 @@ FolderSelect::FolderSelect(std::string defaultPath) {
 }
 
 bool FolderSelect::render(std::string id) {
+    std::optional<std::string> selection;
+    {
+        std::lock_guard lock(resultMutex);
+        selection.swap(selectedPath);
+    }
+    if (selection) { setPath(std::move(*selection), true); }
+
     bool _pathChanged = false;
     float menuColumnWidth = ImGui::GetContentRegionAvail().x;
 
@@ -20,9 +28,9 @@ bool FolderSelect::render(std::string id) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
     }
     ImGui::SetNextItemWidth(menuColumnWidth - buttonWidth);
-    if (ImGui::InputText(id.c_str(), strPath, 2047)) {
-        path = std::string(strPath);
-        std::string expandedPath = expandString(strPath);
+    if (ImGui::InputText(id.c_str(), strPath.data(), strPath.size())) {
+        path = strPath.data();
+        std::string expandedPath = expandString(strPath.data());
         if (!std::filesystem::is_directory(wstr::str2wstr(expandedPath))) {
             pathValid = false;
         }
@@ -35,10 +43,11 @@ bool FolderSelect::render(std::string id) {
         ImGui::PopStyleColor();
     }
     ImGui::SameLine();
-    if (ImGui::Button(("..." + id + "_winselect").c_str(), ImVec2(buttonWidth - 8.0f, 0)) && !dialogOpen) {
-        dialogOpen = true;
-        if (workerThread.joinable()) { workerThread.join(); }
-        workerThread = std::thread(&FolderSelect::worker, this);
+    if (ImGui::Button(("..." + id + "_winselect").c_str(), ImVec2(buttonWidth - 8.0f, 0)) && !dialogOpen.exchange(true)) {
+        auto startingPath = pathValid ? std::filesystem::path(expandString(path)).parent_path().string() : "";
+        workerThread = std::jthread([this, startingPath = std::move(startingPath)](std::stop_token stopToken) mutable {
+            worker(stopToken, std::move(startingPath));
+        });
     }
 
     _pathChanged |= pathChanged;
@@ -51,7 +60,7 @@ void FolderSelect::setPath(std::string path, bool markChanged) {
     std::string expandedPath = expandString(path);
     pathValid = std::filesystem::is_directory(wstr::str2wstr(expandedPath));
     if (markChanged) { pathChanged = true; }
-    strcpy(strPath, path.c_str());
+    std::snprintf(strPath.data(), strPath.size(), "%s", path.c_str());
 }
 
 std::string FolderSelect::expandString(std::string input) {
@@ -63,16 +72,14 @@ bool FolderSelect::pathIsValid() {
     return pathValid;
 }
 
-void FolderSelect::worker() {
-    auto fold = pfd::select_folder("Select Folder", pathValid ? std::filesystem::path(expandString(path)).parent_path().string() : "");
+void FolderSelect::worker(std::stop_token stopToken, std::string startingPath) {
+    auto fold = pfd::select_folder("Select Folder", startingPath);
     std::string res = fold.result();
 
-    if (res != "") {
-        path = res;
-        strcpy(strPath, path.c_str());
-        pathChanged = true;
+    if (!stopToken.stop_requested() && !res.empty()) {
+        std::lock_guard lock(resultMutex);
+        selectedPath = std::move(res);
     }
 
-    pathValid = std::filesystem::is_directory(wstr::str2wstr(expandString(path)));
     dialogOpen = false;
 }

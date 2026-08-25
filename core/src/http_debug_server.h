@@ -5,6 +5,8 @@
 #include <atomic>
 #include <filesystem>
 #include <functional>
+#include <mutex>
+#include <utility>
 #include <vector>
 #include <utils/event.h>
 
@@ -37,7 +39,7 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
 namespace httpdebug {
 
     inline Server* httpServer = nullptr;
-    inline std::thread* ewsThread = nullptr;
+    inline std::jthread ewsThread;
     inline std::atomic<bool> httpServerListening{ false };
     inline std::atomic<bool> serverReady{ false };
     inline std::atomic<bool> mainLoopStarted{ false };
@@ -55,6 +57,7 @@ namespace httpdebug {
     inline std::atomic<bool> sdrStopRequest{ false };
     inline std::atomic<bool> sdrPlaying{ false };
     inline std::string sourceChangeRequest{ "" };
+    inline std::mutex sourceChangeMutex;
 
     inline void requestSdrStart() {
         sdrStartRequest.store(true, std::memory_order_release);
@@ -75,12 +78,12 @@ namespace httpdebug {
         return sdrPlaying.load(std::memory_order_acquire);
     }
     inline void requestSourceChange(const std::string& sourceName) {
+        std::lock_guard lock(sourceChangeMutex);
         sourceChangeRequest = sourceName;
     }
     inline std::string getSourceChangeRequest() {
-        std::string req = sourceChangeRequest;
-        sourceChangeRequest = "";
-        return req;
+        std::lock_guard lock(sourceChangeMutex);
+        return std::exchange(sourceChangeRequest, {});
     }
 
 #ifdef __cplusplus

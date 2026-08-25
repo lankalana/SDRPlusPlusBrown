@@ -17,6 +17,7 @@
 #include "dsp/loop/agc.h"
 #include "dsp/multirate/rational_resampler.h"
 #include <zstd.h>
+#include <array>
 
 #ifdef __linux__
 #include <signal.h>
@@ -33,9 +34,9 @@ namespace server {
     dsp::compression::SampleStreamCompressor comp;
     dsp::sink::Handler<uint8_t> hnd;
     net::Conn client;
-    uint8_t* rbuf = NULL;
-    uint8_t* sbuf = NULL;
-    uint8_t* bbuf = NULL;
+    std::array<uint8_t, SERVER_MAX_PACKET_SIZE> rbuf;
+    std::array<uint8_t, SERVER_MAX_PACKET_SIZE> sbuf;
+    std::array<uint8_t, SERVER_MAX_PACKET_SIZE> bbuf;
 
     PacketHeader* r_pkt_hdr = NULL;
     uint8_t* r_pkt_data = NULL;
@@ -102,9 +103,6 @@ namespace server {
         fftCompressor.setEnabled(true);
         comp.init(&fftCompressor.out, dsp::compression::PCM_TYPE_I8);
         hnd.init(&comp.out, _testServerHandler, NULL);
-        rbuf = new uint8_t[SERVER_MAX_PACKET_SIZE];
-        sbuf = new uint8_t[SERVER_MAX_PACKET_SIZE];
-        bbuf = new uint8_t[SERVER_MAX_PACKET_SIZE];
         comp.start();
         hnd.start();
         fftCompressor.start();
@@ -123,17 +121,17 @@ namespace server {
         transmitPacker.start();
 
         // Initialize headers
-        r_pkt_hdr = (PacketHeader*)rbuf;
+        r_pkt_hdr = (PacketHeader*)rbuf.data();
         r_pkt_data = &rbuf[sizeof(PacketHeader)];
         r_cmd_hdr = (CommandHeader*)r_pkt_data;
         r_cmd_data = &rbuf[sizeof(PacketHeader) + sizeof(CommandHeader)];
 
-        s_pkt_hdr = (PacketHeader*)sbuf;
+        s_pkt_hdr = (PacketHeader*)sbuf.data();
         s_pkt_data = &sbuf[sizeof(PacketHeader)];
         s_cmd_hdr = (CommandHeader*)s_pkt_data;
         s_cmd_data = &sbuf[sizeof(PacketHeader) + sizeof(CommandHeader)];
 
-        bb_pkt_hdr = (PacketHeader*)bbuf;
+        bb_pkt_hdr = (PacketHeader*)bbuf.data();
         bb_pkt_data = &bbuf[sizeof(PacketHeader)];
 
         // Initialize compressor
@@ -175,7 +173,7 @@ namespace server {
                     continue;
                 }
                 if (!file.is_regular_file()) { continue; }
-                if (fn.find("source") == std::string::npos) { continue; }
+                if (!fn.contains("source")) { continue; }
 
                 if (isBlacklisted(path, fn)) {
                     flog::warn("Skipping blacklisted module {0}", path);
@@ -199,7 +197,7 @@ namespace server {
                 continue;
             }
             if (!std::filesystem::is_regular_file(file)) { continue; }
-            if (fn.find("source") == std::string::npos) { continue; }
+            if (!fn.contains("source")) { continue; }
 
             if (isBlacklisted(path, fn)) {
                 flog::warn("Skipping blacklisted module {0}", path);
@@ -307,7 +305,7 @@ namespace server {
 
         flog::info("Connection from {0}", conn->getPeerName());
         client = std::move(conn);
-        client->readAsync(sizeof(PacketHeader), rbuf, _packetHandler, NULL);
+        client->readAsync(sizeof(PacketHeader), rbuf.data(), _packetHandler, NULL);
 
         // Perform settings reset
         sigpath::sourceManager.stop();
@@ -410,7 +408,7 @@ namespace server {
         }
 
         // Start another async read
-        client->readAsync(sizeof(PacketHeader), rbuf, _packetHandler, NULL);
+        client->readAsync(sizeof(PacketHeader), rbuf.data(), _packetHandler, NULL);
     }
 
     int frameCount = 0;
@@ -466,7 +464,7 @@ namespace server {
         // Write to network
         if (client) {
             if (client->isOpen()) {
-                client->write(bb_pkt_hdr->size, bbuf);
+                client->write(bb_pkt_hdr->size, bbuf.data());
                 if (fftCompressor.isEnabled() && frameCount % 20 == 1 && (sigpath::transmitter == nullptr || sigpath::transmitter->getTXStatus() == 0)) {
                     fftCompressor.sharedDataLock.lock();
                     auto nbytes = fftCompressor.noiseFigure.size() * sizeof(fftCompressor.noiseFigure[0]);
@@ -700,7 +698,7 @@ namespace server {
     }
 
     void sendError(Error err) {
-        PacketHeader* hdr = (PacketHeader*)sbuf;
+        PacketHeader* hdr = (PacketHeader*)sbuf.data();
         s_pkt_data[0] = err;
         sendPacket(PACKET_TYPE_ERROR, 1);
     }
@@ -726,7 +724,7 @@ namespace server {
     void sendPacket(PacketType type, int len) {
         s_pkt_hdr->type = type;
         s_pkt_hdr->size = sizeof(PacketHeader) + len;
-        client->write(s_pkt_hdr->size, sbuf);
+        client->write(s_pkt_hdr->size, sbuf.data());
     }
 
     void sendCommand(Command cmd, int len) {

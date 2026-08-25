@@ -4,7 +4,8 @@
 #include "utils/strings.h"
 #include "mqtt.h"
 #include "json.hpp"
-#include "utils/usleep.h"
+#include <chrono>
+#include <thread>
 
 namespace net {
 
@@ -18,7 +19,7 @@ namespace net {
                 if (!running) {
                     break;
                 }
-                usleep(1000000);
+                std::this_thread::sleep_for(std::chrono::microseconds(1000000));
             }
         }
     };
@@ -41,7 +42,7 @@ namespace net {
                 splitStringV(emptyForm, "\n", lines);
                 // find string in lines, with form_id=wsprnet_spotquery_form
                 for(int q=0; q<lines.size(); q++) {
-                    if (lines[q].find("value=\"wsprnet_spotquery_form\"") != std::string::npos) {
+                    if (lines[q].contains("value=\"wsprnet_spotquery_form\"")) {
                         // previous one contains the form_build_id
                         int index = lines[q - 1].find("value=\"form-");
                         if (index != std::string::npos) {
@@ -75,7 +76,7 @@ namespace net {
                 std::vector<std::string> fields;
                 for(auto q=0; q<lines.size(); q++) {
                     auto line = lines[q];
-                    if (line.find("<tr><td align='right'>&nbsp;20") == 0) {  // 20XX is year => this is a valid response.
+                    if (line.starts_with("<tr><td align='right'>&nbsp;20")) {  // 20XX is year => this is a valid response.
                         removeSubstrings(line, "align='right'>");
                         removeSubstrings(line, "align='left'>");
                         removeSubstrings(line, "<tr>");
@@ -109,7 +110,7 @@ namespace net {
                 }
                 for(int i=15; i>=0; i--) {
                     reportError("Done, sleeping " + std::to_string(i), false);
-                    usleep(1000000);
+                    std::this_thread::sleep_for(std::chrono::microseconds(1000000));
                 }
             } catch (std::exception &e) {
                 reportError(e.what());
@@ -176,7 +177,7 @@ namespace net {
                 }
                 for(int i=45; i>=0; i--) {
                     reportError("Done, sleeping " + std::to_string(i), false);
-                    usleep(1000000);
+                    std::this_thread::sleep_for(std::chrono::microseconds(1000000));
                 }
             } catch (std::exception &e) {
                 reportError(e.what());
@@ -229,7 +230,7 @@ namespace net {
                 }
                 for(int i=15; i>=0; i--) {
                     reportError("Done, sleeping " + std::to_string(i), false);
-                    usleep(1000000);
+                    std::this_thread::sleep_for(std::chrono::microseconds(1000000));
                 }
             } catch (std::exception &e) {
                 reportError(e.what());
@@ -246,7 +247,7 @@ namespace net {
             report.reportingSource = ::net::RS_PSKREPORTER;
             report.errorStatus = error;
             callback(report);
-            usleep(30000000);
+            std::this_thread::sleep_for(std::chrono::microseconds(30000000));
         };
         Report rep;
         rep.reportingSource = RS_PSKREPORTER;
@@ -328,7 +329,7 @@ namespace net {
                 if (!running) {
                     break;
                 }
-                usleep(1000000);
+                std::this_thread::sleep_for(std::chrono::microseconds(1000000));
             }
         };
         while(running) {
@@ -342,7 +343,7 @@ namespace net {
                 continue;
             }
             std::string data((char *) buf, received);
-            if (data.find("your call") == std::string::npos) {
+            if (!data.contains("your call")) {
                 sock->close();
                 reportError("Protocol error");
                 continue;
@@ -384,7 +385,7 @@ namespace net {
                         }
                     }
                     if (line.size() != 0) {
-                        if (line.find("DX de") == 0) {
+                        if (line.starts_with("DX de")) {
                             Report report;
                             std::vector<std::string> parts;
                             splitStringV(line, " ", parts);
@@ -417,7 +418,7 @@ namespace net {
                                 report.modeParameters = report.modeParameters + ": " + txt;
                             }
                             count++;
-                            if (report.reportedCallsign.find(callsign) != std::string::npos || callsign == "") {
+                            if (report.reportedCallsign.contains(callsign) || callsign.empty()) {
                                 callback(report);
                             }
                             generalReportError("streaming: "+ std::to_string(count), RS_RBN ,callback, running, false);

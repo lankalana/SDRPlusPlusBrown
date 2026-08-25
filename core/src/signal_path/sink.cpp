@@ -88,15 +88,17 @@ void SinkManager::Stream::setInput(dsp::stream<dsp::stereo_t>* in) {
 }
 
 dsp::stream<dsp::stereo_t>* SinkManager::Stream::bindStream() {
-    dsp::stream<dsp::stereo_t>* stream = new dsp::stream<dsp::stereo_t>;
+    auto ownedStream = std::make_unique<dsp::stream<dsp::stereo_t>>();
+    auto* stream = ownedStream.get();
     splitter.bindStream(stream);
     stream->origin = "SinkManager::Stream::bindStream(new)";
+    boundStreams.push_back(std::move(ownedStream));
     return stream;
 }
 
 void SinkManager::Stream::unbindStream(dsp::stream<dsp::stereo_t>* stream) {
     splitter.unbindStream(stream);
-    delete stream;
+    std::erase_if(boundStreams, [stream](const auto& ownedStream) { return ownedStream.get() == stream; });
 }
 
 void SinkManager::Stream::setSampleRate(float sampleRate) {
@@ -173,7 +175,7 @@ void SinkManager::registerStream(std::string name, SinkManager::Stream* stream) 
 
     provider = providers["None"];
 
-    stream->sink = provider.create(stream, name, provider.ctx);
+    stream->sink.reset(provider.create(stream, name, provider.ctx));
     stream->providerId = std::distance(providerNames.begin(), std::find(providerNames.begin(), providerNames.end(), "None"));
     stream->providerName = "None";
 
@@ -195,7 +197,7 @@ void SinkManager::unregisterStream(std::string name) {
     onStreamUnregister.emit(name);
     SinkManager::Stream* stream = streams[name];
     stream->stop();
-    delete stream->sink;
+    stream->sink.reset();
     streams.erase(name);
     streamNames.erase(std::remove(streamNames.begin(), streamNames.end(), name), streamNames.end());
     onStreamUnregistered.emit(name);
@@ -263,11 +265,11 @@ void SinkManager::setStreamSink(std::string name, std::string providerName) {
     if (stream->running) {
         stream->sink->stop();
     }
-    delete stream->sink;
+    stream->sink.reset();
     stream->providerId = std::distance(providerNames.begin(), std::find(providerNames.begin(), providerNames.end(), providerName));
     stream->providerName = providerName;
     SinkManager::SinkProvider prov = providers[providerName];
-    stream->sink = prov.create(stream, name, prov.ctx);
+    stream->sink.reset(prov.create(stream, name, prov.ctx));
     if (stream->running) {
         stream->sink->start();
     }
@@ -356,11 +358,11 @@ void SinkManager::loadStreamConfig(std::string name) {
         if (stream->running) {
             stream->sink->stop();
         }
-        delete stream->sink;
+        stream->sink.reset();
         SinkManager::SinkProvider prov = providers[provName];
         stream->providerId = newProvider;
         stream->providerName = provName;
-        stream->sink = prov.create(stream, name, prov.ctx);
+        stream->sink.reset(prov.create(stream, name, prov.ctx));
         if (stream->running) {
             stream->sink->start();
         }

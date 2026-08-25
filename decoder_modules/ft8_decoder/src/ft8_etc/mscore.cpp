@@ -6,6 +6,8 @@
 #include "mshv_support.h"
 #include "mscore.h"
 #include <algorithm> // zaradi max(
+#include <chrono>
+#include <thread>
 //#include <unistd.h>
 
 using namespace std; // zaradi max(
@@ -132,7 +134,7 @@ MsCore::MsCore()
     record_app();//jtms to jt6m
     // END SETUP APP FOR ALL MODES  ///////////////////////////
 
-    usleep(2000);
+    std::this_thread::sleep_for(std::chrono::microseconds(2000));
 
     //qDebug()<<((192000 * (( 1 * 16 ) / 8)) * 120 + 32);
     //qDebug()<<sizeof(double);
@@ -396,11 +398,11 @@ void MsCore::FastResetSoundCardIn_p()// for pure sound cards
 
     g_read_snd = false;//true; // stop reading
 
-    usleep(1000);       //2.37 be6e 1000   1.33=no  20ms in sdr  1.34  // triabva da e mnogo pove4e otkolkoto e na loop
+    std::this_thread::sleep_for(std::chrono::microseconds(1000));       //2.37 be6e 1000   1.33=no  20ms in sdr  1.34  // triabva da e mnogo pove4e otkolkoto e na loop
 
     close_sound();
 
-    usleep(2000);       //1.33=1000  1.34=2000  wait hardware to clear buffers
+    std::this_thread::sleep_for(std::chrono::microseconds(2000));       //1.33=1000  1.34=2000  wait hardware to clear buffers
 
     THvRawFilter->set_rate(fftw_sample_rate);  //2.34
 
@@ -421,7 +423,7 @@ void MsCore::FastResetSoundCardIn_p()// for pure sound cards
 
     record_app();            //fftw
 
-    usleep(2000);            //1.33=no     1.34 wait fftw
+    std::this_thread::sleep_for(std::chrono::microseconds(2000));            //1.33=no     1.34 wait fftw
 
     last_reset_sc_in = hh;
     g_read_snd = p_read_snd;     // start reading
@@ -443,11 +445,9 @@ static int tci_read_ = 0; //2.58 0=stop 1=buff 2=read
 //
 //    g_read_snd = false;//true;  // stop reading
 //
-//    usleep(1000);        //2.37 be6e=1000 1.33=no in sdr 20ms   //     1.34
 //
 //    close_sound();
 //
-//    usleep(2000);        //1.33=yes  1.34  wait hardware to clear buffers
 //
 //    //msk144 //jt65abc pi4 ft8 ft4 q65
 //    */
@@ -522,7 +522,6 @@ static int tci_read_ = 0; //2.58 0=stop 1=buff 2=read
 //        {
 //            while (!hCapture)
 //            {
-//                usleep(100000);
 //                rad_open_sound();
 //                c_retry++;
 //                if (c_retry>120) break;
@@ -533,7 +532,6 @@ static int tci_read_ = 0; //2.58 0=stop 1=buff 2=read
 //
 //    record_app();       // fftw
 //
-//    usleep(2000);       //1.33=yes 1.34 wait fftw
 //
 //    last_reset_sc_in = QDateTime::currentDateTimeUtc().toTime_t();// reset time for fast reset
 //    g_read_snd = p_read_snd;//false;  // start reading

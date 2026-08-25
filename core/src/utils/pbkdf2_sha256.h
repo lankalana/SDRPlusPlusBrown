@@ -51,13 +51,14 @@ PBKDF2_SHA256_DEF void pbkdf2_sha256(HMAC_SHA256_CTX *ctx,
 
 #ifdef PBKDF2_SHA256_IMPLEMENTATION
 
+#include <bit>
 #include <string.h>
 
 //#define ROR(n,k) ((n >> k) | (n << (32 - k)))
 
 static uint32_t ror(uint32_t n, uint32_t k)
 {
-	return (n >> k) | (n << (32 - k));
+	return std::rotr(n, static_cast<int>(k));
 }
 
 #define ROR(n,k) ror(n,k)

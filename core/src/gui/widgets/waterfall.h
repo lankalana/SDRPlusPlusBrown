@@ -98,7 +98,7 @@ namespace ImGui {
         void pushFFT();
 
         void updatePallette(float colors[][3], int colorCount);
-        void updatePalletteFromArray(float* colors, int colorCount);
+        void updatePalletteFromArray(const float* colors, int colorCount);
 
         void setCenterFrequency(double freq);
         double getCenterFrequency();
@@ -322,6 +322,10 @@ namespace ImGui {
 
         //std::vector<std::vector<float>> rawFFTs;
         int rawFFTSize;
+        std::vector<float> rawFFTsStorage;
+        std::vector<float> latestFFTStorage;
+        std::vector<float> latestFFTHoldStorage;
+        std::vector<float> smoothingBufStorage;
         float* rawFFTs = NULL;
         float* latestFFT = NULL;
         float* latestFFTHold = NULL;
@@ -329,8 +333,10 @@ namespace ImGui {
         int currentFFTLine = 0;
         int fftLines = 0;
 
-        uint32_t* waterfallFb;
-        float* tempDataForUpdateWaterfallFb;
+        std::vector<uint32_t> waterfallFbStorage;
+        std::vector<float> tempDataForUpdateWaterfallFbStorage;
+        uint32_t* waterfallFb = NULL;
+        float* tempDataForUpdateWaterfallFb = NULL;
 
         int waterfallFbHeadRowIndex = 0;
 
@@ -339,8 +345,10 @@ namespace ImGui {
         int waterfallHeadSectionIndex = 0;
         int waterfallHeadSectionHeight = 0;
 
-        GLuint* waterfallTexturesIds;
-        int* waterfallTexturesStatuses;
+        std::vector<GLuint> waterfallTexturesIdsStorage;
+        std::vector<int> waterfallTexturesStatusesStorage;
+        GLuint* waterfallTexturesIds = NULL;
+        int* waterfallTexturesStatuses = NULL;
 
         bool draggingFW = false;
         int FFTAreaHeight;

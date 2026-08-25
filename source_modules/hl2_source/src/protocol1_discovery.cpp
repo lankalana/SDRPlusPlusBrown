@@ -17,7 +17,9 @@
  *
  */
 #include <stdlib.h>
+#include <chrono>
 #include <stdio.h>
+#include <thread>
 #include <sys/types.h>
 #include <hl2_device.h>
 
@@ -248,7 +250,7 @@ static void discover(struct ifaddrs* iface, const struct sockaddr_in* fixed, boo
                 auto en = getLastSocketErrorNo();
                 if (en == EINTR || en == EAGAIN) {
                     if (currentTimeMillis() - startTime < 2000) {
-                        usleep(10000);
+                        std::this_thread::sleep_for(std::chrono::microseconds(10000));
                         retryCount++;
                         continue;
                     }
@@ -449,7 +451,7 @@ static void discover(struct ifaddrs* iface, const struct sockaddr_in* fixed, boo
                                         ipv4[1], ipv4[2], ipv4[3], errno);
                         }
                     }
-                    usleep(1500);
+                    std::this_thread::sleep_for(std::chrono::microseconds(1500));
                 }
                 // flog::info("Finished scanning {}", interface_name);
             }

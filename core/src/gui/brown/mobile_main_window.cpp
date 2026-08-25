@@ -7,6 +7,7 @@
 #include <imgui.h>
 #include <implot/implot.h>
 #include <cstdio>
+#include <chrono>
 #include <thread>
 #include <algorithm>
 #include <utils/cty.h>
@@ -29,7 +30,6 @@
 #include <ctm.h>
 #include <utils/strings.h>
 #include <cmath>
-#include <utils/usleep.h>
 #include "audio_player.h"
 #include "imgui-notify/imgui_notify.h"
 
@@ -2793,7 +2793,7 @@ void MobileMainWindowPrivate::recordCallCQPopup() {
         if (doFingerButton("Save & Close")) {
             if (pub->configPanel->recorder.mode == SimpleRecorder::RECORDING_STARTED) {
                 pub->configPanel->recorder.stop();
-                usleep(300000);
+                std::this_thread::sleep_for(std::chrono::microseconds(300000));
             }
             auto root = (std::string) core::args["root"];
             auto fnamePreview = root + "/call_cq_preview.wav";

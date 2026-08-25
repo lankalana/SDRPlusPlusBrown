@@ -1,6 +1,9 @@
 #pragma once
 
 #include <utils/flog.h>
+#include <algorithm>
+#include <deque>
+#include <numeric>
 #include <string>
 #include <ctm.h>
 
@@ -10,7 +13,7 @@ struct StreamTracker {
     int lastCountSecond = 0;
     std::string title;
 
-    std::vector<int> queue;
+    std::deque<int> queue;
     float xavg = 0;
 
     StreamTracker(const std::string &title) : title(title) {
@@ -22,32 +25,14 @@ struct StreamTracker {
             lastCountSecond = ctm / 1000;
             queue.emplace_back(lastCount);
             while(queue.size() > 100) {
-                queue.erase(queue.begin());
+                queue.pop_front();
             }
-            int per8second = 0;
-            int per30second = 0;
-            {
-                int sum = 0;
-                int cnt = 0;
-                for (int q = 0; q < 8; q++) {
-                    if (q < queue.size()) {
-                        sum += queue[queue.size() - q - 1];
-                        cnt++;
-                    }
-                }
-                per8second = sum/cnt;
-            }
-            {
-                int sum = 0;
-                int cnt = 0;
-                for (int q = 0; q < 30; q++) {
-                    if (q < queue.size()) {
-                        sum += queue[queue.size() - q - 1];
-                        cnt++;
-                    }
-                }
-                per30second = sum/cnt;
-            }
+            const auto averageLast = [this](std::size_t count) {
+                const auto sampleCount = (std::min)(count, queue.size());
+                return std::accumulate(queue.rbegin(), queue.rbegin() + sampleCount, 0) / static_cast<int>(sampleCount);
+            };
+            const int per8second = averageLast(8);
+            const int per30second = averageLast(30);
             if (queue.size() == 8) {
                 xavg = per8second;
             }

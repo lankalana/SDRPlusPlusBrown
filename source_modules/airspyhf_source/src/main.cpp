@@ -6,7 +6,6 @@
 #include <gui/smgui.h>
 #include <airspyhf.h>
 #include "carving.h"
-#include "utils/usleep.h"
 
 #ifdef __ANDROID__
 #include <android_backend.h>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <dsp/types.h>
+#include <chrono>
 #include <complex>
 #include <atomic>
 #include <ctm.h>
@@ -8,7 +9,6 @@
 #include <core.h>
 #include <atomic>
 #include "picohash.h"
-#include "utils/usleep.h"
 #include "utils/proto/websock.h"
 
 struct BrownAIClient {
@@ -17,9 +17,8 @@ struct BrownAIClient {
     bool connected;
     char connectionStatus[100];
     int64_t lastPing;
-    std::atomic<bool> running;
     std::atomic<bool> needsReconnect;
-    std::thread connectionThread;
+    std::jthread connectionThread;
     std::vector<uint8_t> pendingAudioData;
     std::mutex pendingMutex;
 
@@ -111,9 +110,9 @@ struct BrownAIClient {
 
     void stop() {
         strcpy(connectionStatus, "Disconnecting..");
-        running = false;
         needsReconnect = false;
         connected = false;
+        connectionThread.request_stop();
         
         // Clean up WebSocket connection
         wsClient.stopSocket();
@@ -128,12 +127,11 @@ struct BrownAIClient {
 
     void start() {
         strcpy(connectionStatus, "Connecting..");
-        running = true;
         needsReconnect = true;
         
-        connectionThread = std::thread([&]() {
+        connectionThread = std::jthread([&](std::stop_token stopToken) {
             SetThreadName("brown_ai.wscli");
-            while (running) {
+            while (!stopToken.stop_requested()) {
                 if (needsReconnect) {
                     try {
                         std::string hostName;
@@ -158,7 +156,7 @@ struct BrownAIClient {
                         flog::error("BrownAIClient: Connection error: {}", errMsg);
                 
                         // Handle specific errors
-                        if (errMsg.find("recv failed") != std::string::npos) {
+                        if (errMsg.contains("recv failed")) {
                             strcpy(connectionStatus, "Connection lost, reconnecting...");
                         } else {
                             strcpy(connectionStatus, "Error: ");
@@ -168,10 +166,10 @@ struct BrownAIClient {
                         // Clean up and wait before retrying
                         wsClient.stopSocket();
                         connected = false;
-                        usleep(5000000); // 5 seconds
+                        std::this_thread::sleep_for(std::chrono::seconds(5));
                     }
                 } else {
-                    usleep(100000); // 100ms
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 }
             }
         });

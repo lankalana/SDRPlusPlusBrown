@@ -1,5 +1,6 @@
 #pragma once
 #include <assert.h>
+#include <chrono>
 #include <string.h>
 #include <mutex>
 #include <atomic>
@@ -7,8 +8,8 @@
 #include <new>
 #include <utils/flog.h>
 #include <condition_variable>
+#include <thread>
 //#include <volk/volk.h>
-#include <utils/usleep.h>
 
 #include "buffer/buffer.h"
 
@@ -184,7 +185,7 @@ namespace dsp {
                         break;
                     }
                 }
-                usleep(1000);
+                std::this_thread::sleep_for(std::chrono::microseconds(1000));
             }
         }
 

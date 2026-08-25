@@ -3,7 +3,7 @@
 
 bool ModuleComManager::registerInterface(std::string moduleName, std::string name, void (*handler)(int code, void* in, void* out, void* ctx), void* ctx) {
     std::lock_guard<std::recursive_mutex> lck(mtx);
-    if (interfaces.find(name) != interfaces.end()) {
+    if (interfaces.contains(name)) {
         flog::error("Tried creating module interface with an existing name: {0}", name);
         return false;
     }
@@ -17,7 +17,7 @@ bool ModuleComManager::registerInterface(std::string moduleName, std::string nam
 
 bool ModuleComManager::unregisterInterface(std::string name) {
     std::lock_guard<std::recursive_mutex> lck(mtx);
-    if (interfaces.find(name) == interfaces.end()) {
+    if (!interfaces.contains(name)) {
         flog::error("Tried to erase module interface with unknown name: {0}", name);
         return false;
     }
@@ -27,25 +27,25 @@ bool ModuleComManager::unregisterInterface(std::string name) {
 
 bool ModuleComManager::interfaceExists(std::string name) {
     std::lock_guard<std::recursive_mutex> lck(mtx);
-    return interfaces.find(name) != interfaces.end();
+    return interfaces.contains(name);
 }
 
 std::string ModuleComManager::getModuleName(std::string name) {
     std::lock_guard<std::recursive_mutex> lck(mtx);
-    if (interfaces.find(name) == interfaces.end()) {
+    if (!interfaces.contains(name)) {
         flog::error("Tried to call unknown module interface: {0}", name);
         return "";
     }
-    return interfaces[name].moduleName;
+    return interfaces.at(name).moduleName;
 }
 
 bool ModuleComManager::callInterface(std::string name, int code, void* in, void* out) {
     std::lock_guard<std::recursive_mutex> lck(mtx);
-    if (interfaces.find(name) == interfaces.end()) {
+    if (!interfaces.contains(name)) {
         flog::error("Tried to call unknown module interface: {0}", name);
         return false;
     }
-    ModuleComInterface iface = interfaces[name];
+    ModuleComInterface iface = interfaces.at(name);
     iface.handler(code, in, out, iface.ctx);
     return true;
 }
@@ -53,7 +53,7 @@ bool ModuleComManager::callInterface(std::string name, int code, void* in, void*
 std::vector<std::string> ModuleComManager::findInterfaces(std::string moduleName) {
     std::lock_guard lck(mtx);
     std::vector<std::string> result;
-    for (auto [name, iface] : interfaces) {
+    for (const auto& [name, iface] : interfaces) {
         if (iface.moduleName == moduleName) { result.push_back(name); }
     }
     return result;

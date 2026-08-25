@@ -77,7 +77,6 @@ private:
             //QMutexLocker locker(&m_mutex);
             msleep(5);
             refresh();           
-            //usleep(10);
         }
     }
 };

@@ -143,7 +143,6 @@ void HvThr::four2a_c2c(std::complex<float> *a,std::complex<float> *a1,FFT_PLAN *
         bool wait = false; //if (nthreads==1) wait = false; ??? hv
         while (slpp!=0)
         {
-            // usleep(slpp);
             slpp = setup_c2c_d2c_(wait,pc[z],a1,nfft,isign,iform);
         }
         cpc++;  //qDebug()<<"c2c====="<<cpc<<nfft;
@@ -235,7 +234,6 @@ void HvThr::four2a_d2c(std::complex<float> *a,std::complex<float> *a1,float *d,f
         bool wait = false; //if (nthreads==1) wait = false; ??? hv
         while (slpp!=0)
         {
-            // usleep(slpp);
             slpp = setup_c2c_d2c_(wait,pd[z],a1,nfft,isign,iform,d1);
         }
         cpd++;  //qDebug()<<"d2c="<<cpd<<nfft;

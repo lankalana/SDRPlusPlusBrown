@@ -1,17 +1,9 @@
 #include <gui/widgets/symbol_diagram.h>
 
 namespace ImGui {
-    SymbolDiagram::SymbolDiagram(float scale, int count) {
+    SymbolDiagram::SymbolDiagram(float scale, int count) : buffer(count, 0.0f) {
         _scale = scale;
         sampleCount = count;
-
-        buffer = new float[count];
-
-        memset(buffer, 0, sampleCount * sizeof(float));
-    }
-
-    SymbolDiagram::~SymbolDiagram() {
-        delete[] buffer;
     }
 
     void SymbolDiagram::draw(const ImVec2& size_arg) {
@@ -45,7 +37,7 @@ namespace ImGui {
 
     float* SymbolDiagram::acquireBuffer() {
         bufferMtx.lock();
-        return buffer;
+        return buffer.data();
     }
 
     void SymbolDiagram::releaseBuffer() {

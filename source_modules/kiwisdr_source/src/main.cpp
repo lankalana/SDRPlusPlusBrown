@@ -3,9 +3,6 @@
 #include <winsock2.h>
 #include <ws2ipdef.h>
 #include <ws2tcpip.h>
-inline void usleep(int micros) {
-    Sleep(micros / 1000);
-}
 #endif
 
 #include <imgui.h>
@@ -17,11 +14,11 @@ inline void usleep(int micros) {
 #include <core.h>
 #include <config.h>
 #include "utils/proto/kiwisdr.h"
-#include "utils/usleep.h"
 #include "gui/smgui.h"
 #include <filesystem>
 #include <chrono>
 #include <fstream>
+#include <thread>
 #include <gui/brown/kiwisdr_map.h>
 
 
@@ -138,7 +135,7 @@ struct KiwiSDRSourceModule : public ModuleInstance {
                 double now = (double)currentTimeMillis();
                 if (nextSend == 0) {
                     if (bufsize < 200) {
-                        usleep(16000); // some sleep
+                        std::this_thread::sleep_for(std::chrono::microseconds(16000)); // some sleep
                         continue;      // waiting for initial batch
                     }
                     nextSend = now;
@@ -147,7 +144,7 @@ struct KiwiSDRSourceModule : public ModuleInstance {
                     auto delay = nextSend - now;
                     double sleepTime = delay * 1000;
                     if (sleepTime > 0) {
-                        usleep(sleepTime);
+                        std::this_thread::sleep_for(std::chrono::microseconds(sleepTime));
                     }
                 }
                 std::vector<std::complex<float>> toSend;
@@ -219,7 +216,7 @@ struct KiwiSDRSourceModule : public ModuleInstance {
                 auto delay = nextSend - now;
                 double sleepTime = delay * 1000;
                 if (sleepTime > 0) {
-                    usleep(sleepTime);
+                    std::this_thread::sleep_for(std::chrono::microseconds(sleepTime));
                 }
             }
             //            flog::info("Sending samples: {}", incomingBuffer.size());

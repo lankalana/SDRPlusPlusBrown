@@ -1,6 +1,12 @@
 #pragma once
 
-#include <math.h>
+#include <algorithm>
+#include <expected>
+#include <limits>
+#include <numeric>
+#include <random>
+#include <span>
+#include <vector>
 
 // # define	NUMBER_OF_POINTS	100000
 // # define	NUMBER_OF_CLUSTERS	11
@@ -9,6 +15,10 @@
 
 template <typename POINT>
 struct KMeans {
+    enum class Error {
+        NoPoints,
+        InvalidClusterCount
+    };
 
     double dist2(POINT* a, POINT* b) {
         return a->kmeansDistanceTo(b);
@@ -19,7 +29,7 @@ struct KMeans {
         int i, clusterIndex;
         double d, min_d;
 
-        min_d = HUGE_VAL;
+        min_d = std::numeric_limits<double>::infinity();
         clusterIndex = pt->group;
         for (i = 0; i < n_cluster; i++) {
             d = dist2(&cent[i], pt);
@@ -41,7 +51,7 @@ struct KMeans {
         int i;
         double d, min_d;
 
-        min_d = HUGE_VAL;
+        min_d = std::numeric_limits<double>::infinity();
         for (i = 0; i < n_cluster; i++) {
             d = dist2(&cent[i], pt);
             if (d < min_d) {
@@ -69,39 +79,12 @@ struct KMeans {
         Output:
         Returns the index of the first element greater than the search value, v.
             ----------------------------------------------------------------------*/
-    int bisectionSearch(double* x, int n, double v) {
-        int il, ir, i;
-
-
+    int bisectionSearch(const double* x, int n, double v) {
         if (n < 1) {
             return 0;
         }
-        /* If v is less than x(0) or greater than x(n-1)  */
-        if (v < x[0]) {
-            return 0;
-        }
-        else if (v > x[n - 1]) {
-            return n - 1;
-        }
-
-        /*bisection search */
-        il = 0;
-        ir = n - 1;
-
-        i = (il + ir) / 2;
-        while (i != il) {
-            if (x[i] <= v) {
-                il = i;
-            }
-            else {
-                ir = i;
-            }
-            i = (il + ir) / 2;
-        }
-
-        if (x[i] <= v)
-            i = ir;
-        return i;
+        const auto result = std::upper_bound(x, x + n, v);
+        return result == x + n ? n - 1 : static_cast<int>(result - x);
     } /* end of bisectionSearch */
 
 
@@ -131,20 +114,13 @@ struct KMeans {
         double sum;
         double d;
         double random;
-        double* cumulativeDistances;
-        double* shortestDistance;
-
-
-        cumulativeDistances = (double*)malloc(sizeof(double) * num_pts);
-        shortestDistance = (double*)malloc(sizeof(double) * num_pts);
+        std::vector<double> cumulativeDistances(num_pts);
+        std::vector<double> shortestDistance(num_pts, std::numeric_limits<double>::infinity());
 
 
         /* Pick the first cluster centroids at random. */
-        selectedIndex = rand() % num_pts;
+        selectedIndex = std::uniform_int_distribution<int>(0, num_pts - 1)(generator());
         centroids[0] = pts[selectedIndex];
-
-        for (j = 0; j < num_pts; ++j)
-            shortestDistance[j] = HUGE_VAL;
 
         /* Select the centroids for the remaining clusters. */
         for (cluster = 1; cluster < num_clusters; cluster++) {
@@ -159,16 +135,13 @@ struct KMeans {
             }
 
             /* Create an array of the cumulative distances. */
-            sum = 0.0;
-            for (j = 0; j < num_pts; j++) {
-                sum += shortestDistance[j];
-                cumulativeDistances[j] = sum;
-            }
+            std::partial_sum(shortestDistance.begin(), shortestDistance.end(), cumulativeDistances.begin());
+            sum = cumulativeDistances.back();
 
             /* Select a point at random. Those with greater distances
                have a greater probability of being selected. */
-            random = (float)rand() / (float)RAND_MAX * sum;
-            selectedIndex = bisectionSearch(cumulativeDistances, num_pts, random);
+            random = std::uniform_real_distribution<double>(0.0, sum)(generator());
+            selectedIndex = bisectionSearch(cumulativeDistances.data(), num_pts, random);
 
             /* assign the selected point as the center */
             centroids[cluster] = pts[selectedIndex];
@@ -177,9 +150,6 @@ struct KMeans {
         /* Assign each point the index of it's nearest cluster centroid. */
         for (j = 0; j < num_pts; j++)
             pts[j].group = nearest(&pts[j], centroids, num_clusters);
-
-        free(shortestDistance);
-        free(cumulativeDistances);
 
         return;
     } /* end, kppAllinger */
@@ -195,13 +165,10 @@ struct KMeans {
         int j;
         int cluster;
         double sum;
-        double* distances;
-
-
-        distances = (double*)malloc(sizeof(double) * num_pts);
+        std::vector<double> distances(num_pts);
 
         /* Pick the first cluster centroids at random. */
-        centroids[0] = pts[rand() % num_pts];
+        centroids[0] = pts[std::uniform_int_distribution<int>(0, num_pts - 1)(generator())];
 
 
         /* Select the centroids for the remaining clusters. */
@@ -218,7 +185,7 @@ struct KMeans {
             }
 
             /* Find a random distance within the span of the total distance. */
-            sum = sum * rand() / (RAND_MAX - 1);
+            sum = std::uniform_real_distribution<double>(0.0, sum)(generator());
 
             /* Assign the centroids. the point with the largest distance
                 will have a greater probability of being selected. */
@@ -235,8 +202,6 @@ struct KMeans {
         for (j = 0; j < num_pts; j++)
             pts[j].group = nearest(&pts[j], centroids, num_clusters);
 
-        free(distances);
-
         return;
     } /* end, kpp */
 
@@ -246,20 +211,22 @@ struct KMeans {
     This function clusters the data using Lloyd's K-Means algorithm
         after selecting the intial centroids using the K-Means++
             method.
-            It returns a pointer to the memory it allocates containing
-                the array of cluster centroids.
+            It returns the cluster centroids or an error for invalid input.
             -------------------------------------------------------*/
-    POINT* lloyd(POINT* pts, int num_pts, int num_clusters, int maxTimes) {
+    std::expected<std::vector<POINT>, Error> lloyd(std::span<POINT> points, int num_clusters, int maxTimes) {
         int i, clusterIndex;
         int changes;
+        const int num_pts = static_cast<int>(points.size());
         int acceptable = num_pts / 1000; /* The maximum point changes acceptable. */
 
 
-        if (num_clusters == 1 || num_pts <= 0 || num_clusters > num_pts)
-            return 0;
+        if (points.empty())
+            return std::unexpected(Error::NoPoints);
+        if (num_clusters <= 1 || num_clusters > num_pts)
+            return std::unexpected(Error::InvalidClusterCount);
 
 
-        POINT* centroids = (POINT*)malloc(sizeof(POINT) * num_clusters);
+        std::vector<POINT> centroids(num_clusters);
 
         if (maxTimes < 1)
             maxTimes = 1;
@@ -276,7 +243,7 @@ struct KMeans {
             kpp(pts, num_pts, centroids, num_clusters);
         */
         /* Faster Allinger version */
-        kppAllinger(pts, num_pts, centroids, num_clusters);
+        kppAllinger(points.data(), num_pts, centroids.data(), num_clusters);
 
         do {
             /* Calculate the centroid of each cluster.
@@ -290,9 +257,9 @@ struct KMeans {
 
             /* Add each observation's x and y to its cluster total. */
             for (i = 0; i < num_pts; i++) {
-                clusterIndex = pts[i].group;
+                clusterIndex = points[i].group;
                 centroids[clusterIndex].group++;
-                centroids[clusterIndex].setKmeansCoord(centroids[clusterIndex].kmeansCoord() + pts[i].kmeansCoord());
+                centroids[clusterIndex].setKmeansCoord(centroids[clusterIndex].kmeansCoord() + points[i].kmeansCoord());
             }
 
             /* Divide each cluster's x and y totals by its number of data points. */
@@ -303,9 +270,9 @@ struct KMeans {
             /* Find each data point's nearest centroid */
             changes = 0;
             for (i = 0; i < num_pts; i++) {
-                clusterIndex = nearest(&pts[i], centroids, num_clusters);
-                if (clusterIndex != pts[i].group) {
-                    pts[i].group = clusterIndex;
+                clusterIndex = nearest(&points[i], centroids.data(), num_clusters);
+                if (clusterIndex != points[i].group) {
+                    points[i].group = clusterIndex;
                     changes++;
                 }
             }
@@ -319,6 +286,12 @@ struct KMeans {
 
         return centroids;
     } /* end, lloyd */
+
+private:
+    static std::mt19937& generator() {
+        static thread_local std::mt19937 engine(std::random_device{}());
+        return engine;
+    }
 
 
 };

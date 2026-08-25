@@ -164,18 +164,19 @@ dsp::channel::RxVFO* IQFrontEnd::addVFO(std::string name, double sampleRate, dou
     }
 
     // Create VFO and its input stream
-    dsp::stream<dsp::complex_t>* vfoIn = new dsp::stream<dsp::complex_t>;
-    dsp::channel::RxVFO* vfo = new dsp::channel::RxVFO(vfoIn, effectiveSr, sampleRate, bandwidth, offset);
+    auto vfoIn = std::make_unique<dsp::stream<dsp::complex_t>>();
+    auto vfo = std::make_unique<dsp::channel::RxVFO>(vfoIn.get(), effectiveSr, sampleRate, bandwidth, offset);
+    auto* vfoPtr = vfo.get();
 
     // Register them
-    vfoStreams[name] = vfoIn;
-    vfos[name] = vfo;
-    bindIQStream(vfoIn);
+    bindIQStream(vfoIn.get());
+    vfoStreams.emplace(name, std::move(vfoIn));
+    vfos.emplace(name, std::move(vfo));
 
     // Start VFO
-    vfo->start();
+    vfoPtr->start();
 
-    return vfo;
+    return vfoPtr;
 }
 
 void IQFrontEnd::removeVFO(std::string name) {
@@ -186,19 +187,15 @@ void IQFrontEnd::removeVFO(std::string name) {
     }
 
     // Remove the VFO and stream from registry
-    dsp::stream<dsp::complex_t>* vfoIn = vfoStreams[name];
-    dsp::channel::RxVFO* vfo = vfos[name];
+    dsp::stream<dsp::complex_t>* vfoIn = vfoStreams.at(name).get();
+    dsp::channel::RxVFO* vfo = vfos.at(name).get();
 
     // Stop the VFO
     vfo->stop();
 
     unbindIQStream(vfoIn);
-    vfoStreams.erase(name);
     vfos.erase(name);
-
-    // Delete the VFO and its input stream
-    delete vfo;
-    delete vfoIn;
+    vfoStreams.erase(name);
 }
 
 void IQFrontEnd::setFFTSize(int size) {

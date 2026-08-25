@@ -8,7 +8,7 @@ namespace colormaps {
     struct Map {
         std::string name;
         std::string author;
-        float* map;
+        std::vector<float> map;
         int entryCount;
     };
 

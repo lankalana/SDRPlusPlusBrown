@@ -5,8 +5,10 @@
 #include <imgui.h>
 #include <imgui_internal.h>
 #include <gui/style.h>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <thread>
 #include "gui/widgets/simple_widgets.h"
 #include "utils/proto/kiwisdr.h"
 #include "utils/proto/http.h"
@@ -214,7 +216,7 @@ struct KiwiSDRMapSelector {
                                 std::thread tester([=]() {
                                     KiwiSDRClient testClient;
                                     bool plannedDisconnect = false;
-                                    if (s.url.find("http://") == 0) {
+                                    if (s.url.starts_with("http://")) {
                                         auto hostPort = s.url.substr(7);
                                         auto loc = s.loc;
                                         auto lastSlash = hostPort.find("/");
@@ -254,7 +256,7 @@ struct KiwiSDRMapSelector {
                                             testClient.iqDataLock.lock();
                                             auto bufsize = testClient.iqData.size();
                                             testClient.iqDataLock.unlock();
-                                            usleep(100000);
+                                            std::this_thread::sleep_for(std::chrono::microseconds(100000));
                                             if (bufsize > 0) {
                                                 plannedDisconnect = true;
                                                 break;
@@ -266,12 +268,12 @@ struct KiwiSDRMapSelector {
                                         testClient.stop();
                                         if (connected) {
                                             while (!disconnected) {
-                                                usleep(100000);
+                                                std::this_thread::sleep_for(std::chrono::microseconds(100000));
                                             }
                                             flog::info("Disconnected ok");
                                         }
                                         else {
-                                            usleep(1000000);
+                                            std::this_thread::sleep_for(std::chrono::microseconds(1000000));
                                         }
                                         testInProgress = false;
                                     }
@@ -352,7 +354,7 @@ struct KiwiSDRMapSelector {
                     break;
                 }
                 response += std::string((char*)data.data(), len);
-                usleep(100);
+                std::this_thread::sleep_for(std::chrono::microseconds(100));
             }
             controlSock->close();
             auto BEGIN = "var kiwisdr_com =";

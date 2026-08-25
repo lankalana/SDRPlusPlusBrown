@@ -1,6 +1,7 @@
 #pragma once
 #include "../block.h"
 #include "ring_buffer.h"
+#include <memory>
 
 // IMPORTANT: THIS IS TRASH AND MUST BE REWRITTEN IN THE FUTURE
 
@@ -98,7 +99,7 @@ namespace dsp::buffer {
         }
 
         void bufferWorker() {
-            T* buf = new T[_keep];
+            auto buf = std::make_unique_for_overwrite<T[]>(_keep);
             bool delay = _skip < 0;
 
             int readCount = std::min<int>(_keep + _skip, _keep);
@@ -111,7 +112,7 @@ namespace dsp::buffer {
 
             while (true) {
                 if (delay) {
-                    memmove(buf, delayStart, delaySize);
+                    memmove(buf.get(), delayStart, delaySize);
                     if constexpr (std::is_same_v<T, complex_t> || std::is_same_v<T, stereo_t>) {
                         for (int i = 0; i < delayCount; i++) {
                             buf[i].re /= 10.0f;
@@ -120,10 +121,9 @@ namespace dsp::buffer {
                     }
                 }
                 if (ringBuf.readAndSkip(start, readCount, skip) < 0) { break; };
-                memcpy(out.writeBuf, buf, _keep * sizeof(T));
+                memcpy(out.writeBuf, buf.get(), _keep * sizeof(T));
                 if (!out.swap(_keep)) { break; }
             }
-            delete[] buf;
         }
 
         stream<T>* _in;

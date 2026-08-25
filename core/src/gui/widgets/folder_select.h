@@ -1,7 +1,10 @@
 #pragma once
 #include <imgui.h>
 #include <imgui_internal.h>
-#include <stdint.h>
+#include <array>
+#include <atomic>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -18,12 +21,14 @@ public:
 
 
 private:
-    void worker();
-    std::thread workerThread;
+    void worker(std::stop_token stopToken, std::string startingPath);
     std::string root = "";
 
     bool pathValid = false;
-    bool dialogOpen = false;
-    char strPath[2048];
+    std::atomic_bool dialogOpen = false;
+    std::array<char, 2048> strPath{};
     bool pathChanged = false;
+    std::mutex resultMutex;
+    std::optional<std::string> selectedPath;
+    std::jthread workerThread;
 };

@@ -14,6 +14,7 @@
 #include "utils/event.h"
 #include "utils/arrays.h"
 #include <atomic>
+#include <memory>
 
 class IQFrontEnd {
 public:
@@ -109,8 +110,8 @@ protected:
     dsp::sink::Handler<dsp::complex_t> fftSink;
 
     // VFOs
-    std::map<std::string, dsp::stream<dsp::complex_t>*> vfoStreams;
-    std::map<std::string, dsp::channel::RxVFO*> vfos;
+    std::map<std::string, std::unique_ptr<dsp::stream<dsp::complex_t>>> vfoStreams;
+    std::map<std::string, std::unique_ptr<dsp::channel::RxVFO>> vfos;
 
     // Parameters
     double _sampleRate;

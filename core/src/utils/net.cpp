@@ -3,6 +3,7 @@
 #include <codecvt>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 #ifdef _WIN32
 #define WOULD_BLOCK (WSAGetLastError() == WSAEWOULDBLOCK)
@@ -115,13 +116,12 @@ namespace net {
     Socket::Socket(SockHandle_t sock, const Address* raddr) {
         this->sock = sock;
         if (raddr) {
-            this->raddr = new Address(*raddr);
+            this->raddr = *raddr;
         }
     }
 
     Socket::~Socket() {
         close();
-        if (raddr) { delete raddr; }
     }
 
     void Socket::close() {
@@ -276,16 +276,14 @@ namespace net {
 
         std::map<std::string, InterfaceInfo> ifaces;
 #ifdef _WIN32
-        // Pre-allocate buffer
-        ULONG size = sizeof(IP_ADAPTER_ADDRESSES);
-        PIP_ADAPTER_ADDRESSES addresses = (PIP_ADAPTER_ADDRESSES)malloc(size);
-
-        // Reallocate to real size
-        if (GetAdaptersAddresses(AF_INET, 0, NULL, addresses, &size) == ERROR_BUFFER_OVERFLOW) {
-            addresses = (PIP_ADAPTER_ADDRESSES)realloc(addresses, size);
-            if (GetAdaptersAddresses(AF_INET, 0, NULL, addresses, &size)) {
-                throw std::exception("Could not list network interfaces");
-            }
+        ULONG size = 0;
+        if (GetAdaptersAddresses(AF_INET, 0, NULL, NULL, &size) != ERROR_BUFFER_OVERFLOW) {
+            throw std::runtime_error("Could not determine network interface buffer size");
+        }
+        std::vector<uint8_t> addressStorage(size);
+        auto* addresses = reinterpret_cast<PIP_ADAPTER_ADDRESSES>(addressStorage.data());
+        if (GetAdaptersAddresses(AF_INET, 0, NULL, addresses, &size)) {
+            throw std::runtime_error("Could not list network interfaces");
         }
 
         // Save data
@@ -300,8 +298,6 @@ namespace net {
             ifaces[utfConv.to_bytes(iface->FriendlyName)] = info;
         }
         
-        // Free tables
-        free(addresses);
 #else
         // Get iface list
         struct ifaddrs* addresses = NULL;

@@ -4,10 +4,19 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <string_view>
 
 #include <utils/hrfreq.h>
 
 using Catch::Approx;
+
+namespace {
+    double parseFrequency(std::string_view text) {
+        auto result = hrfreq::fromString(text);
+        REQUIRE(result);
+        return *result;
+    }
+}
 
 TEST_CASE("hrfreq::toString picks the right unit", "[utils][hrfreq]") {
     REQUIRE(hrfreq::toString(0.0) == "0Hz");
@@ -29,74 +38,54 @@ TEST_CASE("hrfreq::toString trims trailing zeros", "[utils][hrfreq]") {
 }
 
 TEST_CASE("hrfreq::fromString understands unit suffixes", "[utils][hrfreq]") {
-    double freq = 0.0;
-
-    REQUIRE(hrfreq::fromString("14.074MHz", freq));
-    REQUIRE(freq == Approx(14074000.0));
-
-    REQUIRE(hrfreq::fromString("7k", freq));
-    REQUIRE(freq == Approx(7000.0));
-
-    REQUIRE(hrfreq::fromString("1G", freq));
-    REQUIRE(freq == Approx(1e9));
-
-    REQUIRE(hrfreq::fromString("500Hz", freq));
-    REQUIRE(freq == Approx(500.0));
+    REQUIRE(parseFrequency("14.074MHz") == Approx(14074000.0));
+    REQUIRE(parseFrequency("7k") == Approx(7000.0));
+    REQUIRE(parseFrequency("1G") == Approx(1e9));
+    REQUIRE(parseFrequency("500Hz") == Approx(500.0));
 }
 
 TEST_CASE("hrfreq::fromString is case insensitive on the unit", "[utils][hrfreq]") {
-    double a = 0.0, b = 0.0;
-    REQUIRE(hrfreq::fromString("14.074mhz", a));
-    REQUIRE(hrfreq::fromString("14.074MHZ", b));
+    const double a = parseFrequency("14.074mhz");
+    const double b = parseFrequency("14.074MHZ");
     REQUIRE(a == Approx(b));
     REQUIRE(a == Approx(14074000.0));
 }
 
 TEST_CASE("hrfreq::fromString without a unit assumes Hz", "[utils][hrfreq]") {
-    double freq = 0.0;
-    REQUIRE(hrfreq::fromString("1234", freq));
-    REQUIRE(freq == Approx(1234.0));
+    REQUIRE(parseFrequency("1234") == Approx(1234.0));
 }
 
 TEST_CASE("hrfreq::fromString ignores thousands separators", "[utils][hrfreq]") {
-    double freq = 0.0;
-    REQUIRE(hrfreq::fromString("14,074,000Hz", freq));
-    REQUIRE(freq == Approx(14074000.0));
+    REQUIRE(parseFrequency("14,074,000Hz") == Approx(14074000.0));
 }
 
 TEST_CASE("hrfreq::fromString skips leading junk", "[utils][hrfreq]") {
-    double freq = 0.0;
-    REQUIRE(hrfreq::fromString("freq: 145.500MHz", freq));
-    REQUIRE(freq == Approx(145500000.0));
+    REQUIRE(parseFrequency("freq: 145.500MHz") == Approx(145500000.0));
 }
 
 TEST_CASE("hrfreq::fromString handles negative values", "[utils][hrfreq]") {
-    double freq = 0.0;
-    REQUIRE(hrfreq::fromString("-2.5kHz", freq));
-    REQUIRE(freq == Approx(-2500.0));
+    REQUIRE(parseFrequency("-2.5kHz") == Approx(-2500.0));
 }
 
 TEST_CASE("hrfreq::fromString reports failure on garbage", "[utils][hrfreq]") {
-    double freq = 12345.0;
-    REQUIRE_FALSE(hrfreq::fromString("", freq));
-    REQUIRE_FALSE(hrfreq::fromString("abc", freq));
-    REQUIRE(freq == 12345.0); // untouched on failure
+    const auto empty = hrfreq::fromString("");
+    const auto garbage = hrfreq::fromString("abc");
+    REQUIRE_FALSE(empty);
+    REQUIRE_FALSE(garbage);
+    REQUIRE_FALSE(empty.error().empty());
+    REQUIRE_FALSE(garbage.error().empty());
 }
 
 TEST_CASE("hrfreq round-trips through toString and fromString", "[utils][hrfreq]") {
     const double values[] = { 0.0, 1234.0, 14074000.0, 145500000.0, 1.42e9 };
     for (double v : values) {
         INFO("value: " << v);
-        double parsed = 0.0;
-        REQUIRE(hrfreq::fromString(hrfreq::toString(v), parsed));
-        REQUIRE(parsed == Approx(v).margin(1.0));
+        REQUIRE(parseFrequency(hrfreq::toString(v)) == Approx(v).margin(1.0));
     }
 }
 
 TEST_CASE("hrfreq::fromString accepts an unknown unit by ignoring it", "[utils][hrfreq]") {
     // Characterization: an unrecognised scale character logs a warning but the
     // numeric part is still returned unscaled.
-    double freq = 0.0;
-    REQUIRE(hrfreq::fromString("100X", freq));
-    REQUIRE(freq == Approx(100.0));
+    REQUIRE(parseFrequency("100X") == Approx(100.0));
 }

@@ -1,12 +1,14 @@
 #pragma once
-#include <vector>
+#include <format>
 #include <string>
+#include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <vector>
 #include <stdint.h>
 #include <mutex>
 #include "sdrpp_export.h"
-
-#define FORMAT_BUF_SIZE 16
-#define ESCAPE_CHAR     '\\'
 
 namespace flog {
     enum Type {
@@ -31,79 +33,69 @@ namespace flog {
 
 
     // IO functions
-    void __log__(Type type, const char* fmt, const std::vector<std::string>& args);
+    void __log__(Type type, const std::string& message);
+    std::string normalizeFormatString(std::string_view fmt);
 
-    // Conversion functions
-    std::string __toString__(bool value);
-    std::string __toString__(char value);
-    std::string __toString__(int8_t value);
-    std::string __toString__(int16_t value);
-    std::string __toString__(int32_t value);
-    std::string __toString__(int64_t value);
-    std::string __toString__(uint8_t value);
-    std::string __toString__(uint16_t value);
-    std::string __toString__(uint32_t value);
-    std::string __toString__(uint64_t value);
-    std::string __toString__(float value);
-    std::string __toString__(double value);
-    std::string __toString__(const char* value);
-    std::string __toString__(const void* value);
-    std::string __toString__(void* value);
-#ifdef __ANDROID__
-    std::string __toString__(long long);
-#endif
+    namespace detail {
+        template <typename>
+        inline constexpr bool alwaysFalse = false;
 
-    template <class T>
-    std::string __toString__(const T& value) {
-        return (std::string)value;
-    }
-
-    // Utility to generate a list from arguments
-    inline void __genArgList__(std::vector<std::string>& args) {}
-    template <typename First, typename... Others>
-    inline void __genArgList__(std::vector<std::string>& args, First first, Others... others) {
-        // Add argument
-        args.push_back(__toString__(first));
-
-        // Recursive call that will be unrolled since the function is inline
-        __genArgList__(args, others...);
+        template <typename T>
+        std::string formatArgument(T&& value) {
+            using Value = std::remove_cvref_t<T>;
+            if constexpr (std::is_same_v<Value, int8_t>) {
+                return std::format("{}", static_cast<int>(value));
+            }
+            else if constexpr (std::is_same_v<Value, uint8_t>) {
+                return std::format("{}", static_cast<unsigned int>(value));
+            }
+            else if constexpr (std::is_enum_v<Value>) {
+                return std::format("{}", static_cast<std::underlying_type_t<Value>>(value));
+            }
+            else if constexpr (std::formattable<Value, char>) {
+                return std::format("{}", static_cast<Value>(value));
+            }
+            else if constexpr (requires { std::string{std::forward<T>(value)}; }) {
+                return std::string{std::forward<T>(value)};
+            }
+            else {
+                static_assert(alwaysFalse<Value>, "flog argument is neither formattable nor convertible to std::string");
+            }
+        }
     }
 
     // Formatting function
-    std::string formatString(const char* fmt, const std::vector<std::string>& args);
-    
     template <typename... Args>
-    inline std::string format(const char* fmt, Args... args) {
-        std::vector<std::string> _args;
-        _args.reserve(sizeof...(args));
-        __genArgList__(_args, args...);
-        return formatString(fmt, _args);
+    inline std::string format(std::string_view fmt, Args&&... args) {
+        auto formattedArgs = std::tuple{detail::formatArgument(std::forward<Args>(args))...};
+        return std::apply([&](auto&... values) {
+            return std::vformat(normalizeFormatString(fmt), std::make_format_args(values...));
+        }, formattedArgs);
     }
 
     // Logging functions
     template <typename... Args>
-    void log(Type type, const char* fmt, Args... args) {
-        std::string formatted = format(fmt, args...);
-        __log__(type, formatted.c_str(), {});
+    void log(Type type, std::string_view fmt, Args&&... args) {
+        __log__(type, format(fmt, std::forward<Args>(args)...));
     }
 
     template <typename... Args>
-    inline void debug(const char* fmt, Args... args) {
-        log(TYPE_DEBUG, fmt, args...);
+    inline void debug(std::string_view fmt, Args&&... args) {
+        log(TYPE_DEBUG, fmt, std::forward<Args>(args)...);
     }
 
     template <typename... Args>
-    inline void info(const char* fmt, Args... args) {
-        log(TYPE_INFO, fmt, args...);
+    inline void info(std::string_view fmt, Args&&... args) {
+        log(TYPE_INFO, fmt, std::forward<Args>(args)...);
     }
 
     template <typename... Args>
-    inline void warn(const char* fmt, Args... args) {
-        log(TYPE_WARNING, fmt, args...);
+    inline void warn(std::string_view fmt, Args&&... args) {
+        log(TYPE_WARNING, fmt, std::forward<Args>(args)...);
     }
 
     template <typename... Args>
-    inline void error(const char* fmt, Args... args) {
-        log(TYPE_ERROR, fmt, args...);
+    inline void error(std::string_view fmt, Args&&... args) {
+        log(TYPE_ERROR, fmt, std::forward<Args>(args)...);
     }
 }

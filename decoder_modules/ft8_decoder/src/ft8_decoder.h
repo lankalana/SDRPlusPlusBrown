@@ -3,7 +3,9 @@
 #define NEW_BUILTIN_MODE
 
 #include <core.h>
+#include <chrono>
 #include <iostream>
+#include <thread>
 #include <utils/wav.h>
 #include <utils/riff.h>
 #include "symbolic.h"
@@ -229,7 +231,7 @@ namespace dsp {
                     progress = "post-err-callback";
                 }
 //                flog::info("Usleep {} begin for {}", nwaiting, mode);
-                usleep(STEP_USEC);
+                std::this_thread::sleep_for(std::chrono::microseconds(STEP_USEC));
                 nwaiting++;
 //                flog::info("Usleep {} finished for {}, outpath={}", nwaiting-1, mode, outPath.c_str());
                 if (nwaiting > MAXWAITING_STEPS) {

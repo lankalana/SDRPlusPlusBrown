@@ -15,8 +15,10 @@
 #include "decoderms.h"
 
 
+#include <chrono>
 #include <numeric>
 #include <functional>
+#include <thread>
 using namespace std; // zaradi max(
 static const double DEC_SAMPLE_RATE_11025 = 11025.0;
 static const double DEC_SAMPLE_RATE_12000 = 12000.0;
@@ -1995,9 +1997,9 @@ void DecoderMs::CalcZapDat()
 static bool have_dec0_ = false;
 void DecoderMs::StrtDecode() {
     if (s_f_rtd || s_mod == 11 || s_mod == 13 || allq65) // ft8 ft4 q65
-        usleep(20000);                                   // 1.30 important time>10ms 20000us=20ms slab PC pri auto decode da zabavi malko pri postoqnno decodirane hv
+        std::this_thread::sleep_for(std::chrono::microseconds(20000));                                   // 1.30 important time>10ms 20000us=20ms slab PC pri auto decode da zabavi malko pri postoqnno decodirane hv
     else
-        usleep(100000); // 1.30 important time>10ms 100000us=100ms slab PC pri auto decode da zabavi malko pri postoqnno decodirane hv
+        std::this_thread::sleep_for(std::chrono::microseconds(100000)); // 1.30 important time>10ms 100000us=100ms slab PC pri auto decode da zabavi malko pri postoqnno decodirane hv
 
     double sq = 0.0;
     // double degrade = 1.0;
@@ -2153,7 +2155,7 @@ c990:  //2.40
 
     if (is_ftBuff)
     {
-        usleep(25000);
+        std::this_thread::sleep_for(std::chrono::microseconds(25000));
         thred_busy = false;
         SETftBuff();
     }
@@ -2377,7 +2379,7 @@ void DecoderMs::TryEndThr()
 
     if (is_ftBuff)
     {
-        usleep(25000);
+        std::this_thread::sleep_for(std::chrono::microseconds(25000));
         thred_busy = false;
         SETftBuff();
     }
@@ -2389,7 +2391,7 @@ static double _f00_ = 200;
 static double _f01_ = 700;
 void DecoderMs::StrtDec0()
 {
-    usleep(17000); //qDebug()<<"0";
+    std::this_thread::sleep_for(std::chrono::microseconds(17000)); //qDebug()<<"0";
     if      (s_mod == 11) DecFt8_0->ft8_decode(static_dat0,s_static_dat_count,_f00_,_f01_,s_nfqso_all,have_dec0_,id3decFt,s_f00,s_f01);
     else if (s_mod == 13) DecFt4_0->ft4_decode(static_dat0,_f00_,_f01_,s_f00,s_f01,s_nfqso_all,have_dec0_);
     end_dec0_ = true;
@@ -2400,7 +2402,7 @@ static double _f02_ = 1200;
 //#define CORFT4 100.0
 void DecoderMs::StrtDec1()
 {
-    usleep(18000); //qDebug()<<"1";
+    std::this_thread::sleep_for(std::chrono::microseconds(18000)); //qDebug()<<"1";
     if      (s_mod == 11) DecFt8_1->ft8_decode(static_dat1,s_static_dat_count,(_f01_-50.0),_f02_,s_nfqso_all,have_dec1_,id3decFt,s_f00,s_f01);
     else if (s_mod == 13) DecFt4_1->ft4_decode(static_dat1,(_f01_-100.0),_f02_,s_f00,s_f01,s_nfqso_all,have_dec1_);
     end_dec1_ = true;
@@ -2409,7 +2411,7 @@ void DecoderMs::StrtDec1()
 static double _f03_ = 1700;
 void DecoderMs::StrtDec2()
 {
-    usleep(19000); //qDebug()<<"2";
+    std::this_thread::sleep_for(std::chrono::microseconds(19000)); //qDebug()<<"2";
     if      (s_mod == 11) DecFt8_2->ft8_decode(static_dat2,s_static_dat_count,(_f02_-50.0),_f03_,s_nfqso_all,have_dec2_,id3decFt,s_f00,s_f01);
     else if (s_mod == 13) DecFt4_2->ft4_decode(static_dat2,(_f02_-100.0),_f03_,s_f00,s_f01,s_nfqso_all,have_dec2_);
     end_dec2_ = true;
@@ -2418,7 +2420,7 @@ void DecoderMs::StrtDec2()
 static double _f04_ = 2200;
 void DecoderMs::StrtDec3()
 {
-    usleep(20000); //qDebug()<<"3";
+    std::this_thread::sleep_for(std::chrono::microseconds(20000)); //qDebug()<<"3";
     if      (s_mod == 11) DecFt8_3->ft8_decode(static_dat3,s_static_dat_count,(_f03_-50.0),_f04_,s_nfqso_all,have_dec3_,id3decFt,s_f00,s_f01);
     else if (s_mod == 13) DecFt4_3->ft4_decode(static_dat3,(_f03_-100.0),_f04_,s_f00,s_f01,s_nfqso_all,have_dec3_);
     end_dec3_ = true;
@@ -2427,7 +2429,7 @@ void DecoderMs::StrtDec3()
 static double _f05_ = 2700;
 void DecoderMs::StrtDec4()
 {
-    usleep(21000); //qDebug()<<"4";
+    std::this_thread::sleep_for(std::chrono::microseconds(21000)); //qDebug()<<"4";
     if      (s_mod == 11) DecFt8_4->ft8_decode(static_dat4,s_static_dat_count,(_f04_-50.0),_f05_,s_nfqso_all,have_dec4_,id3decFt,s_f00,s_f01);
     else if (s_mod == 13) DecFt4_4->ft4_decode(static_dat4,(_f04_-100.0),_f05_,s_f00,s_f01,s_nfqso_all,have_dec3_);
     end_dec4_ = true;
@@ -2436,7 +2438,7 @@ void DecoderMs::StrtDec4()
 static double _f06_ = 3200;
 void DecoderMs::StrtDec5()
 {
-    usleep(22000); //qDebug()<<"5";
+    std::this_thread::sleep_for(std::chrono::microseconds(22000)); //qDebug()<<"5";
     if      (s_mod == 11) DecFt8_5->ft8_decode(static_dat5,s_static_dat_count,(_f05_-50.0),_f06_,s_nfqso_all,have_dec4_,id3decFt,s_f00,s_f01);
     else if (s_mod == 13) DecFt4_5->ft4_decode(static_dat5,(_f05_-100.0),_f06_,s_f00,s_f01,s_nfqso_all,have_dec3_);
     end_dec5_ = true;

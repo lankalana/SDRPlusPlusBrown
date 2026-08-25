@@ -52,9 +52,7 @@ ModuleManager::Module_t ModuleManager::loadModule(std::string path) {
 
 #ifdef _WIN32
     auto wide = wstr::str2wstr(path);
-    wchar_t wideBuf[1024];
-    GetShortPathNameW(wide.c_str(), wideBuf, sizeof(wideBuf) / sizeof(TCHAR));
-    mod.handle = LoadLibraryExW(wideBuf, NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
+    mod.handle = LoadLibraryExW(wide.c_str(), NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS | LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
     if (mod.handle == NULL) {
         auto err = GetLastError();
         LPWSTR errorMessageBuffer = NULL;

@@ -13,6 +13,8 @@
 #include <jni.h>
 #include <android_native_app_glue.h>
 #include <android_backend.h>
+#include <chrono>
+#include <thread>
 #include <utils/strings.h>
 #include <unistd.h>
 #include <gui/smgui.h>
@@ -445,14 +447,14 @@ private:
             streamWMutex.lock();
             AAudioStream_requestStop(streamW);
             streamWMutex.unlock();
-            usleep(200000);
+            std::this_thread::sleep_for(std::chrono::microseconds(200000));
             streamWMutex.lock();
             AAudioStream_close(streamW);
             if (isBtSco) {
                 backend::stopBtSco();
             }
             streamWMutex.unlock();
-            usleep(200000);
+            std::this_thread::sleep_for(std::chrono::microseconds(200000));
             streamWMutex.lock();
             streamW = nullptr;
             streamWMutex.unlock();

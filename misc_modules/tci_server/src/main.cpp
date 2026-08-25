@@ -8,7 +8,9 @@
 #include <core.h>
 #include <config.h>
 #include <websocket.h>
+#include <chrono>
 #include <iostream>
+#include <thread>
 #include <ctm.h>
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
@@ -563,7 +565,7 @@ private:
                         #ifdef _WIN32
                         Sleep(10);
                         #else
-                        usleep(10000);
+                        std::this_thread::sleep_for(std::chrono::microseconds(10000));
                         #endif
                     }
                     else {

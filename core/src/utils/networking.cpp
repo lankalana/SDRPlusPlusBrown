@@ -3,6 +3,8 @@
 #include <utils/flog.h>
 #include <stdexcept>
 #include <atomic>
+#include <chrono>
+#include <thread>
 
 #ifndef WIN32
 #include <arpa/inet.h>
@@ -25,8 +27,8 @@ namespace net {
         _udp = udp;
         remoteAddr = raddr;
         connectionOpen = true;
-        readWorkerThread = std::thread(&ConnClass::readWorker, this);
-        writeWorkerThread = std::thread(&ConnClass::writeWorker, this);
+        readWorkerThread = std::jthread([this](std::stop_token stopToken) { readWorker(stopToken); });
+        writeWorkerThread = std::jthread([this](std::stop_token stopToken) { writeWorker(stopToken); });
     }
 
     ConnClass::~ConnClass() {
@@ -35,12 +37,8 @@ namespace net {
 
     void ConnClass::close() {
         std::lock_guard lck(closeMtx);
-        // Set stopWorkers to true
-        {
-            std::lock_guard lck1(readQueueMtx);
-            std::lock_guard lck2(writeQueueMtx);
-            stopWorkers = true;
-        }
+        readWorkerThread.request_stop();
+        writeWorkerThread.request_stop();
 
         // Notify the workers of the change
         readQueueCnd.notify_all();
@@ -193,16 +191,16 @@ namespace net {
         writeQueueCnd.notify_all();
     }
 
-    void ConnClass::readWorker() {
+    void ConnClass::readWorker(std::stop_token stopToken) {
         while (true) {
             // Wait for wakeup and exit if it's for terminating the thread
             std::unique_lock lck(readQueueMtx);
-            readQueueCnd.wait(lck, [this]() { return (readQueue.size() > 0 || stopWorkers); });
-            if (stopWorkers || !connectionOpen) { return; }
+            readQueueCnd.wait(lck, [this, stopToken]() { return (!readQueue.empty() || stopToken.stop_requested()); });
+            if (stopToken.stop_requested() || !connectionOpen) { return; }
 
             // Pop first element off the list
-            ConnReadEntry entry = readQueue[0];
-            readQueue.erase(readQueue.begin());
+            ConnReadEntry entry = readQueue.front();
+            readQueue.pop_front();
             lck.unlock();
 
             // Read from socket and send data to the handler
@@ -219,16 +217,16 @@ namespace net {
         }
     }
 
-    void ConnClass::writeWorker() {
+    void ConnClass::writeWorker(std::stop_token stopToken) {
         while (true) {
             // Wait for wakeup and exit if it's for terminating the thread
             std::unique_lock lck(writeQueueMtx);
-            writeQueueCnd.wait(lck, [this]() { return (writeQueue.size() > 0 || stopWorkers); });
-            if (stopWorkers || !connectionOpen) { return; }
+            writeQueueCnd.wait(lck, [this, stopToken]() { return (!writeQueue.empty() || stopToken.stop_requested()); });
+            if (stopToken.stop_requested() || !connectionOpen) { return; }
 
             // Pop first element off the list
-            ConnWriteEntry entry = writeQueue[0];
-            writeQueue.erase(writeQueue.begin());
+            ConnWriteEntry entry = writeQueue.front();
+            writeQueue.pop_front();
             lck.unlock();
 
             // Write to socket
@@ -247,7 +245,7 @@ namespace net {
     ListenerClass::ListenerClass(Socket listenSock) {
         sock = listenSock;
         listening = true;
-        acceptWorkerThread = std::thread(&ListenerClass::worker, this);
+        acceptWorkerThread = std::jthread([this](std::stop_token stopToken) { worker(stopToken); });
     }
 
     ListenerClass::~ListenerClass() {
@@ -277,7 +275,7 @@ namespace net {
         socklen_t guestRemoteAddrLen = sizeof(guestRemoteAddr);
 #endif
         getpeername(_sock, (struct sockaddr*)&guestRemoteAddr, &guestRemoteAddrLen);
-        return Conn(new ConnClass(_sock, guestRemoteAddr));
+        return std::make_unique<ConnClass>(_sock, guestRemoteAddr);
     }
 
     void ListenerClass::acceptAsync(void (*handler)(Conn conn, void* ctx), void* ctx) {
@@ -298,10 +296,7 @@ namespace net {
     }
 
     void ListenerClass::close() {
-        {
-            std::lock_guard lck(acceptQueueMtx);
-            stopWorker = true;
-        }
+        acceptWorkerThread.request_stop();
         acceptQueueCnd.notify_all();
 
         if (listening) {
@@ -323,16 +318,16 @@ namespace net {
         return listening;
     }
 
-    void ListenerClass::worker() {
+    void ListenerClass::worker(std::stop_token stopToken) {
         while (true) {
             // Wait for wakeup and exit if it's for terminating the thread
             std::unique_lock lck(acceptQueueMtx);
-            acceptQueueCnd.wait(lck, [this]() { return (acceptQueue.size() > 0 || stopWorker); });
-            if (stopWorker || !listening) { return; }
+            acceptQueueCnd.wait(lck, [this, stopToken]() { return (!acceptQueue.empty() || stopToken.stop_requested()); });
+            if (stopToken.stop_requested() || !listening) { return; }
 
             // Pop first element off the list
-            ListenerAcceptEntry entry = acceptQueue[0];
-            acceptQueue.erase(acceptQueue.begin());
+            ListenerAcceptEntry entry = acceptQueue.front();
+            acceptQueue.pop_front();
             lck.unlock();
 
             // Read from socket and send data to the handler
@@ -397,7 +392,7 @@ namespace net {
             return NULL;
         }
 
-        return Conn(new ConnClass(sock));
+        return std::make_unique<ConnClass>(sock);
     }
 
     Listener listen(std::string host, uint16_t port) {
@@ -463,7 +458,7 @@ namespace net {
             return NULL;
         }
 
-        return Listener(new ListenerClass(listenSock));
+        return std::make_unique<ListenerClass>(listenSock);
     }
 
     Conn openUDP(std::string host, uint16_t port, std::string remoteHost, uint16_t remotePort, bool bindSocket) {
@@ -527,7 +522,7 @@ namespace net {
             }
         }
 
-        return Conn(new ConnClass(sock, raddr, true));
+        return std::make_unique<ConnClass>(sock, raddr, true);
     }
 }
 
@@ -595,7 +590,7 @@ namespace dsp::buffer {
                         }
                         expected = nullptr;
                         found = nullptr;
-                        usleep((int64_t)expected + (int64_t)found+1000);
+                        std::this_thread::sleep_for(std::chrono::microseconds((int64_t)expected + (int64_t)found + 1000));
                         expected = dbg_trace[q].storedValue;
                         found = dbg_trace[q].storageVariable ? *dbg_trace[q].storageVariable : nullptr;
                         if (expected != found) {

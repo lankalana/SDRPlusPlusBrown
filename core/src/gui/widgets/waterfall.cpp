@@ -169,10 +169,14 @@ namespace ImGui {
         lastWidgetPos.y = 0;
         lastWidgetSize.x = 0;
         lastWidgetSize.y = 0;
-        latestFFT = new float[dataWidth];
-        latestFFTHold = new float[dataWidth];
-        waterfallFb = new uint32_t[1];
-        tempDataForUpdateWaterfallFb = new float[1];
+        latestFFTStorage.resize(dataWidth);
+        latestFFT = latestFFTStorage.data();
+        latestFFTHoldStorage.resize(dataWidth);
+        latestFFTHold = latestFFTHoldStorage.data();
+        waterfallFbStorage.resize(1);
+        waterfallFb = waterfallFbStorage.data();
+        tempDataForUpdateWaterfallFbStorage.resize(1);
+        tempDataForUpdateWaterfallFb = tempDataForUpdateWaterfallFbStorage.data();
 
         usableSpectrumRatio = 1.0;
         viewBandwidth = 1.0;
@@ -184,10 +188,12 @@ namespace ImGui {
     }
 
     void WaterFall::init() {
-        waterfallTexturesIds = new GLuint[WATERFALL_NUMBER_OF_SECTIONS];
+        waterfallTexturesIdsStorage.resize(WATERFALL_NUMBER_OF_SECTIONS);
+        waterfallTexturesIds = waterfallTexturesIdsStorage.data();
         glGenTextures(WATERFALL_NUMBER_OF_SECTIONS, waterfallTexturesIds);
 
-        waterfallTexturesStatuses = new int[WATERFALL_NUMBER_OF_SECTIONS];
+        waterfallTexturesStatusesStorage.resize(WATERFALL_NUMBER_OF_SECTIONS);
+        waterfallTexturesStatuses = waterfallTexturesStatusesStorage.data();
         for (int i = 0; i < WATERFALL_NUMBER_OF_SECTIONS; ++i) {
             setTextureStatus(i, TEXTURE_SPECIFY_REQUIRED);
         }
@@ -801,11 +807,11 @@ namespace ImGui {
 
 
             if (count != 0) {
-                int NTHREADS = 4;
+                constexpr int NTHREADS = 4;
 
                 int wfi = waterfallFbIndex;
                 int blockSize = count / NTHREADS;
-                std::vector<std::shared_ptr<std::thread>> threads;
+                std::vector<std::jthread> threads;
                 threads.reserve(NTHREADS);
 
                 for (int b = 0; b < NTHREADS; b++) {
@@ -816,7 +822,7 @@ namespace ImGui {
                     }
 
 
-                    threads.emplace_back(std::make_shared<std::thread>([=]() {
+                    threads.emplace_back([=]() {
                         std::vector<float> tempdata(dataWidth);
                         auto td = tempdata.data();
                         auto waterfallFbIndexLocal = wfi % totalNumberOfPixels;
@@ -832,11 +838,11 @@ namespace ImGui {
                             }
                             waterfallFbIndexLocal %= totalNumberOfPixels;
                         }
-                    }));
+                    });
                     wfi = (wfi + cnt * dataWidth) % totalNumberOfPixels;
                 }
-                for (int b = 0; b < NTHREADS; b++) {
-                    threads[b]->join();
+                for (auto& thread : threads) {
+                    thread.join();
                 }
                 waterfallFbIndex = wfi % totalNumberOfPixels; // for continuing
             }
@@ -1068,53 +1074,48 @@ namespace ImGui {
             if (rawFFTs != NULL) {
                 if (currentFFTLine != 0) {
                     // flog::info("onresize: currentFFTLine={} rawFFTSize={}", currentFFTLine, rawFFTSize);
-                    float* tempWF = new float[currentFFTLine * rawFFTSize];
+                    std::vector<float> tempWF(currentFFTLine * rawFFTSize);
                     int moveCount = lastWaterfallHeight - currentFFTLine;
-                    memcpy(tempWF, rawFFTs, currentFFTLine * rawFFTSize * sizeof(float));
+                    memcpy(tempWF.data(), rawFFTs, currentFFTLine * rawFFTSize * sizeof(float));
                     memmove(rawFFTs, &rawFFTs[currentFFTLine * rawFFTSize], moveCount * rawFFTSize * sizeof(float));
-                    memcpy(&rawFFTs[moveCount * rawFFTSize], tempWF, currentFFTLine * rawFFTSize * sizeof(float));
-                    delete[] tempWF;
+                    memcpy(&rawFFTs[moveCount * rawFFTSize], tempWF.data(), currentFFTLine * rawFFTSize * sizeof(float));
                 }
                 currentFFTLine = 0;
-                rawFFTs = (float*)realloc(rawFFTs, waterfallHeight * rawFFTSize * sizeof(float));
+                rawFFTsStorage.resize(waterfallHeight * rawFFTSize);
             }
             else {
-                rawFFTs = (float*)malloc(waterfallHeight * rawFFTSize * sizeof(float));
+                rawFFTsStorage.resize(waterfallHeight * rawFFTSize);
             }
+            rawFFTs = rawFFTsStorage.data();
             // ==============
         }
 
         // Reallocate display FFT
-        if (latestFFT != NULL) {
-            delete[] latestFFT;
-        }
-        latestFFT = new float[dataWidth];
+        latestFFTStorage.resize(dataWidth);
+        latestFFT = latestFFTStorage.data();
 
         // Reallocate hold FFT
-        if (latestFFTHold != NULL) {
-            delete[] latestFFTHold;
-        }
-        latestFFTHold = new float[dataWidth];
+        latestFFTHoldStorage.resize(dataWidth);
+        latestFFTHold = latestFFTHoldStorage.data();
 
         // Reallocate smoothing buffer
         if (fftSmoothing) {
-            if (smoothingBuf) { delete[] smoothingBuf; }
-            smoothingBuf = new float[dataWidth];
+            smoothingBufStorage.resize(dataWidth);
+            smoothingBuf = smoothingBufStorage.data();
             for (int i = 0; i < dataWidth; i++) {
                 smoothingBuf[i] = -1000.0f;
             }
         }
 
         if (waterfallVisible) {
-            delete[] waterfallFb;
             // allocate extra rows, will be used to create continuous pixels for textures
             const int sz = dataWidth * (waterfallHeight + 128);
             // flog::info("onresize: waterfallHeight={} sz={}", waterfallHeight, sz);
-            waterfallFb = new uint32_t[sz];
-            memset(waterfallFb, 0, sz * sizeof(uint32_t));
+            waterfallFbStorage.assign(sz, 0);
+            waterfallFb = waterfallFbStorage.data();
 
-            delete[] tempDataForUpdateWaterfallFb;
-            tempDataForUpdateWaterfallFb = new float[dataWidth];
+            tempDataForUpdateWaterfallFbStorage.resize(dataWidth);
+            tempDataForUpdateWaterfallFb = tempDataForUpdateWaterfallFbStorage.data();
         }
         for (int i = 0; i < dataWidth; i++) {
             latestFFT[i] = -1000.0f; // Hide everything
@@ -1326,7 +1327,7 @@ namespace ImGui {
         updateWaterfallFb();
     }
 
-    void WaterFall::updatePalletteFromArray(float* colors, int colorCount) {
+    void WaterFall::updatePalletteFromArray(const float* colors, int colorCount) {
         MEASURE_LOCK_GUARD(buf_mtx);
         for (int i = 0; i < WATERFALL_RESOLUTION; i++) {
             int lowerId = floorf(((float)i / (float)WATERFALL_RESOLUTION) * colorCount);
@@ -1535,12 +1536,8 @@ namespace ImGui {
         MEASURE_LOCK_GUARD(buf_mtx);
         rawFFTSize = size;
         int wfSize = std::max<int>(1, waterfallHeight);
-        if (rawFFTs != NULL) {
-            rawFFTs = (float*)realloc(rawFFTs, rawFFTSize * wfSize * sizeof(float));
-        }
-        else {
-            rawFFTs = (float*)malloc(rawFFTSize * wfSize * sizeof(float));
-        }
+        rawFFTsStorage.resize(rawFFTSize * wfSize);
+        rawFFTs = rawFFTsStorage.data();
         fftLines = 0;
         memset(rawFFTs, 0, rawFFTSize * waterfallHeight * sizeof(float));
         updateWaterfallFb();
@@ -1568,7 +1565,8 @@ namespace ImGui {
         fftSmoothing = enabled;
 
         // Free buffer if not null
-        if (smoothingBuf) { delete[] smoothingBuf; }
+        smoothingBufStorage.clear();
+        smoothingBuf = NULL;
 
         // If disabled, stop here
         if (!enabled) {
@@ -1577,7 +1575,8 @@ namespace ImGui {
         }
 
         // Allocate and copy existing FFT into it
-        smoothingBuf = new float[dataWidth];
+        smoothingBufStorage.resize(dataWidth);
+        smoothingBuf = smoothingBufStorage.data();
         if (latestFFT) {
             std::lock_guard<std::recursive_mutex> lck2(latestFFTMtx);
             memcpy(smoothingBuf, latestFFT, dataWidth * sizeof(float));
@@ -1828,20 +1827,9 @@ namespace ImGui {
     }
 
     WaterFall::~WaterFall() {
-        glDeleteTextures(WATERFALL_NUMBER_OF_SECTIONS, waterfallTexturesIds);
-        if (rawFFTs) {
-            free(rawFFTs);
+        if (waterfallTexturesIds) {
+            glDeleteTextures(WATERFALL_NUMBER_OF_SECTIONS, waterfallTexturesIds);
         }
-        if (latestFFT != NULL) {
-            delete[] latestFFT;
-        }
-        if (latestFFTHold != NULL) {
-            delete[] latestFFTHold;
-        }
-        if (smoothingBuf) { delete[] smoothingBuf; }
-
-        delete[] waterfallFb;
-        delete[] tempDataForUpdateWaterfallFb;
     }
 
 

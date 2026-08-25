@@ -1,8 +1,7 @@
 #include "flog.h"
+#include <charconv>
 #include <mutex>
 #include <chrono>
-#include <string.h>
-#include <inttypes.h>
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -77,93 +76,54 @@ namespace flog {
     };
 #endif
 
-    std::string formatString(const char* fmt, const std::vector<std::string>& args) {
-        // Reserve a buffer for the final output
-        int argCount = args.size();
-        int fmtLen = strlen(fmt) + 1;
-        int totSize = fmtLen;
-        for (const auto& a : args) { totSize += a.size(); }
+    std::string normalizeFormatString(std::string_view fmt) {
         std::string out;
-        out.reserve(totSize);
-        
-        // Parse format string
-        bool escaped = false;
-        int formatCounter = 0;
-        bool inFormat = false;
-        int formatLen = 0;
-        char formatBuf[FORMAT_BUF_SIZE+1];
-        for (int i = 0; i < fmtLen; i++) {
-            // Get char
-            const char c = fmt[i];
+        out.reserve(fmt.size());
+        size_t nextArgument = 0;
 
-            // If this character is escaped, don't try to parse it
-            if (escaped) {
-                escaped = false;
-                out += c;
+        for (size_t i = 0; i < fmt.size(); ++i) {
+            if (fmt[i] == '\\' && i + 1 < fmt.size()) {
+                const char escaped = fmt[++i];
+                if (escaped == '{' || escaped == '}') { out += escaped; }
+                out += escaped;
+                continue;
+            }
+            if (fmt[i] == '}') {
+                out += "}}";
+                continue;
+            }
+            if (fmt[i] != '{') {
+                out += fmt[i];
+                continue;
+            }
+            const size_t closingBrace = fmt.find('}', i + 1);
+            if (closingBrace == std::string_view::npos) {
+                out += "{{";
                 continue;
             }
 
-            // State machine
-            if (!inFormat && c != '{') {
-                // Write to formatted output if not escape character
-                if (c == ESCAPE_CHAR) {
-                    escaped = true;
-                }
-                else {
-                    out += c;
+            const auto field = fmt.substr(i + 1, closingBrace - i - 1);
+            size_t argument = nextArgument;
+            if (!field.empty()) {
+                const auto result = std::from_chars(field.data(), field.data() + field.size(), argument);
+                if (result.ec != std::errc{} || result.ptr != field.data() + field.size()) {
+                    out += "{{";
+                    out += field;
+                    out += "}}";
+                    i = closingBrace;
+                    continue;
                 }
             }
-            else if (!inFormat) {
-                // Start format mode
-                inFormat = true;
-            }
-            else if (c == '}') {
-                // Stop format mode
-                inFormat = false;
-
-                // Insert string value or error
-                if (!formatLen) {
-                    // Use format counter as ID if available or print wrong format string
-                    if (formatCounter < argCount) {
-                        out += args[formatCounter++];
-                    }
-                    else {
-                        out += "{}";
-                    }
-                }
-                else {
-                    // Parse number
-                    formatBuf[formatLen] = 0;
-                    formatCounter = std::atoi(formatBuf);
-
-                    // Use ID if available or print wrong format string
-                    if (formatCounter < argCount) {
-                        out += args[formatCounter];
-                    }
-                    else {
-                        out += '{';
-                        out += formatBuf;
-                        out += '}';
-                    }
-
-                    // Increment format counter
-                    formatCounter++;
-                }
-
-                // Reset format counter
-                formatLen = 0;
-            }
-            else {
-                // Add to format buffer 
-                if (formatLen < FORMAT_BUF_SIZE) { formatBuf[formatLen++] = c; }
-            }
+            nextArgument = argument + 1;
+            out += '{';
+            out += std::to_string(argument);
+            out += '}';
+            i = closingBrace;
         }
         return out;
     }
 
-    void __log__(Type type, const char* fmt, const std::vector<std::string>& args) {
-        std::string out = formatString(fmt, args);
-        
+    void __log__(Type type, const std::string& out) {
         // Get output stream depending on type
         FILE* outStream = (type == TYPE_ERROR) ? stderr : stdout;
 
@@ -238,86 +198,4 @@ namespace flog {
         }
     }
 
-    std::string __toString__(bool value) {
-        return value ? "true" : "false";
-    }
-
-    std::string __toString__(char value) {
-        return std::string("")+value;
-    }
-
-    std::string __toString__(int8_t value) {
-        char buf[8];
-        snprintf(buf, sizeof buf, "%" PRId8, value);
-        return buf;
-    }
-
-    std::string __toString__(int16_t value) {
-        char buf[16];
-        snprintf(buf, sizeof buf, "%" PRId16, value);
-        return buf;
-    }
-
-    std::string __toString__(int32_t value) {
-        char buf[32];
-        snprintf(buf, sizeof buf, "%" PRId32, value);
-        return buf;
-    }
-
-    std::string __toString__(int64_t value) {
-        char buf[64];
-        snprintf(buf, sizeof buf, "%" PRId64, value);
-        return buf;
-    }
-
-    std::string __toString__(uint8_t value) {
-        char buf[8];
-        snprintf(buf, sizeof buf, "%" PRIu8, value);
-        return buf;
-    }
-
-    std::string __toString__(uint16_t value) {
-        char buf[16];
-        snprintf(buf, sizeof buf, "%" PRIu16, value);
-        return buf;
-    }
-
-    std::string __toString__(uint32_t value) {
-        char buf[32];
-        snprintf(buf, sizeof buf, "%" PRIu32, value);
-        return buf;
-    }
-
-    std::string __toString__(uint64_t value) {
-        char buf[64];
-        snprintf(buf, sizeof buf, "%" PRIu64, value);
-        return buf;
-    }
-
-    std::string __toString__(float value) {
-        char buf[256];
-        snprintf(buf, sizeof buf, "%f", value);
-        return buf;
-    }
-
-    std::string __toString__(double value) {
-        char buf[256];
-        snprintf(buf, sizeof buf, "%lf", value);
-        return buf;
-    }
-
-    std::string __toString__(const char* value) {
-        return value;
-    }
-
-    std::string __toString__(const void* value) {
-        char buf[32];
-        snprintf(buf, sizeof buf, "0x%p", value);
-        return buf;
-    }
-    std::string __toString__(void* value) {
-        char buf[32];
-        snprintf(buf, sizeof buf, "0x%p", value);
-        return buf;
-    }
 }

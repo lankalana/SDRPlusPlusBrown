@@ -1,9 +1,11 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <dsp/processor.h>
 #include <cmath>
 #include <ctime>
+#include <thread>
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -38,12 +40,7 @@ namespace dsp {
             // Native Fix: Force base processing loops to stop running first
             base_type::stop();
 
-            // Native Fix: 50ms platform-native sleep bypassing <chrono> and <thread>
-            #if defined(_WIN32)
-                ::Sleep(50); 
-            #else
-                ::usleep(50000); 
-            #endif
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
             // NATIVE FIX: ONLY free the single heap array allocated with malloc
             if (conv_data != nullptr) {

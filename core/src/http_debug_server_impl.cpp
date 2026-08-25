@@ -84,7 +84,7 @@ namespace httpdebug {
 
         flog::info("Starting HTTP debug server on port {}", port);
 
-        ewsThread = new std::thread([port]() {
+        ewsThread = std::jthread([port]() {
             httpServerListening.store(true, std::memory_order_release);
             acceptConnectionsWrapper(httpServer, (uint16_t)port);
         });
@@ -93,12 +93,13 @@ namespace httpdebug {
     void stopHttpServer() {
         if (httpServer) {
             serverStopWrapper(httpServer);
-            if (ewsThread && ewsThread->joinable()) {
-                ewsThread->join();
+            if (ewsThread.joinable()) {
+                ewsThread.join();
             }
             serverDeInitWrapper(httpServer);
             free(httpServer);
             httpServer = nullptr;
+            httpServerListening.store(false, std::memory_order_release);
         }
     }
 

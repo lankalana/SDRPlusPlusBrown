@@ -274,8 +274,8 @@ TEST_CASE("KMeans separates two well-spaced clusters", "[utils][kmeans]") {
     for (int i = 0; i < 100; i++) { pts.push_back(Point1D{ 100.0 + i * 0.001, 0 }); }
 
     KMeans<Point1D> km;
-    Point1D* centroids = km.lloyd(pts.data(), (int)pts.size(), 2, 100);
-    REQUIRE(centroids != nullptr);
+    auto centroids = km.lloyd(pts, 2, 100);
+    REQUIRE(centroids.has_value());
 
     // All of the first hundred share a group, all of the second hundred share
     // the other one, and the two groups differ.
@@ -284,22 +284,27 @@ TEST_CASE("KMeans separates two well-spaced clusters", "[utils][kmeans]") {
     REQUIRE(pts[0].group != pts[100].group);
 
     // The centroids land near the cluster centres.
-    double lo = std::min(centroids[0].x, centroids[1].x);
-    double hi = std::max(centroids[0].x, centroids[1].x);
+    double lo = std::min((*centroids)[0].x, (*centroids)[1].x);
+    double hi = std::max((*centroids)[0].x, (*centroids)[1].x);
     REQUIRE(lo == Approx(0.05).margin(1.0));
     REQUIRE(hi == Approx(100.05).margin(1.0));
-
-    free(centroids);
 }
 
 TEST_CASE("KMeans rejects degenerate configurations", "[utils][kmeans]") {
     std::vector<Point1D> pts = { { 1.0, 0 }, { 2.0, 0 } };
     KMeans<Point1D> km;
 
-    // One cluster, no points, or more clusters than points: all return null.
-    REQUIRE(km.lloyd(pts.data(), 2, 1, 10) == nullptr);
-    REQUIRE(km.lloyd(pts.data(), 0, 2, 10) == nullptr);
-    REQUIRE(km.lloyd(pts.data(), 2, 5, 10) == nullptr);
+    auto oneCluster = km.lloyd(pts, 1, 10);
+    REQUIRE_FALSE(oneCluster.has_value());
+    REQUIRE(oneCluster.error() == KMeans<Point1D>::Error::InvalidClusterCount);
+
+    auto noPoints = km.lloyd(std::span<Point1D>{}, 2, 10);
+    REQUIRE_FALSE(noPoints.has_value());
+    REQUIRE(noPoints.error() == KMeans<Point1D>::Error::NoPoints);
+
+    auto tooManyClusters = km.lloyd(pts, 5, 10);
+    REQUIRE_FALSE(tooManyClusters.has_value());
+    REQUIRE(tooManyClusters.error() == KMeans<Point1D>::Error::InvalidClusterCount);
 }
 
 TEST_CASE("KMeans bisectionSearch finds the containing interval", "[utils][kmeans]") {

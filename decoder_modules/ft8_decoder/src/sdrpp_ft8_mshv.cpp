@@ -1,6 +1,8 @@
 #include <core.h>
 #include <iostream>
+#include <chrono>
 #include <stdio.h>
+#include <thread>
 #include <module/module_api.h>
 #include <ctm.h>
 #include <utils/wav.h>
@@ -27,7 +29,6 @@
 #include <fcntl.h>
 #endif
 
-#include <utils/usleep.h>
 #include <utils/strings.h>
 
 namespace ft8 {
@@ -99,7 +100,7 @@ namespace ft8 {
 
         dms->SetDecode(converted.data(), converted.size(), "120000", 0, 4, false, true, false);
         while (dms->IsWorking()) {
-            usleep(100000);
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
         return;
     }

@@ -4,7 +4,6 @@
 #include <dsp/types.h>
 #include <dsp/processor.h>
 #include "utils/arrays.h"
-#include <utils/usleep.h>
 #include "logmmse.h"
 
 namespace dsp {

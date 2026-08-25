@@ -2,6 +2,7 @@
 #include "../dsp/channel/rx_vfo.h"
 #include <gui/widgets/waterfall.h>
 #include <utils/event.h>
+#include <memory>
 
 class VFOManager {
 public:
@@ -34,6 +35,7 @@ public:
         ImGui::WaterfallVFO* wtfVFO;
 
     private:
+        std::unique_ptr<ImGui::WaterfallVFO> wtfVFOStorage;
         std::string name;
         double _bandwidth;
 
@@ -63,5 +65,5 @@ public:
     Event<std::string> onVfoDeleted;
 
 private:
-    std::map<std::string, VFO*> vfos;
+    std::map<std::string, std::unique_ptr<VFO>> vfos;
 };

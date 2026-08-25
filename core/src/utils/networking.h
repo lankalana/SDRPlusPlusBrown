@@ -4,8 +4,8 @@
 #define SDRPP_SOCKET_DEFINED
 
 #include <stdint.h>
+#include <deque>
 #include <string>
-#include <vector>
 #include <mutex>
 #include <inttypes.h>
 #include <memory>
@@ -63,10 +63,9 @@ namespace net {
         std::string getPeerName();
 
     private:
-        void readWorker();
-        void writeWorker();
+        void readWorker(std::stop_token stopToken);
+        void writeWorker(std::stop_token stopToken);
 
-        bool stopWorkers = false;
         bool connectionOpen = false;
 
         std::mutex readMtx;
@@ -78,10 +77,10 @@ namespace net {
         std::condition_variable readQueueCnd;
         std::condition_variable writeQueueCnd;
         std::condition_variable connectionOpenCnd;
-        std::vector<ConnReadEntry> readQueue;
-        std::vector<ConnWriteEntry> writeQueue;
-        std::thread readWorkerThread;
-        std::thread writeWorkerThread;
+        std::deque<ConnReadEntry> readQueue;
+        std::deque<ConnWriteEntry> writeQueue;
+        std::jthread readWorkerThread;
+        std::jthread writeWorkerThread;
 
         Socket _sock;
         bool _udp;
@@ -107,16 +106,15 @@ namespace net {
         bool isListening();
 
     private:
-        void worker();
+        void worker(std::stop_token stopToken);
 
         bool listening = false;
-        bool stopWorker = false;
 
         std::mutex acceptMtx;
         std::mutex acceptQueueMtx;
         std::condition_variable acceptQueueCnd;
-        std::vector<ListenerAcceptEntry> acceptQueue;
-        std::thread acceptWorkerThread;
+        std::deque<ListenerAcceptEntry> acceptQueue;
+        std::jthread acceptWorkerThread;
 
         Socket sock;
     };

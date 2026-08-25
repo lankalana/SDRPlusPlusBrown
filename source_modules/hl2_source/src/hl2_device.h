@@ -24,7 +24,8 @@
 
 #endif
 
-#include <utils/usleep.h>
+#include <chrono>
+#include <thread>
 
 #define DATA_PORT 1024
 
@@ -802,7 +803,7 @@ struct HL2Device {
         sendToEndpoint(0x2, output_buffer);
         prepareRequest(0x14);
         sendToEndpoint(0x2, output_buffer);
-        usleep(50000);
+        std::this_thread::sleep_for(std::chrono::microseconds(50000));
 
         // start the data flowing
         metis_start_stop(1); // IQ data (wideband data disabled)
@@ -990,7 +991,7 @@ struct HL2Device {
                 // we assume the receiving happens with same or higher frequency than the sending
                 // sending happens at 48000 samples per second.
                 this->maybeSendNextPacket();
-                usleep(1000);
+                std::this_thread::sleep_for(std::chrono::microseconds(1000));
             }
         });
 //        sendThread2 = std::make_shared<std::thread>([&] {
@@ -1011,7 +1012,6 @@ struct HL2Device {
 //                    }
 //                    continue;
 //                }
-//                usleep(1000);
 //            }
 //        });
         receiveThread = std::make_shared<std::thread>([&] {

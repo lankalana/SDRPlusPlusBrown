@@ -264,11 +264,6 @@ namespace dsp::detector {
         if (!base_type::_block_init) { return; }
         base_type::stop();
 
-        if (fftWindowBuf) {
-            delete[] fftWindowBuf;
-            fftWindowBuf = nullptr;
-        }
-
         fftInArray.reset();
         fftPlan.reset();
     }
@@ -319,14 +314,7 @@ namespace dsp::detector {
         buffer.resize(fftSize);
         bufferPos = 0;
 
-        // Clean up old window buffer
-        if (fftWindowBuf) {
-            delete[] fftWindowBuf;
-            fftWindowBuf = nullptr;
-        }
-
-        // Allocate window buffer
-        fftWindowBuf = new float[fftSize];
+        fftWindow.resize(fftSize);
 
         // Allocate new input array
         fftInArray = std::make_shared<std::vector<complex_t> >(fftSize);
@@ -339,13 +327,13 @@ namespace dsp::detector {
     }
 
     void SignalDetector::generateWindow() {
-        if (!fftWindowBuf || fftSize <= 0) {
+        if (fftWindow.empty() || fftSize <= 0) {
             return;
         }
 
         // Generate Blackman window
         for (int i = 0; i < fftSize; i++) {
-            fftWindowBuf[i] = window::blackman(i, fftSize);
+            fftWindow[i] = window::blackman(i, fftSize);
         }
     }
 
@@ -375,8 +363,8 @@ namespace dsp::detector {
                 // Apply window function
                 auto &inVec = *fftInArray;
                 for (int j = 0; j < fftSize; j++) {
-                    inVec.at(j).re = buffer.at(j).re * fftWindowBuf[j];
-                    inVec.at(j).im = buffer.at(j).im * fftWindowBuf[j];
+                    inVec.at(j).re = buffer.at(j).re * fftWindow[j];
+                    inVec.at(j).im = buffer.at(j).im * fftWindow[j];
                 }
 
                 // Execute FFT

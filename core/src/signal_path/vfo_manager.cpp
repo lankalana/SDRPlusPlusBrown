@@ -6,7 +6,8 @@ VFOManager::VFO::VFO(std::string name, int reference, double offset, double band
     this->name = name;
     _bandwidth = bandwidth;
     dspVFO = sigpath::iqFrontEnd.addVFO(name, sampleRate, bandwidth, offset);
-    wtfVFO = new ImGui::WaterfallVFO;
+    wtfVFOStorage = std::make_unique<ImGui::WaterfallVFO>();
+    wtfVFO = wtfVFOStorage.get();
     wtfVFO->setReference(reference);
     wtfVFO->setBandwidth(bandwidth);
     wtfVFO->setOffset(offset);
@@ -24,7 +25,6 @@ VFOManager::VFO::~VFO() {
         gui::waterfall.selectFirstVFO();
     }
     sigpath::iqFrontEnd.removeVFO(name);
-    delete wtfVFO;
 }
 
 void VFOManager::VFO::setOffset(double offset) {
@@ -93,19 +93,20 @@ VFOManager::VFOManager() {
 }
 
 VFOManager::VFO* VFOManager::createVFO(std::string name, int reference, double offset, double bandwidth, double sampleRate, double minBandwidth, double maxBandwidth, bool bandwidthLocked) {
-    if (vfos.find(name) != vfos.end() || name == "") {
+    if (vfos.contains(name) || name == "") {
         return NULL;
     }
-    VFOManager::VFO* vfo = new VFO(name, reference, offset, bandwidth, sampleRate, minBandwidth, maxBandwidth, bandwidthLocked);
-    vfos[name] = vfo;
-    onVfoCreated.emit(vfo);
-    return vfo;
+    auto vfo = std::make_unique<VFO>(name, reference, offset, bandwidth, sampleRate, minBandwidth, maxBandwidth, bandwidthLocked);
+    auto* vfoPtr = vfo.get();
+    vfos.emplace(name, std::move(vfo));
+    onVfoCreated.emit(vfoPtr);
+    return vfoPtr;
 }
 
 void VFOManager::deleteVFO(VFOManager::VFO* vfo) {
     std::string name = "";
     for (auto const& [_name, _vfo] : vfos) {
-        if (_vfo == vfo) {
+        if (_vfo.get() == vfo) {
             name = _name;
             break;
         }
@@ -115,12 +116,11 @@ void VFOManager::deleteVFO(VFOManager::VFO* vfo) {
     }
     onVfoDelete.emit(vfo);
     vfos.erase(name);
-    delete vfo;
     onVfoDeleted.emit(name);
 }
 
 void VFOManager::setOffset(std::string name, double offset) {
-    if (vfos.find(name) == vfos.end()) {
+    if (!vfos.contains(name)) {
         return;
     }
     vfos[name]->setOffset(offset);
@@ -135,70 +135,70 @@ double VFOManager::getOffset(std::string name) {
 }
 
 void VFOManager::setCenterOffset(std::string name, double offset) {
-    if (vfos.find(name) == vfos.end()) {
+    if (!vfos.contains(name)) {
         return;
     }
     vfos[name]->setCenterOffset(offset);
 }
 
 void VFOManager::setBandwidth(std::string name, double bandwidth, bool updateWaterfall) {
-    if (vfos.find(name) == vfos.end()) {
+    if (!vfos.contains(name)) {
         return;
     }
     vfos[name]->setBandwidth(bandwidth, updateWaterfall);
 }
 
 void VFOManager::setSampleRate(std::string name, double sampleRate, double bandwidth) {
-    if (vfos.find(name) == vfos.end()) {
+    if (!vfos.contains(name)) {
         return;
     }
     vfos[name]->setSampleRate(sampleRate, bandwidth);
 }
 
 void VFOManager::setReference(std::string name, int ref) {
-    if (vfos.find(name) == vfos.end()) {
+    if (!vfos.contains(name)) {
         return;
     }
     vfos[name]->setReference(ref);
 }
 
 void VFOManager::setBandwidthLimits(std::string name, double minBandwidth, double maxBandwidth, bool bandwidthLocked) {
-    if (vfos.find(name) == vfos.end()) {
+    if (!vfos.contains(name)) {
         return;
     }
     vfos[name]->setBandwidthLimits(minBandwidth, maxBandwidth, bandwidthLocked);
 }
 
 bool VFOManager::getBandwidthChanged(std::string name, bool erase) {
-    if (vfos.find(name) == vfos.end()) {
+    if (!vfos.contains(name)) {
         return false;
     }
     return vfos[name]->getBandwidthChanged(erase);
 }
 
 double VFOManager::getBandwidth(std::string name) {
-    if (vfos.find(name) == vfos.end()) {
+    if (!vfos.contains(name)) {
         return NAN;
     }
     return vfos[name]->getBandwidth();
 }
 
 int VFOManager::getReference(std::string name) {
-    if (vfos.find(name) == vfos.end()) {
+    if (!vfos.contains(name)) {
         return -1;
     }
     return vfos[name]->getReference();
 }
 
 void VFOManager::setColor(std::string name, ImU32 color) {
-    if (vfos.find(name) == vfos.end()) {
+    if (!vfos.contains(name)) {
         return;
     }
     return vfos[name]->setColor(color);
 }
 
 bool VFOManager::vfoExists(std::string name) {
-    return (vfos.find(name) != vfos.end());
+    return vfos.contains(name);
 }
 
 void VFOManager::updateFromWaterfall(ImGui::WaterFall* wtf) {

@@ -40,7 +40,7 @@ namespace dsp::multirate {
             validateRatio(ratio);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
             TempStopGuard stopGuard(*this);
-            std::vector<filter::DecimatingFIR<T, float>*> newFirs;
+            std::vector<std::unique_ptr<filter::DecimatingFIR<T, float>>> newFirs;
             std::vector<tap<float>> newTaps;
             int newStageCount = 0;
             buildFirs(ratio, newFirs, newTaps, newStageCount);
@@ -73,7 +73,7 @@ namespace dsp::multirate {
             const T* data = in;
             int last = stageCount - 1;
             for (int i = 0; i < stageCount; i++) {
-                auto fir = decimFirs[i];
+                auto* fir = decimFirs[i].get();
                 count = fir->process(count, data, out);
                 data = out;
             }
@@ -82,7 +82,7 @@ namespace dsp::multirate {
 
         int getMaxInputCount() const {
             int maxInputCount = STREAM_BUFFER_SIZE + 64000;
-            for (auto fir : decimFirs) {
+            for (const auto& fir : decimFirs) {
                 maxInputCount = (std::min)(maxInputCount, fir->getMaxInputCount());
             }
             return maxInputCount;
@@ -100,10 +100,9 @@ namespace dsp::multirate {
         }
 
     protected:
-        static void freeFirs(std::vector<filter::DecimatingFIR<T, float>*>& firs, std::vector<tap<float>>& tapsList) {
-            for (auto& fir : firs) { delete fir; }
-            for (auto& taps : tapsList) { dsp::taps::free(taps); }
+        static void freeFirs(std::vector<std::unique_ptr<filter::DecimatingFIR<T, float>>>& firs, std::vector<tap<float>>& tapsList) {
             firs.clear();
+            for (auto& taps : tapsList) { dsp::taps::free(taps); }
             tapsList.clear();
         }
 
@@ -120,7 +119,7 @@ namespace dsp::multirate {
             return exponent - 1;
         }
 
-        static void buildFirs(unsigned int ratio, std::vector<filter::DecimatingFIR<T, float>*>& firs,
+        static void buildFirs(unsigned int ratio, std::vector<std::unique_ptr<filter::DecimatingFIR<T, float>>>& firs,
                               std::vector<tap<float>>& tapsList, int& newStageCount) {
             // Generate filters based on DDC plan
             if (ratio > 1) {
@@ -151,14 +150,13 @@ namespace dsp::multirate {
                         tapsList.push_back(newTaps.taps);
                         newTaps.owned = false;
                         try {
-                            firs.push_back(fir.get());
+                            firs.push_back(std::move(fir));
                         }
                         catch (...) {
                             dsp::taps::free(tapsList.back());
                             tapsList.pop_back();
                             throw;
                         }
-                        fir.release();
                     }
                 }
                 catch (...) {
@@ -179,7 +177,7 @@ namespace dsp::multirate {
             }
         }
 
-        std::vector<filter::DecimatingFIR<T, float>*> decimFirs;
+        std::vector<std::unique_ptr<filter::DecimatingFIR<T, float>>> decimFirs;
         std::vector<tap<float>> decimTaps;
         unsigned int _ratio = 1;
         int stageCount = 0;
