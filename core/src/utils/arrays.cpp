@@ -3,8 +3,10 @@
 #include <algorithm>
 #include <fftw3.h>
 #include <limits>
+#include <mutex>
 #include <numbers>
 #include <stdexcept>
+#include <thread>
 
 #ifdef __APPLE__
 #include <Accelerate/Accelerate.h>
@@ -523,7 +525,27 @@ namespace dsp {
                 plan->reverse = backward;
                 plan->input = npzeros_c(buckets);
                 plan->output = npzeros_c(buckets);
+#ifdef SDRPP_FFTW_THREADS
+                static std::once_flag fftwThreadsInitFlag;
+                static std::mutex fftwThreadPlanMtx;
+                static bool fftwThreadsAvailable = false;
+                std::unique_lock<std::mutex> fftwThreadPlanLock;
+                if (buckets >= 32768) {
+                    std::call_once(fftwThreadsInitFlag, []() {
+                        fftwThreadsAvailable = fftwf_init_threads() != 0;
+                    });
+                }
+                if (buckets >= 32768 && fftwThreadsAvailable) {
+                    fftwThreadPlanLock = std::unique_lock<std::mutex>(fftwThreadPlanMtx);
+                    unsigned int availableThreads = (std::max)(std::thread::hardware_concurrency(), 1U);
+                    int threadCount = (std::min<int>)(availableThreads, 4);
+                    fftwf_plan_with_nthreads(threadCount);
+                }
+#endif
                 auto p = fftwf_plan_dft_1d(buckets, (fftwf_complex*)plan->input->data(), (fftwf_complex*)plan->output->data(), backward ? FFTW_BACKWARD : FFTW_FORWARD, FFTW_ESTIMATE);
+#ifdef SDRPP_FFTW_THREADS
+                if (fftwThreadsAvailable) { fftwf_plan_with_nthreads(1); }
+#endif
                 plan->p = p;
             }
 

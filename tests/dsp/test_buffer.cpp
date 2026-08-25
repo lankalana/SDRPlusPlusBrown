@@ -318,3 +318,29 @@ TEST_CASE("Reshaper skip drops samples between frames", "[dsp][buffer][reshaper]
     reshaper.stop();
     collector.stop();
 }
+
+TEST_CASE("Reshaper negative skip overlaps consecutive frames", "[dsp][buffer][reshaper]") {
+    dsp::stream<float> in;
+    in.setBufferSize(4096);
+
+    dsp::buffer::Reshaper<float> reshaper;
+    reshaper.init(&in, 8, -6); // advance two samples per eight-sample frame
+    reshaper.out.setBufferSize(4096);
+
+    StreamCollector<float> collector(&reshaper.out);
+    StreamFeeder<float> feeder(&in);
+
+    reshaper.start();
+    REQUIRE(feeder.feed(ramp(64), 64));
+    REQUIRE(collector.waitFor(24));
+
+    auto got = collector.data();
+    for (int frame = 0; frame < 3; frame++) {
+        for (int sample = 0; sample < 8; sample++) {
+            REQUIRE(got[(frame * 8) + sample] == (float)((frame * 2) + sample));
+        }
+    }
+
+    reshaper.stop();
+    collector.stop();
+}

@@ -85,6 +85,27 @@ TEST_CASE("stream applies backpressure until the reader flushes", "[dsp][stream]
     str.flush();
 }
 
+TEST_CASE("stream tryWrite drops data instead of applying backpressure", "[dsp][stream]") {
+    dsp::stream<float> str;
+    str.setBufferSize(16);
+
+    const float first[] = { 1.0f, 2.0f };
+    const float dropped[] = { 3.0f, 4.0f };
+    REQUIRE(str.tryWrite(first, 2));
+    REQUIRE_FALSE(str.tryWrite(dropped, 2));
+
+    REQUIRE(str.read() == 2);
+    REQUIRE(str.readBuf[0] == 1.0f);
+    REQUIRE(str.readBuf[1] == 2.0f);
+    str.flush();
+
+    REQUIRE(str.tryWrite(dropped, 2));
+    REQUIRE(str.read() == 2);
+    REQUIRE(str.readBuf[0] == 3.0f);
+    REQUIRE(str.readBuf[1] == 4.0f);
+    str.flush();
+}
+
 TEST_CASE("stream stopReader unblocks a waiting reader", "[dsp][stream]") {
     dsp::stream<float> str;
     str.setBufferSize(16);

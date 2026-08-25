@@ -436,6 +436,22 @@ TEST_CASE("FFT plan puts a single tone in a single bin", "[utils][arrays][fft]")
     }
 }
 
+TEST_CASE("large FFT plans produce correct output", "[utils][arrays][fft][threaded]") {
+    const int n = 32768;
+    auto plan = allocateFFTWPlan(false, n);
+    auto in = plan->getInput();
+    for (auto& v : *in) { v = { 0.0f, 0.0f }; }
+    in->at(0) = { 1.0f, 0.0f };
+
+    plan->execute();
+
+    auto out = plan->getOutput();
+    for (int bin : { 0, 1, 127, 4096, n - 1 }) {
+        REQUIRE(out->at(bin).re == Approx(1.0f).margin(1e-4));
+        REQUIRE(out->at(bin).im == Approx(0.0f).margin(1e-4));
+    }
+}
+
 TEST_CASE("npfftfft copies the input into the plan", "[utils][arrays][fft]") {
     const int n = 32;
     auto plan = allocateFFTWPlan(false, n);

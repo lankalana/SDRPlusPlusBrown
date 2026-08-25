@@ -257,21 +257,14 @@ namespace ImGui {
         void onResize();
         void updateWaterfallTexture();
 
-        enum {
-            TEXTURE_SPECIFY_REQUIRED,
-            TEXTURE_PIXELS_CHANGE_REQUIRED,
-            TEXTURE_OK
-        };
-
-        void setTextureStatus(int index, int value);
-        void updateWaterfallTexturesIfNeeded();
-        void updateWaterfallTextureIfNeeded(int textureIndex, int startRowIndex);
-        void specifyTexture(int textureIndex, const uint8_t* pixels) const;
-        void changeTexturePixels(int textureIndex, const uint8_t* pixels) const;
         void drawWaterfallImages();
 
         void updateAllVFOs(bool checkRedrawRequired = false);
         bool calculateVFOSignalInfo(float* fftLine, WaterfallVFO* vfo, float& strength, float& snr);
+        void updateSignalInfo(float* fftLine);
+        void commitWaterfallRow();
+        void applyFFTPostProcessing();
+        void resizeRawFFTHistory();
 
         bool waterfallUpdate = false;
 
@@ -321,7 +314,7 @@ namespace ImGui {
         float waterfallMax;
 
         //std::vector<std::vector<float>> rawFFTs;
-        int rawFFTSize;
+        int rawFFTSize = 1;
         std::vector<float> rawFFTsStorage;
         std::vector<float> latestFFTStorage;
         std::vector<float> latestFFTHoldStorage;
@@ -384,6 +377,14 @@ namespace ImGui {
 
         int rawFFTIndex(double frequency) const;
         void testAlloc(const std::string& where);
+
+        std::vector<ImVec2> fftTraceStorage;
+        std::vector<ImVec2> fftHoldTraceStorage;
+        std::vector<float> signalInfoScratch;
+        int rawFFTLineCapacity = 1;
+        GLuint waterfallTextureId = 0;
+        bool waterfallTextureNeedsSpecify = true;
+        std::vector<uint8_t> waterfallRowsDirty;
     };
 
 

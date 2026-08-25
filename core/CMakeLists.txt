@@ -119,6 +119,7 @@ if (MSVC)
     # FFTW3
     find_package(FFTW3f CONFIG REQUIRED)
     target_link_libraries(sdrpp_core PUBLIC FFTW3::fftw3f )
+    target_compile_definitions(sdrpp_core PRIVATE SDRPP_FFTW_THREADS)
     set(FFTW3f_LIBRARIES ${FFTW3_LIBRARIES})
     set(FFTW3f_LIBRARY_DIRS ${FFTW3_LIBRARY_DIRS})
     set(FFTW3f_INCLUDE_DIRS ${FFTW3_INCLUDE_DIRS})
@@ -156,7 +157,12 @@ else()
     set(FFTW3F_LIBRARIES ${FFTW3_LIBRARIES})
     set(FFTW3F_LIBRARY_DIRS ${FFTW3_LIBRARY_DIRS})
     set(FFTW3F_INCLUDE_DIRS ${FFTW3_INCLUDE_DIRS})
+    pkg_check_modules(FFTW3F_THREADS QUIET fftw3f_threads)
     pkg_check_modules(FFTW3 REQUIRED fftw3)
+
+    if (FFTW3F_THREADS_FOUND)
+        target_compile_definitions(sdrpp_core PRIVATE SDRPP_FFTW_THREADS)
+    endif()
 
 
     # temp
@@ -176,6 +182,7 @@ else()
         ${OPENGL_INCLUDE_DIRS}
         ${FFTW3_INCLUDE_DIRS}
         ${FFTW3F_INCLUDE_DIRS}
+        ${FFTW3F_THREADS_INCLUDE_DIRS}
         ${GLFW3_INCLUDE_DIRS}
         ${VOLK_INCLUDE_DIRS}
         ${LIBZSTD_INCLUDE_DIRS}
@@ -185,6 +192,7 @@ else()
         ${OPENGL_LIBRARY_DIRS}
         ${FFTW3_LIBRARY_DIRS}
         ${FFTW3F_LIBRARY_DIRS}
+        ${FFTW3F_THREADS_LIBRARY_DIRS}
         ${GLFW3_LIBRARY_DIRS}
         ${VOLK_LIBRARY_DIRS}
         ${LIBZSTD_LIBRARY_DIRS}
@@ -194,6 +202,7 @@ else()
         ${OPENGL_LIBRARIES}
         ${FFTW3_LIBRARIES}
         ${FFTW3F_LIBRARIES}
+        ${FFTW3F_THREADS_LIBRARIES}
         ${GLFW3_LIBRARIES}
         ${VOLK_LIBRARIES}
         ${LIBZSTD_LIBRARIES}

@@ -4,7 +4,12 @@
   "description": "Common dependencies for the SDR++ Brown development build",
   "dependencies": [
     "catch2",
-    "fftw3",
+    {
+      "name": "fftw3",
+      "features": [
+        "threads"
+      ]
+    },
     "glfw3",
     "itpp",
     "libusb",

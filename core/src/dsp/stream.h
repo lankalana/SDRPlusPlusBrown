@@ -119,6 +119,28 @@ namespace dsp {
             return true;
         }
 
+        inline bool tryWrite(const T* data, int size) {
+            if (!data || size < 0 || size > bufferSize || !writeBuf || !readBuf) {
+                return false;
+            }
+            {
+                std::lock_guard<std::mutex> lck(swapMtx);
+                if (!canSwap || writerStop) { return false; }
+                memcpy(writeBuf, data, size * sizeof(T));
+                T* temp = writeBuf;
+                writeBuf = readBuf;
+                readBuf = temp;
+                canSwap = false;
+            }
+            {
+                std::lock_guard<std::mutex> lck(rdyMtx);
+                dataSize = size;
+                dataReady = true;
+            }
+            rdyCV.notify_all();
+            return true;
+        }
+
         virtual inline int read() {
             // Wait for data to be ready or to be stopped
             if (!readBuf0 || !writeBuf) {

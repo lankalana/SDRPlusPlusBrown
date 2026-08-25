@@ -73,14 +73,14 @@ TEST_CASE("genReshapeParams keeps a whole FFT frame when it fits", "[signalpath]
     REQUIRE(skip == 2400 - 1024);
 }
 
-TEST_CASE("genReshapeParams clamps keep to the available samples", "[signalpath][frontend]") {
+TEST_CASE("genReshapeParams keeps a full FFT when the interval is shorter", "[signalpath][frontend]") {
     int skip = 0, keep = 0;
 
-    // 48 kHz, 8192 bin FFT, 60 frames per second: only 800 samples arrive per
-    // frame, so the FFT is zero padded and nothing is skipped.
+    // 48 kHz, 8192 bin FFT, 60 requested frames per second: a complete FFT
+    // overlaps the previous frame to preserve both resolution and update rate.
     Helpers::genReshapeParams(48000.0, 8192, 60.0, skip, keep);
-    REQUIRE(keep == 800);
-    REQUIRE(skip == 0);
+    REQUIRE(keep == 8192);
+    REQUIRE(skip == 800 - 8192);
 }
 
 TEST_CASE("genReshapeParams handles an exact fit", "[signalpath][frontend]") {
@@ -88,6 +88,13 @@ TEST_CASE("genReshapeParams handles an exact fit", "[signalpath][frontend]") {
     Helpers::genReshapeParams(48000.0, 4800, 10.0, skip, keep);
     REQUIRE(keep == 4800);
     REQUIRE(skip == 0);
+}
+
+TEST_CASE("genReshapeParams always advances overlapping frames", "[signalpath][frontend]") {
+    int skip = 0, keep = 0;
+    Helpers::genReshapeParams(100.0, 64, 1000.0, skip, keep);
+    REQUIRE(keep == 64);
+    REQUIRE(skip == 1 - 64);
 }
 
 TEST_CASE("genReshapeParams rounds the frame interval", "[signalpath][frontend]") {
@@ -169,10 +176,13 @@ TEST_CASE("IQFrontEnd drives the FFT branch", "[signalpath][frontend][slow]") {
     auto data = complexTone(48000, 3000.0, sr, 1.0);
     REQUIRE(feeder.feed(data, 4096));
 
-    for (int i = 0; i < 200 && fft.frames.load() < 15; i++) {
+    // The FFT output is intentionally non-blocking. This synthetic feeder runs
+    // much faster than real time, so display frames may be dropped while the
+    // FFT worker is busy rather than applying backpressure to the IQ path.
+    for (int i = 0; i < 200 && fft.frames.load() < 1; i++) {
         std::this_thread::sleep_for(10ms);
     }
-    REQUIRE(fft.frames.load() >= 15);
+    REQUIRE(fft.frames.load() >= 1);
 
     // The last frame written is a power spectrum in dB; the tone must dominate.
     float peakDb = -1e9f;
