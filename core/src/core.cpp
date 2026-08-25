@@ -899,7 +899,7 @@ int sdrpp_main(int argc, char* argv[]) {
 #ifndef __ANDROID__
     // Shut down all modules
     for (auto& [name, mod] : core::moduleManager.modules) {
-        mod.end();
+        mod.api->end();
     }
 
     // Terminate backend (TODO: CHECK RETURN VALUE)

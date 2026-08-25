@@ -4,7 +4,7 @@
 #include <gui/style.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
-#include <module.h>
+#include <module/module_api.h>
 
 #include <dsp/pll.h>
 #include <dsp/stream.h>
@@ -23,7 +23,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "weather_sat_decoder",
     /* Description:     */ "Weather Satellite Decoder for SDR++",
     /* Author:          */ "Ryzerth",
@@ -39,7 +39,7 @@ std::string genFileName(std::string prefix, std::string suffix) {
     return buf;
 }
 
-class WeatherSatDecoderModule : public ModuleManager::Instance {
+class WeatherSatDecoderModule : public ModuleInstance {
 public:
     WeatherSatDecoderModule(std::string name) {
         this->name = name;
@@ -130,18 +130,21 @@ private:
     SatDecoder* decoder;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Nothing
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new WeatherSatDecoderModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (WeatherSatDecoderModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     // Nothing either
 }
+
+SDRPP_MODULE_EXPORT_API;

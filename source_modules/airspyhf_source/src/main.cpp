@@ -1,5 +1,5 @@
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
 #include <config.h>
@@ -14,7 +14,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "airspyhf_source",
     /* Description:     */ "Airspy HF+ source module for SDR++",
     /* Author:          */ "Ryzerth",
@@ -30,7 +30,7 @@ const char* AGG_MODES_STR = "Off\0Low\0High\0";
 using namespace dsp;
 
 
-class AirspyHFSourceModule : public ModuleManager::Instance {
+class AirspyHFSourceModule : public ModuleInstance {
 
     dsp::FrequencyCarving<dsp::complex_t> carving;
     dsp::stream<dsp::complex_t> carvingInput;
@@ -461,7 +461,7 @@ private:
     std::string sampleRateListTxt;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     def["devices"] = json({});
     def["device"] = "";
@@ -470,15 +470,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new AirspyHFSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(ModuleManager::Instance* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (AirspyHFSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
-}   
+}
+
+SDRPP_MODULE_EXPORT_API;

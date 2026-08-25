@@ -1,7 +1,7 @@
 #pragma once
 #include <string>
 #include <vector>
-#include <module.h>
+#include <sdrpp_export.h>
 #include <map>
 
 namespace colormaps {

@@ -1,5 +1,5 @@
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <dsp/types.h>
 #include <dsp/stream.h>
 #include <dsp/bench/peak_level_meter.h>
@@ -28,7 +28,7 @@
 
 #define SILENCE_LVL 10e-6
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "recorder",
     /* Description:     */ "Recorder module for SDR++",
     /* Author:          */ "Ryzerth",
@@ -38,7 +38,7 @@ SDRPP_MOD_INFO{
 
 ConfigManager config;
 
-class RecorderModule : public ModuleManager::Instance {
+class RecorderModule : public ModuleInstance {
 public:
     RecorderModule(std::string name) : folderSelect("%ROOT%/recordings") {
         this->name = name;
@@ -637,7 +637,7 @@ private:
 
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Create default recording directory
     std::string root = std::string(core::getRoot());
     if (!std::filesystem::exists(root + "/recordings")) {
@@ -652,15 +652,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new RecorderModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(ModuleManager::Instance* inst) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* inst) {
     delete (RecorderModule*)inst;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

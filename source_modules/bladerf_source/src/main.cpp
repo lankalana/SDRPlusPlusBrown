@@ -1,6 +1,6 @@
 #include <imgui.h>
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
@@ -17,7 +17,7 @@
 #define NUM_BUFFERS   128
 #define NUM_TRANSFERS 1
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "bladerf_source",
     /* Description:     */ "BladeRF source module for SDR++",
     /* Author:          */ "Ryzerth",
@@ -33,7 +33,7 @@ enum BladeRFType {
     BLADERF_TYPE_V2
 };
 
-class BladeRFSourceModule : public ModuleManager::Instance {
+class BladeRFSourceModule : public ModuleInstance {
 public:
     BladeRFSourceModule(std::string name) {
         this->name = name;
@@ -642,7 +642,7 @@ private:
     int gainModeCount;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     def["devices"] = json({});
     def["device"] = "";
@@ -651,15 +651,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new BladeRFSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(ModuleManager::Instance* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (BladeRFSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

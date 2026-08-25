@@ -1,6 +1,6 @@
 #include <utils/networking.h>
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/style.h>
 #include <regex>
@@ -16,7 +16,7 @@
 
 
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "tci_server",
     /* Description:     */ "Implementing TCI",
     /* Author:          */ "san",
@@ -95,7 +95,7 @@ std::vector<std::string> split(const std::string& str, const std::string& regex_
 }
 
 
-class TCIServerModule : public ModuleManager::Instance {
+class TCIServerModule : public ModuleInstance {
 
     EventHandler<std::shared_ptr<SinkManager::StreamHook>> onStreamHandler;
 
@@ -1108,23 +1108,26 @@ private:
     bool autoStart = false;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     moduleRunning = true;
     config.setPath(std::string(core::getRoot()) + "/tci_server_config.json");
     config.load(json::object());
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new TCIServerModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (TCIServerModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     moduleRunning = false;
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

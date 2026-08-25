@@ -117,7 +117,7 @@ namespace module_manager_menu {
             json instances;
             for (auto [_name, inst] : core::moduleManager.instances) {
                 instances[_name]["module"] = inst.module.info->name;
-                instances[_name]["enabled"] = inst.instance->isEnabled();
+                instances[_name]["enabled"] = inst.module.api->isEnabled(inst.instance);
             }
             core::configManager.conf["moduleInstances"] = instances;
             core::configManager.release(true);

@@ -1,7 +1,7 @@
 #include <spyserver_client.h>
 #include <imgui.h>
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
@@ -13,7 +13,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "spyserver_source",
     /* Description:     */ "SpyServer source module for SDR++",
     /* Author:          */ "Ryzerth",
@@ -46,7 +46,7 @@ const int streamFormatsBitCount[] = {
 
 ConfigManager config;
 
-class SpyServerSourceModule : public ModuleManager::Instance {
+class SpyServerSourceModule : public ModuleInstance {
 public:
     SpyServerSourceModule(std::string name) {
         this->name = name;
@@ -312,7 +312,7 @@ private:
     spyserver::SpyServerClient client;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     def["hostname"] = "localhost";
     def["port"] = 5555;
@@ -331,15 +331,18 @@ MOD_EXPORT void _INIT_() {
     config.release(corrected);
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new SpyServerSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(ModuleManager::Instance* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (SpyServerSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

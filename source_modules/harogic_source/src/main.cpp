@@ -1,5 +1,5 @@
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/smgui.h>
 #include <signal_path/signal_path.h>
@@ -8,7 +8,7 @@
 #include <htra_api.h>
 #include <atomic>
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "harogic_source",
     /* Description:     */ "harogic Source Module",
     /* Author:          */ "Ryzerth",
@@ -18,7 +18,7 @@ SDRPP_MOD_INFO{
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-class HarogicSourceModule : public ModuleManager::Instance {
+class HarogicSourceModule : public ModuleInstance {
 public:
     HarogicSourceModule(std::string name) {
         this->name = name;
@@ -493,18 +493,21 @@ private:
     bool sampsInt8;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Nothing here
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new HarogicSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (HarogicSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     // Nothing here
 }
+
+SDRPP_MODULE_EXPORT_API;

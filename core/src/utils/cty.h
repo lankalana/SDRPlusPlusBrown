@@ -2,7 +2,7 @@
 
 #include <string>
 #include <vector>
-#include <module.h>
+#include <sdrpp_export.h>
 
 namespace utils {
 

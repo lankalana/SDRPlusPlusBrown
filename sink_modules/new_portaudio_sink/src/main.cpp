@@ -1,5 +1,5 @@
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <signal_path/sink.h>
@@ -16,7 +16,7 @@
 #define BLOCK_SIZE_DIVIDER 60
 #define AUDIO_LATENCY      1.0 / 60.0
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "new_portaudio_sink",
     /* Description:     */ "Audio sink module for SDR++",
     /* Author:          */ "Ryzerth;Maxime Biette",
@@ -531,7 +531,7 @@ private:
     EventHandler<bool> playStateHandler;
 };
 
-class AudioSinkModule : public ModuleManager::Instance {
+class AudioSinkModule : public ModuleInstance {
 public:
     AudioSinkModule(std::string name) {
         this->name = name;
@@ -572,22 +572,25 @@ private:
     SinkManager::SinkProvider provider;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     config.setPath(std::string(core::getRoot()) + "/new_audio_sink_config.json");
     config.load(json::object());
     config.enableAutoSave();
 }
 
-MOD_EXPORT void* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     AudioSinkModule* instance = new AudioSinkModule(name);
     return instance;
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (AudioSinkModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

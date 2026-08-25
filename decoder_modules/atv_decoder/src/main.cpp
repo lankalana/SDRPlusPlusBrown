@@ -5,7 +5,7 @@
 #include <gui/style.h>
 #include <gui/widgets/image.h>
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <signal_path/signal_path.h>
 
 #include <dsp/demod/quadrature.h>
@@ -26,7 +26,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{/* Name:            */ "atv_decoder",
+SDRPP_MODULE_INFO{/* Name:            */ "atv_decoder",
                /* Description:     */ "ATV decoder for SDR++",
                /* Author:          */ "Ryzerth",
                /* Version:         */ 0, 1, 0,
@@ -35,7 +35,7 @@ SDRPP_MOD_INFO{/* Name:            */ "atv_decoder",
 
 #define SAMPLE_RATE (625.0f * (float)LINE_SIZE * 25.0f)
 
-class ATVDecoderModule : public ModuleManager::Instance {
+class ATVDecoderModule : public ModuleInstance {
   public:
     ATVDecoderModule(std::string name) : img(768, 576) {
         this->name = name;
@@ -306,10 +306,13 @@ class ATVDecoderModule : public ModuleManager::Instance {
     ImGui::ImageDisplay img;
 };
 
-MOD_EXPORT void _INIT_() {}
+MOD_EXPORT void sdrppModuleInit() {}
 
-MOD_EXPORT ModuleManager::Instance *_CREATE_INSTANCE_(std::string name) { return new ATVDecoderModule(name); }
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen); return new ATVDecoderModule(name); }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void *instance) { delete (ATVDecoderModule *)instance; }
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) { delete (ATVDecoderModule *)instance; }
 
-MOD_EXPORT void _END_() {}
+MOD_EXPORT void sdrppModuleEnd() {}
+
+SDRPP_MODULE_EXPORT_API;

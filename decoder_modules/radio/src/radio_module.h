@@ -1,6 +1,6 @@
 #pragma once
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/style.h>
 #include <signal_path/signal_path.h>
@@ -31,7 +31,7 @@ extern std::map<DeemphasisMode, double> deempTaus;
 extern std::map<IFNRPreset, double> ifnrTaps;
 
 
-class RadioModule : public ModuleManager::Instance, public RadioModuleInterface  {
+class RadioModule : public ModuleInstance, public RadioModuleInterface  {
 public:
 
 

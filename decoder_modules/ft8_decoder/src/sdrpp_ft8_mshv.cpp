@@ -1,7 +1,7 @@
 #include <core.h>
 #include <iostream>
 #include <stdio.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <ctm.h>
 #include <utils/wav.h>
 #include <utils/riff.h>

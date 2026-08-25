@@ -1,7 +1,7 @@
 #define NOMINMAX
 #include <imgui.h>
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <utils/wav.h>
@@ -24,7 +24,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "file_source",
     /* Description:     */ "Wav file source module for SDR++",
     /* Author:          */ "Ryzerth",
@@ -34,7 +34,7 @@ SDRPP_MOD_INFO{
 
 ConfigManager config;
 
-class FileSourceModule : public ModuleManager::Instance, public FileSourceInterface {
+class FileSourceModule : public ModuleInstance, public FileSourceInterface {
 public:
     FileSourceModule(std::string name) : fileSelect("", { "Wav IQ Files (*.wav)", "*.wav", "All Files", "*" }) {
         this->name = name;
@@ -515,7 +515,7 @@ private:
 
 int FileSourceModule::isServer;
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     def["path"] = "";
     config.setPath(std::string(core::getRoot()) + "/file_source_config.json");
@@ -523,15 +523,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT void* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new FileSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (FileSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

@@ -5,7 +5,7 @@
 #include <dsp/channel/rx_vfo.h>
 #include <gui/gui.h>
 #include <gui/style.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <signal_path/signal_path.h>
 #include <utils/flog.h>
 
@@ -23,7 +23,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "adsb_decoder",
     /* Description:     */ "ADS-B 1090ES Decoder for SDR++",
     /* Author:          */ "@lankalana",
@@ -48,7 +48,7 @@ std::string formatICAO(uint32_t icao) {
 
 }
 
-class ADSBDecoderModule : public ModuleManager::Instance {
+class ADSBDecoderModule : public ModuleInstance {
 public:
     explicit ADSBDecoderModule(std::string instanceName) :
         name(std::move(instanceName)),
@@ -473,22 +473,25 @@ private:
     EventHandler<bool> onPlayStateChange;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json defaults = json({});
     config.setPath(std::string(core::getRoot()) + "/adsb_decoder_config.json");
     config.load(defaults);
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new ADSBDecoderModule(std::move(name));
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (ADSBDecoderModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

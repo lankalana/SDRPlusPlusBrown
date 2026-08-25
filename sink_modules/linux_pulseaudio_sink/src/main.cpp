@@ -1,5 +1,5 @@
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <signal_path/sink.h>
@@ -16,7 +16,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "linux_pulseaudio_sink",
     /* Description:     */ "PulseAudio sink module for Linux",
     /* Author:          */ "Sanny Sanoff and his aider",
@@ -311,7 +311,7 @@ private:
     float _testPhase;
 };
 
-class PulseAudioSinkModule : public ModuleManager::Instance {
+class PulseAudioSinkModule : public ModuleInstance {
 public:
     PulseAudioSinkModule(std::string name) {
         this->name = name;
@@ -348,23 +348,26 @@ private:
     SinkManager::SinkProvider provider;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     config.setPath(core::args["root"].s() + "/pulseaudio_sink_config.json");
     config.load(def);
     config.enableAutoSave();
 }
 
-MOD_EXPORT void* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     PulseAudioSinkModule* instance = new PulseAudioSinkModule(name);
     return instance;
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (PulseAudioSinkModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

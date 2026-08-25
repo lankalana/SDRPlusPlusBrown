@@ -1,6 +1,6 @@
 #pragma once
 #include <string>
-#include <module.h>
+#include <sdrpp_export.h>
 
 namespace tuner {
     void centerTuning(std::string vfoName, double freq);

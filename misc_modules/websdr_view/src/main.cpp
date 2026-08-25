@@ -7,7 +7,7 @@
 #include "gui/brown/small_waterfall.h"
 
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <core.h>
 #include <config.h>
@@ -15,7 +15,7 @@
 
 #define MAX_COMMAND_LENGTH 8192
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
         /* Name:            */ "websdr_view",
         /* Description:     */ "View Multiple Websdr",
         /* Author:          */ "San",
@@ -25,7 +25,7 @@ SDRPP_MOD_INFO{
 
 ConfigManager config;
 
-class ReportsMonitorModule : public ModuleManager::Instance {
+class ReportsMonitorModule : public ModuleInstance {
 
     bool intlSupport;
     bool mouseWheel;
@@ -350,21 +350,24 @@ private:
     bool enabled = true;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     config.setPath(std::string(core::getRoot()) + "/websdr_view.json");
     config.load(json::object());
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance *_CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new ReportsMonitorModule(name, std::string(core::getRoot()));
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void *instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (ReportsMonitorModule *) instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

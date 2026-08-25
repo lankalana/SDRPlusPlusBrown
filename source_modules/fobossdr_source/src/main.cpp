@@ -1,5 +1,5 @@
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/smgui.h>
 #include <signal_path/signal_path.h>
@@ -8,7 +8,7 @@
 #include <atomic>
 #include <fobos.h>
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "fobossdr_source",
     /* Description:     */ "FobosSDR Source Module",
     /* Author:          */ "Ryzerth",
@@ -26,7 +26,7 @@ ConfigManager config;
 #define FOBOS_VGA_GAIN_MIN  0
 #define FOBOS_VGA_GAIN_MAX  31
 
-class FobosSDRSourceModule : public ModuleManager::Instance {
+class FobosSDRSourceModule : public ModuleInstance {
 public:
     FobosSDRSourceModule(std::string name) {
         this->name = name;
@@ -537,7 +537,7 @@ private:
     dsp::channel::RxVFO ddc;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     def["devices"] = json({});
     def["device"] = "";
@@ -546,15 +546,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new FobosSDRSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (FobosSDRSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

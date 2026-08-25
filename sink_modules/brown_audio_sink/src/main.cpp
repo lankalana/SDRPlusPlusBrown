@@ -1,7 +1,7 @@
 #define _USE_MATH_DEFINES
 #include <cmath>
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/style.h>
 #include <signal_path/signal_path.h>
@@ -16,7 +16,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "brown_audio_sink",
     /* Description:     */ "Mic enabled SDR++Brown Audio Sink",
     /* Author:          */ "Ryzerth;Sanny",
@@ -523,7 +523,7 @@ RtAudio AudioSink::audio2;
 std::atomic<int> AudioSink::audio2RefCount{0};
 AudioSink* AudioSink::audio2Owner{nullptr};
 
-class AudioSinkModule : public ModuleManager::Instance {
+class AudioSinkModule : public ModuleInstance {
 public:
     AudioSinkModule(std::string name) {
         this->name = name;
@@ -563,23 +563,26 @@ private:
 };
 
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     config.setPath(std::string(core::getRoot()) + "/brown_audio_sink_config.json");
     config.load(def);
     config.enableAutoSave();
 }
 
-MOD_EXPORT void* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     AudioSinkModule* instance = new AudioSinkModule(name);
     return instance;
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (AudioSinkModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

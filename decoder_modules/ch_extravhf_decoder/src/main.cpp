@@ -19,7 +19,7 @@
 #include "../../../core/src/config.h"
 
 
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include "../../radio/src/radio_module_interface.h"
@@ -33,7 +33,7 @@ ConfigManager config;
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
 
-class VhfVoiceRadioModule : public ModuleManager::Instance {
+class VhfVoiceRadioModule : public ModuleInstance {
 public:
 
     std::string name;
@@ -152,7 +152,7 @@ public:
             core::moduleManager.onInstanceCreated.unbindHandler(&moduleCreatedListener);
             core::moduleManager.onInstanceDelete.unbindHandler(&moduleDeleteListener);
             for (auto x: core::moduleManager.instances) {
-                Instance *pInstance = x.second.instance;
+                ModuleInstance *pInstance = x.second.instance;
                 auto radio = (RadioModuleInterface *) pInstance->getInterface("RadioModuleInterface");
                 if (radio) {
                     uninjectFromRadio(radio);
@@ -270,7 +270,7 @@ private:
 };
 
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "ch_extravhf_decoder",
     /* Description:     */ "Additional modes for V/UHF voice",
     /* Author:          */ "cropinghigh",
@@ -278,24 +278,27 @@ SDRPP_MOD_INFO{
     /* Max instances    */ -1
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     config.setPath(std::string(core::getRoot()) + "/ch_extravhf_decoder_config.json");
     config.load(def);
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new VhfVoiceRadioModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     auto mymod = (VhfVoiceRadioModule*)instance;
     mymod->uninject();
     delete mymod;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

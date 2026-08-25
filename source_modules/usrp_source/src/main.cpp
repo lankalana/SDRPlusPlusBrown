@@ -1,5 +1,5 @@
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
@@ -25,7 +25,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "usrp_source",
     /* Description:     */ "Universal hardware-synchronized USRP source module for SDR++",
     /* Author:          */ "Ryzerth",
@@ -53,7 +53,7 @@ static void start(void* ctx);
 static void stop(void* ctx);
 static void tune(double freq, void* ctx);
 
-class USRPSourceModule : public ModuleManager::Instance {
+class USRPSourceModule : public ModuleInstance {
 public:
     USRPSourceModule(std::string name) {
         this->name = name;
@@ -825,7 +825,7 @@ private:
     bool firstSelect = true;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     ringMutex = new std::mutex();
     ringCond = new std::condition_variable();
     json def = json({});
@@ -836,15 +836,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new USRPSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(ModuleManager::Instance* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (USRPSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

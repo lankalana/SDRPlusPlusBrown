@@ -3,7 +3,7 @@
 #endif
 
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <config.h>
 #include <core.h>
@@ -21,7 +21,7 @@ using namespace ImGui;
 ConfigManager config;
 
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "noise_reduction_logmmse",
     /* Description:     */ "LOGMMSE noise reduction",
     /* Author:          */ "sannysanoff",
@@ -29,7 +29,7 @@ SDRPP_MOD_INFO{
     /* Max instances    */ -1
 };
 
-class NRModule : public ModuleManager::Instance {
+class NRModule : public ModuleInstance {
 
     dsp::IFNRLogMMSE ifnrProcessor;
 
@@ -348,21 +348,24 @@ private:
 };
 
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     config.setPath(std::string(core::getRoot()) + "/noise_reduction_logmmse_config.json");
     config.load(json::object());
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new NRModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (NRModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

@@ -1,7 +1,7 @@
 #pragma once
 #include <imgui.h>
 #include <string>
-#include <module.h>
+#include <sdrpp_export.h>
 
 namespace style {
     SDRPP_EXPORT ImFont* notificationFont;

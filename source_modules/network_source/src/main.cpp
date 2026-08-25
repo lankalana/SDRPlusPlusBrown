@@ -1,6 +1,6 @@
 #include <utils/net.h>
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
@@ -12,7 +12,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "network_source",
     /* Description:     */ "UDP/TCP Source Module",
     /* Author:          */ "Ryzerth",
@@ -42,7 +42,7 @@ const size_t SAMPLE_TYPE_SIZE[] {
     2*sizeof(float),
 };
 
-class NetworkSourceModule : public ModuleManager::Instance {
+class NetworkSourceModule : public ModuleInstance {
 public:
     NetworkSourceModule(std::string name) {
         this->name = name;
@@ -344,22 +344,25 @@ private:
     std::shared_ptr<net::Listener> listener;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     config.setPath(std::string(core::getRoot()) + "/network_source_config.json");
     config.load(def);
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new NetworkSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(ModuleManager::Instance* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (NetworkSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

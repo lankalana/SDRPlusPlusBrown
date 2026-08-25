@@ -555,7 +555,7 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
         for (auto& [name, inst] : core::moduleManager.instances) {
             if (!first) json += ", ";
             std::string modName = inst.module.info ? inst.module.info->name : "unknown";
-            bool enabled = inst.instance->isEnabled();
+            bool enabled = inst.module.api->isEnabled(inst.instance);
             json += "\"" + name + "\": {\"module\": \"" + modName + "\", \"enabled\": " + (enabled ? "true" : "false") + "}";
             first = false;
         }
@@ -604,19 +604,19 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
                 }
 
                 if (isQueryEnabled) {
-                    bool enabled = it->second.instance->isEnabled();
+                    bool enabled = it->second.module.api->isEnabled(it->second.instance);
                     return responseAllocJSONWithFormat(
                         "{\"instance\": \"%s\", \"enabled\": %s}",
                         instanceName.c_str(), enabled ? "true" : "false");
                 }
 
                 if (isEnable) {
-                    if (it->second.instance->isEnabled()) {
+                    if (it->second.module.api->isEnabled(it->second.instance)) {
                         return responseAllocJSONWithFormat(
                             "{\"status\": \"ok\", \"instance\": \"%s\", \"enabled\": true, \"note\": \"already enabled\"}",
                             instanceName.c_str());
                     }
-                    it->second.instance->enable();
+                    it->second.module.api->enable(it->second.instance);
                     core::configManager.conf["moduleInstances"][instanceName]["enabled"] = true;
                     return responseAllocJSONWithFormat(
                         "{\"status\": \"ok\", \"instance\": \"%s\", \"enabled\": true}",
@@ -624,12 +624,12 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
                 }
 
                 if (isDisable) {
-                    if (!it->second.instance->isEnabled()) {
+                    if (!it->second.module.api->isEnabled(it->second.instance)) {
                         return responseAllocJSONWithFormat(
                             "{\"status\": \"ok\", \"instance\": \"%s\", \"enabled\": false, \"note\": \"already disabled\"}",
                             instanceName.c_str());
                     }
-                    it->second.instance->disable();
+                    it->second.module.api->disable(it->second.instance);
                     core::configManager.conf["moduleInstances"][instanceName]["enabled"] = false;
                     return responseAllocJSONWithFormat(
                         "{\"status\": \"ok\", \"instance\": \"%s\", \"enabled\": false}",

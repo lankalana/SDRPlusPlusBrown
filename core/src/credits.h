@@ -1,5 +1,5 @@
 #pragma once
-#include <module.h>
+#include <sdrpp_export.h>
 
 namespace sdrpp_credits {
     SDRPP_EXPORT const char* contributors[];

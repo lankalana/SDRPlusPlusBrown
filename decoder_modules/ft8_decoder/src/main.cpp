@@ -8,7 +8,7 @@
 #include <gui/gui.h>
 #include <gui/widgets/waterfall.h>
 #include <signal_path/signal_path.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <filesystem>
 #include <dsp/stream.h>
 #include <dsp/types.h>
@@ -30,7 +30,7 @@ using namespace utils;
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "ft8_decoder",
     /* Description:     */ "FT8 Decoder for SDR++",
     /* Author:          */ "FT8 fathers and then I added few lines",
@@ -398,7 +398,7 @@ struct SingleFT4Decoder : SingleDecoder {
 
 };
 
-class FT8DecoderModule : public ModuleManager::Instance, public FT8ModuleInterface {
+class FT8DecoderModule : public ModuleInstance, public FT8ModuleInterface {
 
     SingleFT8Decoder ft8decoder;
     SingleFT4Decoder ft4decoder;
@@ -726,7 +726,7 @@ public:
         if (!strcmp(name, "FT8ModuleInterface")) {
             return dynamic_cast<FT8ModuleInterface *>(this);
         }
-        return Instance::getInterface(name);
+        return ModuleInstance::getInterface(name);
     }
 
     FT8DecoderModule(std::string name) {
@@ -1398,7 +1398,7 @@ void SingleDecoder::destroy() {
 }
 
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Create default recording directory
     json def = json({});
     config.setPath(std::string(core::getRoot()) + "/ft8_decoder_config.json");
@@ -1408,15 +1408,16 @@ MOD_EXPORT void _INIT_() {
 
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new FT8DecoderModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (FT8DecoderModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
@@ -1485,3 +1486,5 @@ namespace dsp {
 
 
 #endif
+
+SDRPP_MODULE_EXPORT_API;
