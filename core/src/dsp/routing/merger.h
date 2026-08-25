@@ -109,12 +109,12 @@ namespace dsp::routing {
             this->unregisterInput(stream);
         }
 
-        bool proceedWithoutWait = false;
+        std::atomic<bool> proceedWithoutWait = false;
 
         int SWITCH_DELAY = 100; // 100 msec
         int lastSeenBestPriority = 0;
         long long lastSeenBestTime = 0;
-        bool running;
+        std::atomic<bool> running;
 
         int run() override {
             SetThreadName("merger.run");
@@ -124,7 +124,14 @@ namespace dsp::routing {
             if (!proceedWithoutWait) {
 //                flog::info("Merger waits..");
                 std::unique_lock<std::mutex> lk(dataReadyMutex);
-                dataReady.wait(lk);
+                dataReady.wait(lk, [this]() {
+                    if (!running) { return true; }
+                    for (auto &ss : secondaryStreams) {
+                        std::lock_guard g(ss->dataLock);
+                        if (!ss->receivedData.empty()) { return true; }
+                    }
+                    return false;
+                });
                 if (!running) {
                     flog::info("Merger: terminating");
                     return -1;
