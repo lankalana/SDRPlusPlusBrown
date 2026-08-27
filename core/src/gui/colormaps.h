@@ -1,14 +1,14 @@
 #pragma once
 #include <string>
 #include <vector>
-#include <module.h>
+#include <sdrpp_export.h>
 #include <map>
 
 namespace colormaps {
     struct Map {
         std::string name;
         std::string author;
-        float* map;
+        std::vector<float> map;
         int entryCount;
     };
 

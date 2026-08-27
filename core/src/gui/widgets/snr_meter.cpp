@@ -6,6 +6,7 @@
 #define IMGUI_DEFINE_MATH_OPERATORS
 #endif
 #include <imgui/imgui_internal.h>
+#include <utils/event.h>
 #include "snr_meter.h"
 
 namespace ImGui {

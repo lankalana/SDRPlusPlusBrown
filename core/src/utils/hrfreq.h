@@ -1,5 +1,7 @@
 #pragma once
+#include <expected>
 #include <string>
+#include <string_view>
 
 namespace hrfreq {
     /**
@@ -12,8 +14,7 @@ namespace hrfreq {
     /**
      * Convert a human-readable representation of a frequency to a frequency value.
      * @param str String containing the human-readable frequency.
-     * @param freq Value to write the decoded frequency to.
-     * @return True on success, false otherwise.
+     * @return The decoded frequency, or a description of the parse error.
     */
-    bool fromString(const std::string& str, double& freq);
+    std::expected<double, std::string> fromString(std::string_view str);
 }

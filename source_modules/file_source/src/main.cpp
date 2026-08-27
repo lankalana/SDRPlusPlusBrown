@@ -1,18 +1,19 @@
 #define NOMINMAX
 #include <imgui.h>
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <utils/wav.h>
 #include <core.h>
 #include <gui/widgets/file_select.h>
 #include <filesystem>
+#include <chrono>
 #include <regex>
+#include <thread>
 #include <gui/tuner.h>
 #include <time.h>
 #include "gui/smgui.h"
-#include "utils/usleep.h"
 #include "utils/optionlist.h"
 #include "utils/wstr.h"
 #include <algorithm>
@@ -24,7 +25,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "file_source",
     /* Description:     */ "Wav file source module for SDR++",
     /* Author:          */ "Ryzerth",
@@ -34,7 +35,7 @@ SDRPP_MOD_INFO{
 
 ConfigManager config;
 
-class FileSourceModule : public ModuleManager::Instance, public FileSourceInterface {
+class FileSourceModule : public ModuleInstance, public FileSourceInterface {
 public:
     FileSourceModule(std::string name) : fileSelect("", { "Wav IQ Files (*.wav)", "*.wav", "All Files", "*" }) {
         this->name = name;
@@ -420,7 +421,7 @@ private:
                 auto now = currentTimeMillis();
                 auto delay = ctm - now;
                 if (delay > 0) {
-                    usleep(delay * 1000);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(delay));
                 }
             }
         }
@@ -466,7 +467,7 @@ private:
         std::string dateTimeStre = filename.substr(pos + 3, 19);
         std::tm tm;
         memset(&tm, 0, sizeof(tm));
-        char* end;
+        const char* end;
 #ifdef _WIN32
         int n = sscanf(dateTimeStre.c_str(), "%d-%d-%d_%d-%d-%d", &tm.tm_hour, &tm.tm_min, &tm.tm_sec, &tm.tm_mday, &tm.tm_mon, &tm.tm_year);
         tm.tm_mon--;
@@ -515,7 +516,7 @@ private:
 
 int FileSourceModule::isServer;
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     def["path"] = "";
     config.setPath(std::string(core::getRoot()) + "/file_source_config.json");
@@ -523,15 +524,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT void* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new FileSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (FileSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

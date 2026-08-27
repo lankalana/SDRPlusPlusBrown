@@ -16,7 +16,7 @@ std::map<IFNRPreset, double> ifnrTaps = {
 };
 
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "radio",
     /* Description:     */ "Analog radio decoder",
     /* Author:          */ "Ryzerth",
@@ -26,22 +26,25 @@ SDRPP_MOD_INFO{
 
 const int RadioModule::SPECTRUM_BUF_SIZE;
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     config.setPath(std::string(core::getRoot()) + "/radio_config.json");
     config.load(def);
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new RadioModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (RadioModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

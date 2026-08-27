@@ -1,8 +1,8 @@
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "demo",
     /* Description:     */ "My fancy new module",
     /* Author:          */ "author1;author2,author3,etc...",
@@ -10,7 +10,7 @@ SDRPP_MOD_INFO{
     /* Max instances    */ -1
 };
 
-class DemoModule : public ModuleManager::Instance {
+class DemoModule : public ModuleInstance {
 public:
     DemoModule(std::string name) {
         this->name = name;
@@ -45,18 +45,21 @@ private:
     bool enabled = true;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Nothing here
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new DemoModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (DemoModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     // Nothing here
 }
+
+SDRPP_MODULE_EXPORT_API;

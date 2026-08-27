@@ -14,6 +14,7 @@
 #include "utils/event.h"
 #include "utils/arrays.h"
 #include <atomic>
+#include <memory>
 
 class IQFrontEnd {
 public:
@@ -79,16 +80,18 @@ public:
 protected:
     std::atomic<long long> _currentStreamTime = 0; // unix time millis. 0 means realtime, otherwise simulated time.
     static void handler(dsp::complex_t* data, int count, void* ctx);
-    void updateFFTPath(bool updateWaterfall = false);
+    void updateFFTPath(bool updateWaterfall = false, bool updatePlan = true, bool updateWindow = true);
 
     static inline double genDCBlockRate(double sampleRate) {
         return 50.0 / sampleRate;
     }
 
     static inline void genReshapeParams(double sampleRate, int size, double rate, int& skip, int& nzSampCount) {
-        int fftInterval = round(sampleRate / rate);
-        nzSampCount = std::min<int>(fftInterval, size);
-        skip = fftInterval - nzSampCount;
+        int fftInterval = (std::max<int>)(round(sampleRate / rate), 1);
+        // Always fill the FFT with real samples. A negative skip overlaps
+        // consecutive frames so large FFTs can still update at the requested rate.
+        nzSampCount = size;
+        skip = fftInterval - size;
     }
 
     // Input buffer
@@ -109,8 +112,8 @@ protected:
     dsp::sink::Handler<dsp::complex_t> fftSink;
 
     // VFOs
-    std::map<std::string, dsp::stream<dsp::complex_t>*> vfoStreams;
-    std::map<std::string, dsp::channel::RxVFO*> vfos;
+    std::map<std::string, std::unique_ptr<dsp::stream<dsp::complex_t>>> vfoStreams;
+    std::map<std::string, std::unique_ptr<dsp::channel::RxVFO>> vfos;
 
     // Parameters
     double _sampleRate;

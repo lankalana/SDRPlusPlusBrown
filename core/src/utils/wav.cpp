@@ -73,7 +73,7 @@ namespace wav {
 
         // Write format chunk
         rw.beginChunk(FORMAT_MARKER);
-        rw.write((uint8_t*)&hdr, sizeof(FormatHeader));
+        rw.write(std::span{&hdr, 1});
         rw.endChunk();
 
         // Begin data chunk
@@ -153,25 +153,24 @@ namespace wav {
         
         // Select different writer function depending on the chose depth
         int tcount = count * _channels;
-        int tbytes = count * bytesPerSamp;
         switch (_type) {
         case SAMP_TYPE_UINT8:
             // Volk doesn't support unsigned ints yet :/
             for (int i = 0; i < tcount; i++) {
                 bufU8[i] = (samples[i] * 127.0f) + 128.0f;
             }
-            rw.write(bufU8, tbytes);
+            rw.write(std::span{bufU8, static_cast<size_t>(tcount)});
             break;
         case SAMP_TYPE_INT16:
             volk_32f_s32f_convert_16i(bufI16, samples, 32767.0f, tcount);
-            rw.write((uint8_t*)bufI16, tbytes);
+            rw.write(std::span{bufI16, static_cast<size_t>(tcount)});
             break;
         case SAMP_TYPE_INT32:
             volk_32f_s32f_convert_32i(bufI32, samples, 2147483647.0f, tcount);
-            rw.write((uint8_t*)bufI32, tbytes);
+            rw.write(std::span{bufI32, static_cast<size_t>(tcount)});
             break;
         case SAMP_TYPE_FLOAT32:
-            rw.write((uint8_t*)samples, tbytes);
+            rw.write(std::span{samples, static_cast<size_t>(tcount)});
             break;
         default:
             break;

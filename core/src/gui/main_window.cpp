@@ -3,9 +3,9 @@
 #include <implot/implot.h>
 #include <gui/main_window.h>
 #include <gui/gui.h>
-#include "utils/usleep.h"
 #include "utils/cty.h"
 #include <stdio.h>
+#include <chrono>
 #include <thread>
 #include <complex>
 #include <gui/widgets/waterfall.h>
@@ -146,7 +146,7 @@ void MainWindow::init() {
     }
 
     // Create module instances
-    usleep(100000);
+    std::this_thread::sleep_for(std::chrono::microseconds(100000));
     for (auto const& [name, _module] : modList) {
         std::string mod = _module["module"];
         bool enabled = _module["enabled"];
@@ -175,7 +175,7 @@ void MainWindow::init() {
         flog::warn("Color map directory {0} does not exist, not loading modules from directory", modulesDir);
     }
 
-    gui::waterfall.updatePalletteFromArray(colormaps::maps["Turbo"].map, colormaps::maps["Turbo"].entryCount);
+    gui::waterfall.updatePalletteFromArray(colormaps::maps["Turbo"].map.data(), colormaps::maps["Turbo"].entryCount);
 
     utils::loadAllCty();
 
@@ -576,11 +576,11 @@ void MainWindow::draw() {
             wasSpacePressed = true;
 
             // Start mic stream thread if not already running
-            if (!micThread) {
-                micThreadRunning = true;
-                micThread = std::make_shared<std::thread>([this]() {
+            if (!micThread.joinable()) {
+                micThread = std::jthread([this](std::stop_token stopToken) {
                     SetThreadName("MicStreamReader");
-                    while (micThreadRunning) {
+                    std::stop_callback stopReader(stopToken, [this]() { micStream.stopReader(); });
+                    while (!stopToken.stop_requested()) {
                         int rd = micStream.read();
                         if (rd > 0) {
                             std::lock_guard<std::mutex> lck(micSamplesMutex);
@@ -642,13 +642,9 @@ void MainWindow::draw() {
             wasSpacePressed = false;
 
             // Stop mic stream thread
-            if (micThread) {
-                micThreadRunning = false;
-                micStream.stopReader();
-                if (micThread->joinable()) {
-                    micThread->join();
-                }
-                micThread.reset();
+            if (micThread.joinable()) {
+                micThread.request_stop();
+                micThread.join();
             }
 
             // micSamples now contains all recorded audio
@@ -741,7 +737,7 @@ void MainWindow::draw() {
             // Update enabled and disabled modules
             for (auto [_name, inst] : core::moduleManager.instances) {
                 if (!core::configManager.conf["moduleInstances"].contains(_name)) { continue; }
-                core::configManager.conf["moduleInstances"][_name]["enabled"] = inst.instance->isEnabled();
+                core::configManager.conf["moduleInstances"][_name]["enabled"] = inst.module.api->isEnabled(inst.instance);
             }
 
             core::configManager.release(true);
@@ -1283,5 +1279,11 @@ void MainWindow::drawDebugMenu() {
 
 
         ImGui::Spacing();
+    }
+}
+MainWindow::~MainWindow() {
+    if (micThread.joinable()) {
+        micThread.request_stop();
+        micThread.join();
     }
 }

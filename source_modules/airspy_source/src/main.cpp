@@ -1,6 +1,6 @@
 #include <imgui.h>
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
@@ -15,7 +15,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "airspy_source",
     /* Description:     */ "Airspy source module for SDR++",
     /* Author:          */ "Ryzerth",
@@ -25,7 +25,7 @@ SDRPP_MOD_INFO{
 
 ConfigManager config;
 
-class AirspySourceModule : public ModuleManager::Instance {
+class AirspySourceModule : public ModuleInstance {
 public:
     AirspySourceModule(std::string name) {
         this->name = name;
@@ -605,7 +605,7 @@ private:
     std::string sampleRateListTxt;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     def["devices"] = json({});
     def["device"] = "";
@@ -614,15 +614,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new AirspySourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(ModuleManager::Instance* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (AirspySourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

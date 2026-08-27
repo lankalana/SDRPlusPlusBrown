@@ -6,7 +6,7 @@
 #include <gui/style.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
-#include <module.h>
+#include <module/module_api.h>
 // #include <unistd.h>
 #include <fstream>
 
@@ -43,7 +43,7 @@
 #define COSTAS_LOOP_BANDWIDTH 0.04f      // Changed from 0.01f
 #define FLL_LOOP_BANDWIDTH 0.02f         // Changed from 0.006f
 
-SDRPP_MOD_INFO {
+SDRPP_MODULE_INFO {
     /* Name:            */ "ch_tetra_demodulator",
     /* Description:     */ "Tetra demodulator for SDR++(output can be fed to tetra-rx from osmo-tetra)",
     /* Author:          */ "cropinghigh",
@@ -53,7 +53,7 @@ SDRPP_MOD_INFO {
 
 ConfigManager config;
 
-class TetraDemodulatorModule : public ModuleManager::Instance {
+class TetraDemodulatorModule : public ModuleInstance {
 public:
     TetraDemodulatorModule(std::string name) {
         this->name = name;
@@ -555,7 +555,7 @@ private:
 
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     std::string root = (std::string)core::args["root"];
     json def = json({});
     config.setPath(root + "/tetra_demodulator_config.json");
@@ -563,15 +563,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new TetraDemodulatorModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (TetraDemodulatorModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

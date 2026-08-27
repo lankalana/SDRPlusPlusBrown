@@ -23,7 +23,7 @@
 #include <Security/SecureTransport.h>
 
 namespace {
-    std::pair<std::vector<uint8_t>, std::string> darwin_https_transact(const std::string& host, const std::vector<uint8_t>& send) {
+    std::expected<std::vector<uint8_t>, std::string> darwin_https_transact(const std::string& host, std::span<const uint8_t> send) {
         // Create SSL context
         CFStringRef hostStr = CFStringCreateWithCString(kCFAllocatorDefault, host.c_str(), kCFStringEncodingUTF8);
         CFStreamCreatePairWithSocketToHost(kCFAllocatorDefault, hostStr, 443, NULL, NULL);
@@ -32,8 +32,6 @@ namespace {
         CFReadStreamRef readStream;
         CFWriteStreamRef writeStream;
         CFStreamCreatePairWithSocketToHost(kCFAllocatorDefault, hostStr, 443, &readStream, &writeStream);
-        CFRelease(hostStr);
-        
         // Configure SSL
         CFMutableDictionaryRef sslSettings = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
             &kCFTypeDictionaryKeyCallBacks, &kCFTypeDictionaryValueCallBacks);
@@ -41,12 +39,13 @@ namespace {
         CFReadStreamSetProperty(readStream, kCFStreamPropertySSLSettings, sslSettings);
         CFWriteStreamSetProperty(writeStream, kCFStreamPropertySSLSettings, sslSettings);
         CFRelease(sslSettings);
+        CFRelease(hostStr);
         
         // Open streams
         if (!CFReadStreamOpen(readStream) || !CFWriteStreamOpen(writeStream)) {
             CFRelease(readStream);
             CFRelease(writeStream);
-            return std::make_pair(std::vector<uint8_t>(), "Failed to open SSL streams");
+            return std::unexpected("Failed to open SSL streams");
         }
         
         // Write all data
@@ -58,7 +57,7 @@ namespace {
                 CFWriteStreamClose(writeStream);
                 CFRelease(readStream);
                 CFRelease(writeStream);
-                return std::make_pair(std::vector<uint8_t>(), "Error writing to SSL stream");
+                return std::unexpected("Error writing to SSL stream");
             }
             totalWritten += written;
         }
@@ -77,7 +76,7 @@ namespace {
                 CFWriteStreamClose(writeStream);
                 CFRelease(readStream);
                 CFRelease(writeStream);
-                return std::make_pair(std::vector<uint8_t>(), "Error reading from SSL stream");
+                return std::unexpected("Error reading from SSL stream");
             }
         }
         
@@ -87,7 +86,7 @@ namespace {
         CFRelease(readStream);
         CFRelease(writeStream);
         
-        return std::make_pair(response, "");
+        return response;
     }
 }
 
@@ -126,7 +125,7 @@ namespace net::http {
     std::string receiveResponse(net::http::Client &http, net::http::ResponseHeader &rshdr, const std::shared_ptr<Socket> &sock) {
         bool chunked = false;
         if (rshdr.hasField("Transfer-Encoding")) {
-            chunked = rshdr.getField("Transfer-Encoding").find("chunked") != std::string::npos;
+            chunked = rshdr.getField("Transfer-Encoding").contains("chunked");
         }
         std::string s(3000000, ' ');
         if (chunked) {
@@ -189,7 +188,7 @@ namespace net::http {
             throw std::runtime_error("error reading from curl");
         }
         fclose(stuff);
-        if (s.find("curl: (") == 0) {
+        if (s.starts_with("curl: (")) {
             throw std::runtime_error(s);
         }
         return std::string(s);
@@ -204,7 +203,7 @@ namespace net::http {
         auto parsed = parseUrl(url);
         if (parsed.protocol== "https") {
             auto rv = Client::get_https(url);
-            if (rv.find("#ERROR:") == 0) {
+            if (rv.starts_with("#ERROR:")) {
                 throw std::runtime_error(rv.substr(7));
             } else {
                 return rv;
@@ -249,19 +248,18 @@ namespace net::http {
         return {header, body};
     }
 
-    std::pair<std::vector<uint8_t>, std::string> https_transact(const std::string &host, std::vector<uint8_t> send) {
+    std::expected<std::vector<uint8_t>, std::string> https_transact(const std::string& host, std::span<const uint8_t> send) {
 #ifdef __ANDROID__
-        return std::make_pair(std::vector<uint8_t>(), "not yet implemented");
+        return std::unexpected("not yet implemented");
 #elif defined(__linux__)
-        return std::make_pair(std::vector<uint8_t>(), "not yet implemented");
+        return std::unexpected("not yet implemented");
 #elif defined(__APPLE__)
         return darwin_https_transact(host, send);
 #elif defined(_WIN32)
-        return std::make_pair(std::vector<uint8_t>(), "not yet implemented");
+        return std::unexpected("not yet implemented");
 #else
-        return std::make_pair(std::vector<uint8_t>(), "not yet implemented");
+        return std::unexpected("not yet implemented");
 #endif
-        return std::make_pair(std::vector<uint8_t>(), "");
     }
 
     std::string Client::post(const std::string &url, const std::string &formData) {
@@ -273,9 +271,7 @@ namespace net::http {
         auto http = net::http::Client(sock);
         net::http::RequestHeader rqhdr(net::http::METHOD_POST, parsed.path+"?"+parsed.query, parsed.host);
 
-        char lenBuf[16];
-        snprintf(lenBuf, sizeof lenBuf, "%zu", formData.size());
-        rqhdr.setField("Content-Length", lenBuf);
+        rqhdr.setField("Content-Length", std::to_string(formData.size()));
         rqhdr.setField("Content-Type", "application/x-www-form-urlencoded");
 //        rqhdr.setField("Origin", "https://www.wsprnet.org");
         rqhdr.setField("User-Agent", userAgent);
@@ -288,7 +284,7 @@ namespace net::http {
         if (rshdr.getStatusCode() == net::http::STATUS_CODE_FOUND) {
             if (rshdr.hasField("Location")) {
                 std::string loc = rshdr.getField("Location");
-                if (loc.find("https://") == 0) {
+                if (loc.starts_with("https://")) {
                     loc = "http://" + loc.substr(8);
                 }
                 return get(loc);

@@ -2,7 +2,7 @@
 #include <string>
 #include <vector>
 #include <map>
-#include <module.h>
+#include <module/module_api.h>
 
 #define MAX_MENU_COUNT 1024
 
@@ -18,10 +18,10 @@ public:
     struct MenuItem_t {
         void (*drawHandler)(void* ctx);
         void* ctx;
-        ModuleManager::Instance* inst;
+        ModuleInstance* inst;
     };
 
-    void registerEntry(std::string name, void (*drawHandler)(void* ctx), void* ctx = NULL, ModuleManager::Instance* inst = NULL);
+    void registerEntry(std::string name, void (*drawHandler)(void* ctx), void* ctx = NULL, ModuleInstance* inst = NULL);
     void removeEntry(std::string name);
     bool draw(bool updateStates);
 

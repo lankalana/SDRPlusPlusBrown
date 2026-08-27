@@ -10,6 +10,7 @@
 #include <mutex>
 #include <utils/event.h>
 #include <vector>
+#include <memory>
 
 
 
@@ -77,7 +78,8 @@ public:
 
         dsp::routing::Splitter<dsp::stereo_t> splitter;     // multiple outputs
         dsp::routing::Merger<dsp::stereo_t> merger;         // multiple inputs
-        SinkManager::Sink* sink;
+        std::unique_ptr<SinkManager::Sink> sink;
+        std::vector<std::unique_ptr<dsp::stream<dsp::stereo_t>>> boundStreams;
         dsp::stream<dsp::stereo_t> volumeInput;
         std::mutex ctrlMtx;
         float _sampleRate;
@@ -123,7 +125,7 @@ public:
     }
 
     static bool isSecondaryStream(const std::string& name) {
-        return name.find(secondarySuffixSeparator) != std::string::npos;
+        return name.contains(secondarySuffixSeparator);
     }
 
     static std::pair<std::string, int> getSecondaryStreamIndex(const std::string& name) {

@@ -8,6 +8,7 @@
 #include <mutex>
 #include <memory>
 #include <map>
+#include <optional>
 
 
 
@@ -181,7 +182,7 @@ namespace net {
         int recvline(std::string& str, int maxLen = 0, int timeout = NO_TIMEOUT, Address* dest = NULL);
 
     private:
-        Address* raddr = NULL;
+        std::optional<Address> raddr;
         SockHandle_t sock;
         bool open = true;
 

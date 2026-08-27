@@ -8,6 +8,7 @@ build/
 *.exe
 *.zip
 *.wav
+!/decoder_modules/ft8_decoder/test_files/*.wav
 .DS_Store
 root_dev/
 root_dev_srv/

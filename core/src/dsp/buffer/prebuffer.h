@@ -2,8 +2,9 @@
 
 #include "../types.h"
 #include "../processor.h"
-#include "../utils/usleep.h"
 #include "../ctm.h"
+#include <chrono>
+#include <thread>
 
 
 namespace dsp::buffer {
@@ -64,7 +65,7 @@ namespace dsp::buffer {
                                 break;
                             }
                         }
-                        usleep(1000 * ITER_STEP_MILLIS);
+                        std::this_thread::sleep_for(std::chrono::microseconds(1000 * ITER_STEP_MILLIS));
                     }
                     if (!running) {
                         break;
@@ -87,7 +88,7 @@ namespace dsp::buffer {
                                     flog::info("prebuffer: second block, bs={} reached=false, sleep+continue", (int) bs);
                                 }
                             }
-                            usleep(1000 * ITER_STEP_MILLIS);
+                            std::this_thread::sleep_for(std::chrono::microseconds(1000 * ITER_STEP_MILLIS));
                             continue; // sleep again.
                         }
                     } else {
@@ -95,7 +96,7 @@ namespace dsp::buffer {
                     }
 
                     if (samplesNeeded == 0) {
-                        usleep(1000 * ITER_STEP_MILLIS);
+                        std::this_thread::sleep_for(std::chrono::microseconds(1000 * ITER_STEP_MILLIS));
                         if (logging) {
                             flog::info("prebuffer: samples needed = 0, continue");
                         }
@@ -112,7 +113,7 @@ namespace dsp::buffer {
                             flog::info("prebuffer WTF: bs={} < samplesNeeded={}, running={}", (int) bs, (int) samplesNeeded, (int)running);
                         }
                         bufferLock.unlock();
-                        usleep(1000); // just in case
+                        std::this_thread::sleep_for(std::chrono::microseconds(1000)); // just in case
                         continue; // sleep again.
                     }
                     std::copy(buffer.begin(), buffer.begin() + samplesNeeded, base_type::out.writeBuf);

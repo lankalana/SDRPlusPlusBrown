@@ -1,5 +1,5 @@
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/smgui.h>
 #include <signal_path/signal_path.h>
@@ -8,7 +8,7 @@
 #include <atomic>
 #include <sddc.h>
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "sddc_source",
     /* Description:     */ "SDDC Source Module",
     /* Author:          */ "Ryzerth",
@@ -21,7 +21,7 @@ ConfigManager config;
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
 
-class SDDCSourceModule : public ModuleManager::Instance {
+class SDDCSourceModule : public ModuleInstance {
 public:
     SDDCSourceModule(std::string name) {
         this->name = name;
@@ -489,7 +489,7 @@ private:
     dsp::channel::RxVFO ddc;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     def["devices"] = json({});
     def["device"] = "";
@@ -498,15 +498,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new SDDCSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (SDDCSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

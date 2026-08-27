@@ -1,13 +1,13 @@
 #pragma once
 
 #include <dsp/types.h>
+#include <chrono>
 #include <complex>
 #include <atomic>
 #include <ctm.h>
 #include <thread>
 #include <core.h>
 #include <atomic>
-#include "utils/usleep.h"
 #include "utils/proto/websock.h"
 
 struct KiwiSDRClient {
@@ -210,7 +210,7 @@ struct KiwiSDRClient {
         wsClient.stopSocket();
         strcpy(connectionStatus, "Disconnecting2..");
         while (running) {
-            usleep(100000);
+            std::this_thread::sleep_for(std::chrono::microseconds(100000));
         }
         strcpy(connectionStatus, "Disconnected.");
     }

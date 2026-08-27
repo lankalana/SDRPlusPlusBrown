@@ -26,17 +26,18 @@ namespace dsp::demod {
 
         void setDeviation(double deviation) {
             assert(base_type::_block_init);
-            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
+            std::lock_guard<std::mutex> lck(stateMtx);
             _invDeviation = 1.0 / deviation;
         }
 
         void setDeviation(double deviation, double samplerate) {
             assert(base_type::_block_init);
-            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
+            std::lock_guard<std::mutex> lck(stateMtx);
             _invDeviation = 1.0 / ::dsp::math::hzToRads(deviation, samplerate);
         }
 
         inline int process(int count, complex_t* in, float* out) {
+            std::lock_guard<std::mutex> lck(stateMtx);
             for (int i = 0; i < count; i++) {
                 float cphase = in[i].phase();
                 out[i] = math::normalizePhase(cphase - phase) * _invDeviation;
@@ -47,7 +48,7 @@ namespace dsp::demod {
 
         void reset() {
             assert(base_type::_block_init);
-            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
+            std::lock_guard<std::mutex> lck(stateMtx);
             phase = 0.0f;
         }
 
@@ -63,6 +64,7 @@ namespace dsp::demod {
         }
 
     protected:
+        std::mutex stateMtx;
         float _invDeviation;
         float phase = 0.0f;
     };

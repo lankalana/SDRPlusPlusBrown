@@ -23,3 +23,65 @@ jobs:
         - uses: actions/checkout@v4
         - name: Run check_clang_format
           run: cd $GITHUB_WORKSPACE && chmod +x ./check_clang_format.sh && ./check_clang_format.sh || true
+
+    build_and_test:
+        runs-on: ubuntu-latest
+
+        env:
+          VCPKG_ROOT: ${{ github.workspace }}/vcpkg
+          VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+
+        steps:
+        - uses: actions/checkout@v4
+
+        - name: Install system dependencies
+          run: |
+            sudo apt-get update
+            sudo apt-get install -y \
+              build-essential \
+              cmake \
+              ninja-build \
+              pkg-config \
+              autoconf \
+              autoconf-archive \
+              automake \
+              libtool \
+              libxinerama-dev \
+              libxcursor-dev \
+              xorg-dev \
+              libglu1-mesa-dev \
+              libpulse-dev \
+              libudev-dev \
+              liborc-0.4-dev
+
+        - name: Install vcpkg
+          run: |
+            git clone https://github.com/microsoft/vcpkg.git "$VCPKG_ROOT"
+            "$VCPKG_ROOT/bootstrap-vcpkg.sh"
+
+        - name: Cache vcpkg
+          uses: actions/cache@v4
+          with:
+            path: |
+              ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+              ${{ env.VCPKG_ROOT }}/downloads
+            key: vcpkg-${{ runner.os }}-x64-linux-${{ hashFiles('vcpkg.json') }}
+            restore-keys: |
+              vcpkg-${{ runner.os }}-x64-linux-
+
+        - name: Configure
+          run: |
+            mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+            cmake -S . -B build -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+              -DSDRPP_MODULE_DEFAULTS=MINIMAL \
+              -DSDRPP_USE_BUNDLED_VOLK=ON \
+              -DBUILD_TESTS=ON
+
+        - name: Build
+          run: cmake --build build --parallel
+
+        - name: Run tests
+          run: ctest --test-dir build --output-on-failure

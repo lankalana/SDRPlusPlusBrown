@@ -1,6 +1,6 @@
 #include <imgui.h>
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/style.h>
 #include <core.h>
@@ -18,7 +18,7 @@
 #include "scanner.h"
 #include "../../radio/src/radio_module_interface.h"
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "frequency_manager",
     /* Description:     */ "Frequency manager module for SDR++",
     /* Author:          */ "Ryzerth;Zimm",
@@ -46,7 +46,7 @@ ConfigManager &getFrequencyManagerConfig() {
     return config;
 }
 
-class FrequencyManagerModule : public ModuleManager::Instance, public TransientBookmarkManager {
+class FrequencyManagerModule : public ModuleInstance, public TransientBookmarkManager {
 public:
     FrequencyManagerModule(std::string name) {
         this->name = name;
@@ -1027,7 +1027,7 @@ void applyBookmark(FrequencyBookmark bm, std::string vfoName) {
     // Radio no longer exists (module not loaded): bookmark is disabled, do nothing
     if (!sigpath::vfoManager.vfoExists(targetVfo)) { return; }
     for(auto x: core::moduleManager.instances) {
-        ModuleManager::Instance *pInstance = x.second.instance;
+        ModuleInstance *pInstance = x.second.instance;
         auto radio = (RadioModuleInterface *)pInstance->getInterface("RadioModuleInterface");
         if (radio && x.first == targetVfo) {
             int mode = radio->getDemodByIndex(bm.modeIndex);
@@ -1041,7 +1041,7 @@ void applyBookmark(FrequencyBookmark bm, std::string vfoName) {
 
 
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     def["selectedList"] = "General";
     def["bookmarkDisplayMode"] = BOOKMARK_DISP_MODE_TOP;
@@ -1076,15 +1076,18 @@ MOD_EXPORT void _INIT_() {
     config.release(true);
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new FrequencyManagerModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (FrequencyManagerModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

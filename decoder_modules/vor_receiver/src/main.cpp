@@ -4,7 +4,7 @@
 #include <gui/style.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <filesystem>
 #include <dsp/buffer/reshaper.h>
 #include <dsp/sink/handler_sink.h>
@@ -14,7 +14,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "vor_receiver",
     /* Description:     */ "VOR Receiver for SDR++",
     /* Author:          */ "Ryzerth",
@@ -26,7 +26,7 @@ ConfigManager config;
 
 #define INPUT_SAMPLE_RATE VOR_IN_SR
 
-class VORReceiverModule : public ModuleManager::Instance {
+class VORReceiverModule : public ModuleInstance {
 public:
     VORReceiverModule(std::string name) {
         this->name = name;
@@ -105,7 +105,7 @@ private:
     float bearing = 0.0f, quality = 0.0f;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Create default recording directory
     std::string root = (std::string)core::args["root"];
     json def = json({});
@@ -114,15 +114,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new VORReceiverModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (VORReceiverModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

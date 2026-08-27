@@ -1,6 +1,6 @@
 #include <utils/proto/rigctl.h>
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/style.h>
 #include <signal_path/signal_path.h>
@@ -12,7 +12,7 @@
 #include <radio_interface.h>
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "rigctl_client",
     /* Description:     */ "Client for the RigCTL protocol",
     /* Author:          */ "Ryzerth",
@@ -22,7 +22,7 @@ SDRPP_MOD_INFO{
 
 ConfigManager config;
 
-class RigctlClientModule : public ModuleManager::Instance {
+class RigctlClientModule : public ModuleInstance {
 public:
     RigctlClientModule(std::string name) {
         this->name = name;
@@ -181,21 +181,24 @@ private:
     EventHandler<double> _retuneHandler;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     config.setPath(std::string(core::getRoot()) + "/rigctl_client_config.json");
     config.load(json::object());
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new RigctlClientModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (RigctlClientModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

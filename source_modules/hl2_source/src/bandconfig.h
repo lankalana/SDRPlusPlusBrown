@@ -1,6 +1,6 @@
 #pragma once
 
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <core.h>

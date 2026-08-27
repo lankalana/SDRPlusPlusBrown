@@ -1,11 +1,11 @@
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/style.h>
 #include <signal_path/signal_path.h>
 #include <chrono>
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "scanner",
     /* Description:     */ "Frequency scanner for SDR++",
     /* Author:          */ "Ryzerth",
@@ -13,7 +13,7 @@ SDRPP_MOD_INFO{
     /* Max instances    */ 1
 };
 
-class ScannerModule : public ModuleManager::Instance {
+class ScannerModule : public ModuleInstance {
 public:
     ScannerModule(std::string name) {
         this->name = name;
@@ -290,18 +290,21 @@ private:
     std::mutex scanMtx;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Nothing here
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new ScannerModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (ScannerModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     // Nothing here
 }
+
+SDRPP_MODULE_EXPORT_API;

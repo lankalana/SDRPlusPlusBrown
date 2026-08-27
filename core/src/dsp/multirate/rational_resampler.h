@@ -1,6 +1,9 @@
 #pragma once
 #include <vector>
 #include <numeric>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
 #include "../processor.h"
 //#include "../filter/decimating_fir.h"
 //#include "../taps/from_array.h"
@@ -25,6 +28,7 @@ namespace dsp::multirate {
         }
 
         void init(stream<T>* in, double inSamplerate, double outSamplerate) {
+            validateRates(inSamplerate, outSamplerate);
             // Dummy initialization since only used for processing
             rtaps = taps::lowPass(0.25, 0.1, 1.0);
             decim.init(NULL, 2);
@@ -127,28 +131,46 @@ namespace dsp::multirate {
             NONE
         };
 
+        static void validateRates(double inSamplerate, double outSamplerate) {
+            constexpr double maxIntegerRate = (double)(std::numeric_limits<int>::max)();
+            if (!std::isfinite(inSamplerate) || !std::isfinite(outSamplerate) ||
+                inSamplerate <= 0.0 || outSamplerate <= 0.0 ||
+                inSamplerate > maxIntegerRate || outSamplerate > maxIntegerRate ||
+                std::round(inSamplerate) < 1.0 || std::round(outSamplerate) < 1.0) {
+                throw std::invalid_argument("Rational resampler sample rates must be finite positive integer-representable values");
+            }
+        }
+
         void reconfigure(double inSamplerate, double outSamplerate) {
+            validateRates(inSamplerate, outSamplerate);
+
             // Calculate highest power-of-two decimation for the power decimator 
-            int predecPower = std::min<int>(floor(log2(inSamplerate / outSamplerate)), PowerDecimator<T>::getMaxRatio());
-            int predecRatio = std::min<int>(1 << predecPower, PowerDecimator<T>::getMaxRatio());
+            int predecPower = 0;
+            int predecRatio = 1;
+            bool useDecim = false;
+            if (inSamplerate > outSamplerate) {
+                int requestedPower = (int)std::floor(std::log2(inSamplerate / outSamplerate));
+                predecPower = (std::min)(requestedPower, PowerDecimator<T>::getMaxPower());
+                predecRatio = 1 << predecPower;
+                useDecim = predecPower > 0;
+            }
             double intSamplerate = inSamplerate;
 
             // Configure the DDC
-            bool useDecim = (inSamplerate > outSamplerate && predecPower > 0);
             if (useDecim) {
                 intSamplerate = inSamplerate / (double)predecRatio;
             }
 
             // Calculate interpolation and decimation for polyphase resampler
-            int IntSR = round(intSamplerate);
-            int OutSR = round(outSamplerate);
+            int IntSR = (int)std::round(intSamplerate);
+            int OutSR = (int)std::round(outSamplerate);
             int gcd = std::gcd(IntSR, OutSR);
             int interp = OutSR / gcd;
             int decim = IntSR / gcd;
 
             // Check for excessive error
             double actualOutSR = (double)IntSR * (double)interp / (double)decim;
-            double error = abs((actualOutSR - outSamplerate) / outSamplerate) * 100.0;
+            double error = std::abs((actualOutSR - outSamplerate) / outSamplerate) * 100.0;
             if (error > 0.01) {
                 fprintf(stderr, "Warning: resampling error is over 0.01%%: %lf\n", error);
             }

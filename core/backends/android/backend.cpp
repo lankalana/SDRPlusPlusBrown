@@ -19,7 +19,8 @@
 #include <filesystem>
 #include <implot/implot.h>
 #include <gui/menus/display.h>
-#include <utils/usleep.h>
+#include <chrono>
+#include <thread>
 
 // Credit to the ImGui android OpenGL3 example for a lot of this code!
 
@@ -255,7 +256,7 @@ namespace backend {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         eglSwapBuffers(_EglDisplay, _EglSurface);
         if (glSleepTime != 0) {
-            usleep(glSleepTime * 1000);
+            std::this_thread::sleep_for(std::chrono::milliseconds(glSleepTime));
         }
     }
 

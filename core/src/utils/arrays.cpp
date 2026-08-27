@@ -1,6 +1,12 @@
 
 #include <utils/arrays.h>
+#include <algorithm>
 #include <fftw3.h>
+#include <limits>
+#include <mutex>
+#include <numbers>
+#include <stdexcept>
+#include <thread>
 
 #ifdef __APPLE__
 #include <Accelerate/Accelerate.h>
@@ -21,32 +27,32 @@ namespace dsp {
 
     namespace math {
 
-        std::vector<float> sma(int smawindow, std::vector<float>& src) {
+        std::vector<float> sma(int smawindow, std::span<const float> src) {
+            if (smawindow <= 0) { throw std::invalid_argument("SMA window must be positive"); }
             float running = 0;
             std::vector<float> dest;
-            for (int q = 0; q < src.size(); q++) {
+            dest.reserve(src.size());
+            for (std::size_t q = 0; q < src.size(); q++) {
                 running += src[q];
-                float taveraged = 0;
-                if (q >= smawindow) {
+                if (q >= static_cast<std::size_t>(smawindow)) {
                     running -= src[q - smawindow];
-                    taveraged = running / smawindow;
                 }
-                else {
-                    taveraged = running / q;
-                }
-                dest.emplace_back(taveraged);
+                const auto sampleCount = (std::min)(q + 1, static_cast<std::size_t>(smawindow));
+                dest.emplace_back(running / static_cast<float>(sampleCount));
             }
             return dest;
         }
 
-        std::vector<float> maxeach(int maxwindow, std::vector<float>& src) {
-            float running = 0;
+        std::vector<float> maxeach(int maxwindow, std::span<const float> src) {
+            if (maxwindow <= 0) { throw std::invalid_argument("Maximum window must be positive"); }
+            float running = std::numeric_limits<float>::lowest();
             std::vector<float> dest;
-            for (int q = 0; q < src.size(); q++) {
-                running = std::max<float>(src[q], running);
-                if (q % maxwindow == maxwindow - 1 || q == src.size() - 1) {
+            dest.reserve((src.size() + maxwindow - 1) / maxwindow);
+            for (std::size_t q = 0; q < src.size(); q++) {
+                running = (std::max)(src[q], running);
+                if (q % maxwindow == static_cast<std::size_t>(maxwindow - 1) || q == src.size() - 1) {
                     dest.emplace_back(running);
-                    running = 0;
+                    running = std::numeric_limits<float>::lowest();
                 }
             }
             return dest;
@@ -519,7 +525,27 @@ namespace dsp {
                 plan->reverse = backward;
                 plan->input = npzeros_c(buckets);
                 plan->output = npzeros_c(buckets);
+#ifdef SDRPP_FFTW_THREADS
+                static std::once_flag fftwThreadsInitFlag;
+                static std::mutex fftwThreadPlanMtx;
+                static bool fftwThreadsAvailable = false;
+                std::unique_lock<std::mutex> fftwThreadPlanLock;
+                if (buckets >= 32768) {
+                    std::call_once(fftwThreadsInitFlag, []() {
+                        fftwThreadsAvailable = fftwf_init_threads() != 0;
+                    });
+                }
+                if (buckets >= 32768 && fftwThreadsAvailable) {
+                    fftwThreadPlanLock = std::unique_lock<std::mutex>(fftwThreadPlanMtx);
+                    unsigned int availableThreads = (std::max)(std::thread::hardware_concurrency(), 1U);
+                    int threadCount = (std::min<int>)(availableThreads, 4);
+                    fftwf_plan_with_nthreads(threadCount);
+                }
+#endif
                 auto p = fftwf_plan_dft_1d(buckets, (fftwf_complex*)plan->input->data(), (fftwf_complex*)plan->output->data(), backward ? FFTW_BACKWARD : FFTW_FORWARD, FFTW_ESTIMATE);
+#ifdef SDRPP_FFTW_THREADS
+                if (fftwThreadsAvailable) { fftwf_plan_with_nthreads(1); }
+#endif
                 plan->p = p;
             }
 
@@ -847,23 +873,7 @@ namespace dsp {
         }
 
         bool npall(const FloatArray& v) {
-            int countZeros = 0;
-            //            int firstZero = -1;
-            for (auto d : *v) {
-                if (d == 0) {
-                    return false;
-                }
-                /*
-                                if (countZeros == 0) {
-                                    firstZero++;
-                                }
-                */
-            }
-            //            if (countZeros) {
-            ////                std::cout << "npall: " << countZeros << "/" << v->size() << " first at " << firstZero << std::endl;
-            //                return false;
-            //            }
-            return true;
+            return std::ranges::all_of(*v, [](float value) { return value != 0.0f; });
         }
 
         FloatArray div(const FloatArray& v, float e) {
@@ -881,49 +891,25 @@ namespace dsp {
             return retval;
         }
 
+        void div_(const FloatArray& v, float e) {
+            volk_32f_s32f_multiply_32f(v->data(), v->data(), 1.0 / e, v->size());
+        }
+
         FloatArray npminimum(const FloatArray& v, const FloatArray& w) {
-            auto retval = std::make_shared<std::vector<float>>();
-            retval->reserve(v->size());
-            //            int ix = 0;
-            for (int q = 0; q < retval->size(); q++) {
-                if (v->at(q) < w->at(q)) {
-                    retval->emplace_back(v->at(q));
-                }
-                else {
-                    retval->emplace_back(w->at(q));
-                }
-            }
+            auto retval = std::make_shared<std::vector<float>>(v->size());
+            std::transform(v->begin(), v->end(), w->begin(), retval->begin(), [](float a, float b) { return (std::min)(a, b); });
             return retval;
         }
 
         FloatArray npminimum(const FloatArray& v, float lim) {
-            auto retval = std::make_shared<std::vector<float>>();
-            retval->reserve(v->size());
-            //            int ix = 0;
-            for (auto d : *v) {
-                if (d < lim) {
-                    retval->emplace_back(d);
-                }
-                else {
-                    retval->emplace_back(lim);
-                }
-                //                ix++;
-                //                if (ix == 1000000) {
-                //                    std::cout << "XX";
-                //                }
-            }
+            auto retval = std::make_shared<std::vector<float>>(v->size());
+            std::ranges::transform(*v, retval->begin(), [lim](float value) { return (std::min)(value, lim); });
             return retval;
         }
 
         FloatArray npminimum_(const FloatArray& v, float lim) {
-            auto retval = std::make_shared<std::vector<float>>(v->data(), v->data() + v->size());
-            auto rvD = retval->data();
-            for (int q = 0; q < retval->size(); q++) {
-                if (rvD[q] > lim) {
-                    rvD[q] = lim;
-                }
-            }
-            return retval;
+            std::ranges::transform(*v, v->begin(), [lim](float value) { return (std::min)(value, lim); });
+            return v;
         }
 
 
@@ -947,45 +933,21 @@ namespace dsp {
         }
 
         float npmax(const FloatArray& v) {
-            float m = v->front();
-            auto rvD = v->data();
-            for (int q = 1; q < v->size(); q++) {
-                if (rvD[q] > m) {
-                    m = rvD[q];
-                }
-            }
-            return m;
+            return (std::ranges::max)(*v);
         }
 
         float npmin(const FloatArray& v) {
-            float m = v->front();
-            auto rvD = v->data();
-            for (int q = 1; q < v->size(); q++) {
-                if (rvD[q] < m) {
-                    m = rvD[q];
-                }
-            }
-            return m;
+            return (std::ranges::min)(*v);
         }
 
         FloatArray npmaximum(const FloatArray& v, float lim) {
-            auto retval = std::make_shared<std::vector<float>>(v->data(), v->data() + v->size());
-            auto rvD = retval->data();
-            for (int q = 0; q < retval->size(); q++) {
-                if (rvD[q] < lim) {
-                    rvD[q] = lim;
-                }
-            }
+            auto retval = std::make_shared<std::vector<float>>(v->size());
+            std::ranges::transform(*v, retval->begin(), [lim](float value) { return (std::max)(value, lim); });
             return retval;
         }
 
         FloatArray npmaximum_(const FloatArray& v, float lim) {
-            auto rvD = v->data();
-            for (int q = 0; q < v->size(); q++) {
-                if (rvD[q] < lim) {
-                    rvD[q] = lim;
-                }
-            }
+            std::ranges::transform(*v, v->begin(), [lim](float value) { return (std::max)(value, lim); });
             return v;
         }
 
@@ -994,12 +956,7 @@ namespace dsp {
             if (end == -1) {
                 end = v->size();
             }
-            auto retval = std::make_shared<std::vector<float>>();
-            retval->reserve(end - begin);
-            for (int i = begin; i < end; i++) {
-                retval->emplace_back(v->at(i));
-            }
-            return retval;
+            return std::make_shared<std::vector<float>>(v->begin() + begin, v->begin() + end);
         }
 
         ComplexArray nparange(const Arg<std::vector<dsp::complex_t>>& v, int begin, int end) {
@@ -1009,9 +966,7 @@ namespace dsp {
 
         // update array in-place
         void nparangeset(const FloatArray& v, int begin, const FloatArray& part) {
-            for (int i = 0; i < part->size(); i++) {
-                (*v)[begin + i] = part->at(i);
-            }
+            std::copy(part->begin(), part->end(), v->begin() + begin);
         }
 
         void nparangeset(const ComplexArray& v, int begin, const ComplexArray& part) {
@@ -1022,11 +977,8 @@ namespace dsp {
         }
 
         FloatArray neg(const FloatArray& v) {
-            auto retval = std::make_shared<std::vector<float>>();
-            retval->reserve(v->size());
-            for (auto d : *v) {
-                retval->emplace_back(-d);
-            }
+            auto retval = std::make_shared<std::vector<float>>(v->size());
+            std::ranges::transform(*v, retval->begin(), std::negate{});
             return retval;
         }
 
@@ -1046,19 +998,14 @@ namespace dsp {
         }
 
         FloatArray npsqrt(const FloatArray& v) {
-            auto retval = std::make_shared<std::vector<float>>();
-            retval->reserve(v->size());
-            for (auto d : *v) {
-                retval->emplace_back(sqrt(d));
-            }
+            auto retval = std::make_shared<std::vector<float>>(v->size());
+            std::ranges::transform(*v, retval->begin(), [](float value) { return std::sqrt(value); });
             return retval;
         }
 
         FloatArray nplog(const FloatArray& v) {
-            auto retval = std::make_shared<std::vector<float>>();
-            for (auto d : *v) {
-                retval->emplace_back(log(d));
-            }
+            auto retval = std::make_shared<std::vector<float>>(v->size());
+            std::ranges::transform(*v, retval->begin(), [](float value) { return std::log(value); });
             return retval;
         }
 
@@ -1099,11 +1046,8 @@ namespace dsp {
         }
 
         FloatArray npreal(const ComplexArray& v) {
-            auto retval = std::make_shared<std::vector<float>>();
-            retval->reserve(v->size());
-            for (auto d : *v) {
-                retval->emplace_back(d.re);
-            }
+            auto retval = std::make_shared<std::vector<float>>(v->size());
+            std::ranges::transform(*v, retval->begin(), &dsp::complex_t::re);
             return retval;
         }
 
@@ -1114,10 +1058,8 @@ namespace dsp {
 
         FloatArray hamming(int N) {
             FloatArray window = npzeros(N);
-            const double PI = 3.14159265358979323846;
-
             for (int i = 0; i < N; ++i) {
-                window->at(i) = 0.54 - 0.46 * cos(2 * PI * i / (N - 1));
+                window->at(i) = 0.54 - 0.46 * cos(2 * std::numbers::pi * i / (N - 1));
             }
 
             return window;
@@ -1170,11 +1112,7 @@ namespace dsp {
 
         FloatArray maximum(const FloatArray& in, float value) {
             auto retval = std::make_shared<std::vector<float>>(in->size());
-            auto rvD = retval->data();
-            auto inD = in->data();
-            for (auto q = 0; q < in->size(); q++) {
-                rvD[q] = std::max<float>(inD[q], value);
-            }
+            std::ranges::transform(*in, retval->begin(), [value](float item) { return (std::max)(item, value); });
             return retval;
         }
 
@@ -1203,17 +1141,12 @@ namespace dsp {
 
 
         Arg<FFTPlan> allocateFFTWPlan(bool backward, int buckets) {
-            FFTPlan *plan;
 #ifdef __APPLE__
             if (enableAcceleratedFFT) {
-                plan = new vDSPPlanImpl(backward, buckets);
-            } else {
-                plan = new fftwPlanImplFFTW(backward, buckets);
+                return std::make_shared<vDSPPlanImpl>(backward, buckets);
             }
-#else
-            plan = new fftwPlanImplFFTW(backward, buckets);
 #endif
-            return std::shared_ptr<FFTPlan>(plan);
+            return std::make_shared<fftwPlanImplFFTW>(backward, buckets);
         }
 
         void npfftfft(const ComplexArray& in, const Arg<FFTPlan>& plan) {

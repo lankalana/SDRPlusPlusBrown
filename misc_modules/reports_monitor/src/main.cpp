@@ -9,7 +9,7 @@
 
 #include <imgui.h>
 #include <cmath>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include "utils/proto/reporter_services.h"
 #include "utils/cty.h"
@@ -25,7 +25,7 @@
 
 #define MAX_COMMAND_LENGTH 8192
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
         /* Name:            */ "reports_monitor",
         /* Description:     */ "PSKreporter, WSPRnet, RBN",
         /* Author:          */ "San",
@@ -412,7 +412,7 @@ class ReportsMonitorModule;
 
 ReportsMonitorModule *modul;
 
-class ReportsMonitorModule : public ModuleManager::Instance, public StatusReporter {
+class ReportsMonitorModule : public ModuleInstance, public StatusReporter {
 
 public:
 
@@ -841,7 +841,7 @@ private:
 
         FT8ModuleInterface *ft8 = nullptr;
         for(auto x: core::moduleManager.instances) {
-            Instance *pInstance = x.second.instance;
+            ModuleInstance *pInstance = x.second.instance;
             ft8 = (FT8ModuleInterface *)pInstance->getInterface("FT8ModuleInterface");
             if (ft8) {
                 break;
@@ -1074,22 +1074,24 @@ private:
 };
 
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     config.setPath(std::string(core::getRoot()) + "/repors_monitor.json");
     config.load(json::object());
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance *_CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new ReportsMonitorModule(name, std::string(core::getRoot()));
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void *instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (ReportsMonitorModule *) instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
 
+SDRPP_MODULE_EXPORT_API;

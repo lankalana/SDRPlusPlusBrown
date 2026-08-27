@@ -3,7 +3,7 @@
 #include <core.h>
 #include <gui/style.h>
 #include <signal_path/signal_path.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <dsp/pll.h>
 #include <dsp/stream.h>
@@ -24,7 +24,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "falcon9_decoder",
     /* Description:     */ "Falcon9 telemetry decoder for SDR++",
     /* Author:          */ "Ryzerth",
@@ -36,7 +36,7 @@ SDRPP_MOD_INFO{
 
 std::ofstream file("output.ts");
 
-class Falcon9DecoderModule : public ModuleManager::Instance {
+class Falcon9DecoderModule : public ModuleInstance {
 public:
     Falcon9DecoderModule(std::string name) {
         this->name = name;
@@ -242,18 +242,21 @@ private:
     ImGui::SymbolDiagram symDiag;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Nothing
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new Falcon9DecoderModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (Falcon9DecoderModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     // Nothing either
 }
+
+SDRPP_MODULE_EXPORT_API;

@@ -1,4 +1,6 @@
 #pragma once
+#include <memory>
+#include <stdexcept>
 #include "../filter/decimating_fir.h"
 #include "../taps/from_array.h"
 #include "decim/plans.h"
@@ -19,9 +21,9 @@ namespace dsp::multirate {
         }
 
         void init(stream<T>* in, unsigned int ratio) {
-            assert(checkRatio(ratio));
+            validateRatio(ratio);
             _ratio = ratio;
-            reconfigure();
+            buildFirs(_ratio, decimFirs, decimTaps, stageCount);
             base_type::init(in);
         }
 
@@ -29,13 +31,25 @@ namespace dsp::multirate {
             return 1 << decim::plans_len;
         }
 
+        static inline int getMaxPower() {
+            return decim::plans_len;
+        }
+
         void setRatio(unsigned int ratio) {
             assert(base_type::_block_init);
+            validateRatio(ratio);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            base_type::tempStop();
+            TempStopGuard stopGuard(*this);
+            std::vector<std::unique_ptr<filter::DecimatingFIR<T, float>>> newFirs;
+            std::vector<tap<float>> newTaps;
+            int newStageCount = 0;
+            buildFirs(ratio, newFirs, newTaps, newStageCount);
+
+            decimFirs.swap(newFirs);
+            decimTaps.swap(newTaps);
             _ratio = ratio;
-            reconfigure();
-            base_type::tempStart();
+            stageCount = newStageCount;
+            freeFirs(newFirs, newTaps);
         }
 
         void reset() {
@@ -59,7 +73,7 @@ namespace dsp::multirate {
             const T* data = in;
             int last = stageCount - 1;
             for (int i = 0; i < stageCount; i++) {
-                auto fir = decimFirs[i];
+                auto* fir = decimFirs[i].get();
                 count = fir->process(count, data, out);
                 data = out;
             }
@@ -68,7 +82,7 @@ namespace dsp::multirate {
 
         int getMaxInputCount() const {
             int maxInputCount = STREAM_BUFFER_SIZE + 64000;
-            for (auto fir : decimFirs) {
+            for (const auto& fir : decimFirs) {
                 maxInputCount = (std::min)(maxInputCount, fir->getMaxInputCount());
             }
             return maxInputCount;
@@ -86,40 +100,86 @@ namespace dsp::multirate {
         }
 
     protected:
-        void freeFirs() {
-            for (auto& fir : decimFirs) { delete fir; }
-            for (auto& taps : decimTaps) { taps::free(taps); }
-            decimFirs.clear();
-            decimTaps.clear();
+        static void freeFirs(std::vector<std::unique_ptr<filter::DecimatingFIR<T, float>>>& firs, std::vector<tap<float>>& tapsList) {
+            firs.clear();
+            for (auto& taps : tapsList) { dsp::taps::free(taps); }
+            tapsList.clear();
         }
 
-        void reconfigure() {
-            // Delete DDC FIRs and taps
-            freeFirs();
+        void freeFirs() {
+            freeFirs(decimFirs, decimTaps);
+        }
 
+        static int planIndex(unsigned int ratio) {
+            int exponent = 0;
+            while (ratio > 1) {
+                ratio >>= 1;
+                exponent++;
+            }
+            return exponent - 1;
+        }
+
+        static void buildFirs(unsigned int ratio, std::vector<std::unique_ptr<filter::DecimatingFIR<T, float>>>& firs,
+                              std::vector<tap<float>>& tapsList, int& newStageCount) {
             // Generate filters based on DDC plan
-            if (_ratio > 1) {
-                int planId = log2(_ratio) - 1;
+            if (ratio > 1) {
+                int planId = planIndex(ratio);
                 decim::plan plan = decim::plans[planId];
-                stageCount = plan.stageCount;
-                for (int i = 0; i < stageCount; i++) {
-                    tap<float> taps = taps::fromArray<float>(plan.stages[i].tapcount, plan.stages[i].taps);
-                    auto fir = new filter::DecimatingFIR<T, float>(NULL, taps, plan.stages[i].decimation);
-                    fir->out.free();
-                    decimTaps.push_back(taps);
-                    decimFirs.push_back(fir);
+                firs.reserve(firs.size() + plan.stageCount);
+                tapsList.reserve(tapsList.size() + plan.stageCount);
+                newStageCount = plan.stageCount;
+
+                struct TapGuard {
+                    explicit TapGuard(tap<float> taps) : taps(taps) {}
+
+                    ~TapGuard() {
+                        if (owned) {
+                            dsp::taps::free(taps);
+                        }
+                    }
+
+                    tap<float> taps;
+                    bool owned = true;
+                };
+
+                try {
+                    for (int i = 0; i < newStageCount; i++) {
+                        TapGuard newTaps(dsp::taps::fromArray<float>(plan.stages[i].tapcount, plan.stages[i].taps));
+                        auto fir = std::make_unique<filter::DecimatingFIR<T, float>>(nullptr, newTaps.taps, plan.stages[i].decimation);
+                        fir->out.free();
+                        tapsList.push_back(newTaps.taps);
+                        newTaps.owned = false;
+                        try {
+                            firs.push_back(std::move(fir));
+                        }
+                        catch (...) {
+                            dsp::taps::free(tapsList.back());
+                            tapsList.pop_back();
+                            throw;
+                        }
+                    }
+                }
+                catch (...) {
+                    freeFirs(firs, tapsList);
+                    throw;
                 }
             }
         }
 
-        bool checkRatio(unsigned int ratio) {
+        static bool checkRatio(unsigned int ratio) {
             // Make sure ratio is a power of two, non-zero and lower or equal to maximum
             return ((ratio & (ratio - 1)) == 0) && ratio && ratio <= getMaxRatio();
         }
 
-        std::vector<filter::DecimatingFIR<T, float>*> decimFirs;
+        static void validateRatio(unsigned int ratio) {
+            if (!checkRatio(ratio)) {
+                throw std::invalid_argument("Power decimator ratio must be a supported non-zero power of two");
+            }
+        }
+
+        std::vector<std::unique_ptr<filter::DecimatingFIR<T, float>>> decimFirs;
         std::vector<tap<float>> decimTaps;
-        unsigned int _ratio;
-        int stageCount;
+        unsigned int _ratio = 1;
+        int stageCount = 0;
     };
 }

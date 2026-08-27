@@ -20,12 +20,10 @@ list(FILTER SRC EXCLUDE REGEX "sdrpp_ft8_mshv_main.cpp" )
 add_definitions(-DSDRPP_IS_CORE)
 add_definitions(-DFLOG_ANDROID_TAG="SDR++")
 
-# Add BUILD_TESTS definition if tests are enabled
+# The test suite lives in its own target (see tests/CMakeLists.txt) and links
+# against sdrpp_core, so no test source is compiled into the core itself.
 if(BUILD_TESTS)
     add_definitions(-DBUILD_TESTS)
-    file(GLOB_RECURSE TEST_SRC "../tests/*.cpp")
-    list(FILTER TEST_SRC EXCLUDE REGEX "dsp_bounded_tests.cpp")
-    set(SRC ${SRC} ${TEST_SRC})
 endif()
 
 if(MSVC)
@@ -44,10 +42,6 @@ if (OPT_BACKEND_ANDROID)
     file(GLOB_RECURSE BACKEND_SRC "backends/android/*.cpp" "backends/android/*.c")
     set(BACKEND_SRC ${BACKEND_SRC} ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
 endif (OPT_BACKEND_ANDROID)
-
-if(BUILD_TESTS)
-    set(SRC ${SRC} ../tests/test_utils.cpp)
-endif ()
 
 # Add code to dyn lib
 add_library(sdrpp_core SHARED ${SRC} ${BACKEND_SRC})
@@ -125,6 +119,7 @@ if (MSVC)
     # FFTW3
     find_package(FFTW3f CONFIG REQUIRED)
     target_link_libraries(sdrpp_core PUBLIC FFTW3::fftw3f )
+    target_compile_definitions(sdrpp_core PRIVATE SDRPP_FFTW_THREADS)
     set(FFTW3f_LIBRARIES ${FFTW3_LIBRARIES})
     set(FFTW3f_LIBRARY_DIRS ${FFTW3_LIBRARY_DIRS})
     set(FFTW3f_INCLUDE_DIRS ${FFTW3_INCLUDE_DIRS})
@@ -162,7 +157,12 @@ else()
     set(FFTW3F_LIBRARIES ${FFTW3_LIBRARIES})
     set(FFTW3F_LIBRARY_DIRS ${FFTW3_LIBRARY_DIRS})
     set(FFTW3F_INCLUDE_DIRS ${FFTW3_INCLUDE_DIRS})
+    pkg_check_modules(FFTW3F_THREADS QUIET fftw3f_threads)
     pkg_check_modules(FFTW3 REQUIRED fftw3)
+
+    if (FFTW3F_THREADS_FOUND)
+        target_compile_definitions(sdrpp_core PRIVATE SDRPP_FFTW_THREADS)
+    endif()
 
 
     # temp
@@ -182,6 +182,7 @@ else()
         ${OPENGL_INCLUDE_DIRS}
         ${FFTW3_INCLUDE_DIRS}
         ${FFTW3F_INCLUDE_DIRS}
+        ${FFTW3F_THREADS_INCLUDE_DIRS}
         ${GLFW3_INCLUDE_DIRS}
         ${VOLK_INCLUDE_DIRS}
         ${LIBZSTD_INCLUDE_DIRS}
@@ -191,6 +192,7 @@ else()
         ${OPENGL_LIBRARY_DIRS}
         ${FFTW3_LIBRARY_DIRS}
         ${FFTW3F_LIBRARY_DIRS}
+        ${FFTW3F_THREADS_LIBRARY_DIRS}
         ${GLFW3_LIBRARY_DIRS}
         ${VOLK_LIBRARY_DIRS}
         ${LIBZSTD_LIBRARY_DIRS}
@@ -200,6 +202,7 @@ else()
         ${OPENGL_LIBRARIES}
         ${FFTW3_LIBRARIES}
         ${FFTW3F_LIBRARIES}
+        ${FFTW3F_THREADS_LIBRARIES}
         ${GLFW3_LIBRARIES}
         ${VOLK_LIBRARIES}
         ${LIBZSTD_LIBRARIES}

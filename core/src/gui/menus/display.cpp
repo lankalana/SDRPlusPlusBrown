@@ -10,6 +10,7 @@
 #include <gui/style.h>
 #include <utils/optionlist.h>
 #include <algorithm>
+#include <cstdio>
 
 namespace displaymenu {
     bool showWaterfall;
@@ -23,6 +24,7 @@ namespace displaymenu {
 
     // Handler for center frequency changes
     EventHandler<double> centerFreqChangedHandler;
+    EventHandler<double> sampleRateChangedHandler;
     std::string currentBatteryLevel = "?";
     int colorMapId = 0;
     std::vector<std::string> colorMapNames;
@@ -61,32 +63,10 @@ namespace displaymenu {
         8192,
         4096,
         2048,
-        1024
+        1024,
+        512,
+        256
     };
-
-    const char* FFTSizesStr = "524288\0"
-                              "262144\0"
-                              "131072\0"
-                              "65536\0"
-                              "32768\0"
-                              "16384\0"
-                              "8192\0"
-                              "4096\0"
-                              "2048\0"
-                              "1024\0"
-#ifdef __APPLE__
-                            "524288 ACCEL\0"
-                            "262144 ACCEL\0"
-                            "131072 ACCEL\0"
-                            "65536 ACCEL\0"
-                            "32768 ACCEL\0"
-                            "16384 ACCEL\0"
-                            "8192 ACCEL\0"
-                            "4096 ACCEL\0"
-                            "2048 ACCEL\0"
-                            "1024 ACCEL\0"
-#endif
-        ;
 
     int fftSizeId = 0;
 
@@ -97,9 +77,10 @@ namespace displaymenu {
     };
 
     void updateFFTSpeeds() {
-        gui::waterfall.setFFTHoldSpeed((float)fftHoldSpeed / ((float)fftRate * 10.0f));
-        gui::waterfall.setFFTSmoothingSpeed(std::min<float>((float)fftSmoothingSpeed / (float)(fftRate * 10.0f), 1.0f));
-        gui::waterfall.setSNRSmoothingSpeed(std::min<float>((float)snrSmoothingSpeed / (float)(fftRate * 10.0f), 1.0f));
+        double effectiveFFTRate = fftRate;
+        gui::waterfall.setFFTHoldSpeed((float)fftHoldSpeed / ((float)effectiveFFTRate * 10.0f));
+        gui::waterfall.setFFTSmoothingSpeed(std::min<float>((float)fftSmoothingSpeed / (float)(effectiveFFTRate * 10.0f), 1.0f));
+        gui::waterfall.setSNRSmoothingSpeed(std::min<float>((float)snrSmoothingSpeed / (float)(effectiveFFTRate * 10.0f), 1.0f));
     }
 
     void init() {
@@ -116,8 +97,8 @@ namespace displaymenu {
         showWaterfall ? gui::waterfall.showWaterfall() : gui::waterfall.hideWaterfall();
         std::string colormapName = core::configManager.conf["colorMap"];
         if (colormaps::maps.find(colormapName) != colormaps::maps.end()) {
-            colormaps::Map map = colormaps::maps[colormapName];
-            gui::waterfall.updatePalletteFromArray(map.map, map.entryCount);
+            const colormaps::Map& map = colormaps::maps[colormapName];
+            gui::waterfall.updatePalletteFromArray(map.map.data(), map.entryCount);
         }
 
         for (auto const& [name, map] : colormaps::maps) {
@@ -149,6 +130,11 @@ namespace displaymenu {
         centerFreqChangedHandler.ctx = NULL;
         centerFreqChangedHandler.handler = [](double freq, void* ctx) {
             sigpath::iqFrontEnd.detectorPreprocessor.setCenterFrequency(freq);
+        };
+        sigpath::iqFrontEnd.onEffectiveSampleRateChange.bindHandler(&sampleRateChangedHandler);
+        sampleRateChangedHandler.ctx = NULL;
+        sampleRateChangedHandler.handler = [](double sampleRate, void* ctx) {
+            updateFFTSpeeds();
         };
 
         fftSizeId = 4;
@@ -356,7 +342,7 @@ namespace displaymenu {
             restartRequired = true;
         }
 
-        ImGui::LeftLabel("FFT Framerate");
+        ImGui::LeftLabel("Max FFT Framerate");
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
         if (ImGui::InputInt("##sdrpp_fft_rate", &fftRate, 1, 10)) {
             fftRate = std::max<int>(1, fftRate);
@@ -367,12 +353,32 @@ namespace displaymenu {
             core::configManager.release(true);
         }
 
-        ImGui::LeftLabel("FFT Size");
+        ImGui::LeftLabel("FFT Resolution");
         auto textSize8888  =  ImGui::CalcTextSize("88888888");
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX() - textSize8888.x);
-        if (ImGui::Combo("##sdrpp_fft_size", &fftSizeId, FFTSizesStr)) {
+        static std::string fftResolutionsStr;
+        static double fftResolutionSampleRate = -1.0;
+        double fftSampleRate = sigpath::iqFrontEnd.getSampleRate();
+        if (fftSampleRate != fftResolutionSampleRate) {
+            fftResolutionsStr.clear();
+            auto appendResolutions = [&](const char* suffix) {
+                for (int fftSize : FFTSizes) {
+                    char resolution[32];
+                    std::snprintf(resolution, sizeof(resolution), "%.2f Hz%s", fftSampleRate / fftSize, suffix);
+                    fftResolutionsStr += resolution;
+                    fftResolutionsStr += '\0';
+                }
+            };
+            appendResolutions("");
+#ifdef __APPLE__
+            appendResolutions(" ACCEL");
+#endif
+            fftResolutionSampleRate = fftSampleRate;
+        }
+        if (ImGui::Combo("##sdrpp_fft_size", &fftSizeId, fftResolutionsStr.c_str())) {
             enableAcceleratedFFT = fftSizeId >= std::size(FFTSizes);
             sigpath::iqFrontEnd.setFFTSize(FFTSizes[fftSizeId % std::size(FFTSizes)]);
+            updateFFTSpeeds();
             core::configManager.acquire();
             core::configManager.conf["fftSize"] = FFTSizes[fftSizeId % std::size(FFTSizes)];
             core::configManager.conf["fftAccel"] = fftSizeId >= std::size(FFTSizes);
@@ -405,8 +411,8 @@ namespace displaymenu {
             ImGui::LeftLabel("Color Map");
             ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());
             if (ImGui::Combo("##_sdrpp_color_map_sel", &colorMapId, colorMapNamesTxt.c_str())) {
-                colormaps::Map map = colormaps::maps[colorMapNames[colorMapId]];
-                gui::waterfall.updatePalletteFromArray(map.map, map.entryCount);
+                const colormaps::Map& map = colormaps::maps[colorMapNames[colorMapId]];
+                gui::waterfall.updatePalletteFromArray(map.map.data(), map.entryCount);
                 core::configManager.acquire();
                 core::configManager.conf["colorMap"] = colorMapNames[colorMapId];
                 core::configManager.release(true);

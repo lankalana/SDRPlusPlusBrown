@@ -12,27 +12,22 @@
  */
 
 #include "gen_ft8.h"
-//#include <QtGui>
 
-static bool inicialize_pulse_ft8_trx = false;
+#include <mutex>
+
+static std::once_flag initialize_pulse_ft8;
 static double pulse_ft8_tx[23060];          //    !1920*4*3=23040
 
 GenFt8::GenFt8(bool f_dec_gen)//f_dec_gen = dec=true gen=false
 {   
     TPackUnpackMsg77.initPackUnpack77(f_dec_gen);//f_dec_gen = dec=true gen=false
     genPomFt.initGenPomFt();//first_ft8_enc_174_91 = true;
-    twopi=8.0*atan(1.0);   
+    if (f_dec_gen) return;
 
-    if (inicialize_pulse_ft8_trx) return;
-    /*int nsps=4*1920;//48000hz=7680
-    //! Compute the frequency-smoothing pulse
-    for (int i= 0; i < 3*nsps; ++i)//=23040
-    {//do i=1,3*nsps
-        double tt=(i-1.5*nsps)/(double)nsps;
-        pulse_ft8_tx[i]=gfsk_pulse(2.0,tt);//tx=2.0
-    }*/
-    gen_pulse_gfsk_(pulse_ft8_tx,11520.0,2.0,7680);
-    inicialize_pulse_ft8_trx = true;
+    twopi=8.0*atan(1.0);
+    std::call_once(initialize_pulse_ft8, [] {
+        gen_pulse_gfsk_(pulse_ft8_tx,11520.0,2.0,7680);
+    });
 }
 GenFt8::~GenFt8()
 {}
@@ -44,12 +39,6 @@ void GenFt8::save_hash_call_my_his_r1_r2(QString call,int pos)
 {
     TPackUnpackMsg77.save_hash_call_my_his_r1_r2(call,pos);
 }
-/*
-void GenFt8::save_hash_call_mam(QStringList ls)
-{
-    TPackUnpackMsg77.save_hash_call_mam(ls);
-}
-*/
 QString GenFt8::unpack77(bool *c77,bool &unpk77_success)
 {
     return TPackUnpackMsg77.unpack77(c77,unpk77_success);
@@ -62,28 +51,6 @@ void GenFt8::split77(QString &msg,int &nwords,/*int *nw,*/QString *w)// for apse
 {
     TPackUnpackMsg77.split77(msg,nwords,/*int *nw,*/w);
 }
-/*
-short crc10_(unsigned char const * data, int length)
-{
-    return boost::augmented_crc<10, TRUNCATED_POLYNOMIAL10>(data, length);
-}
-short crc12_(unsigned char const * data, int length)
-{
-    return boost::augmented_crc<12, TRUNCATED_POLYNOMIAL12>(data, length);
-}
-bool crc12_check_(unsigned char const * data, int length)
-{
-    return !boost::augmented_crc<12, TRUNCATED_POLYNOMIAL12>(data, length);
-}
-short GenFt8::crc10(unsigned char const * data, int length)
-{
-    return crc10_(data,length);
-}
-short GenFt8::crc12(unsigned char const * data, int length)
-{
-    return crc12_(data,length);
-}
-*/
 void GenFt8::make_c77_i4tone_codeword(bool *c77,int *i4tone,bool *codeword)//,bool f_gen,bool f_addc
 {
     const int icos7_77 [7]={3,1,4,0,6,5,2}; 

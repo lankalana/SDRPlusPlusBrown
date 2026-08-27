@@ -4,7 +4,7 @@
 #include <gui/style.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <filesystem>
 #include "meteor_demod.h"
 #include <dsp/routing/splitter.h>
@@ -19,7 +19,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "meteor_demodulator",
     /* Description:     */ "Meteor demodulator for SDR++",
     /* Author:          */ "Ryzerth",
@@ -39,7 +39,7 @@ std::string genFileName(std::string prefix, std::string suffix) {
 
 #define INPUT_SAMPLE_RATE 150000
 
-class MeteorDemodulatorModule : public ModuleManager::Instance {
+class MeteorDemodulatorModule : public ModuleInstance {
 public:
     MeteorDemodulatorModule(std::string name) : folderSelect("%ROOT%/recordings") {
         this->name = name;
@@ -261,7 +261,7 @@ private:
     int8_t* writeBuffer;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Create default recording directory
     std::string root = std::string(core::getRoot());
     if (!std::filesystem::exists(root + "/recordings")) {
@@ -276,15 +276,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new MeteorDemodulatorModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (MeteorDemodulatorModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

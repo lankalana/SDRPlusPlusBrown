@@ -4,7 +4,7 @@
 #include <gui/style.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/widgets/folder_select.h>
 #include <utils/optionlist.h>
 #include "decoder.h"
@@ -13,7 +13,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "pager_decoder",
     /* Description:     */ "POCSAG and Flex Pager Decoder"
     /* Author:          */ "Ryzerth",
@@ -29,7 +29,7 @@ enum Protocol {
     PROTOCOL_FLEX
 };
 
-class PagerDecoderModule : public ModuleManager::Instance {
+class PagerDecoderModule : public ModuleInstance {
 public:
     PagerDecoderModule(std::string name) {
         this->name = name;
@@ -150,7 +150,7 @@ private:
     bool showLines = false;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Create default recording directory
     json def = json({});
     config.setPath(std::string(core::getRoot()) + "/pager_decoder_config.json");
@@ -158,15 +158,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new PagerDecoderModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (PagerDecoderModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

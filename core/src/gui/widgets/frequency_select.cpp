@@ -225,9 +225,8 @@ void FrequencySelect::draw() {
 
                 // If the clipboard is not empty, attempt to parse it
                 if (clip) {
-                    double newFreq;
-                    if (hrfreq::fromString(clip, newFreq)) {
-                        setFrequency(abs(newFreq));
+                    if (auto newFreq = hrfreq::fromString(clip)) {
+                        setFrequency(abs(*newFreq));
                         frequencyChanged = true;
                     }
                 }

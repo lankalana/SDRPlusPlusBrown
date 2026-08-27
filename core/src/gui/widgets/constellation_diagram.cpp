@@ -1,9 +1,7 @@
 #include <gui/widgets/constellation_diagram.h>
 
 namespace ImGui {
-    ConstellationDiagram::ConstellationDiagram() {
-        memset(buffer, 0, 1024 * sizeof(dsp::complex_t));
-    }
+    ConstellationDiagram::ConstellationDiagram() = default;
 
     void ConstellationDiagram::draw(const ImVec2& size_arg) {
         std::lock_guard<std::mutex> lck(bufferMtx);
@@ -29,7 +27,7 @@ namespace ImGui {
 
     dsp::complex_t* ConstellationDiagram::acquireBuffer() {
         bufferMtx.lock();
-        return buffer;
+        return buffer.data();
     }
 
     void ConstellationDiagram::releaseBuffer() {

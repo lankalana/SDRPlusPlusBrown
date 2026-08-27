@@ -3,7 +3,13 @@
   "version-string": "1.2.0",
   "description": "Common dependencies for the SDR++ Brown development build",
   "dependencies": [
-    "fftw3",
+    "catch2",
+    {
+      "name": "fftw3",
+      "features": [
+        "threads"
+      ]
+    },
     "glfw3",
     "itpp",
     "libusb",

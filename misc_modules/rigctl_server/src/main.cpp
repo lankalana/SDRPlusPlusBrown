@@ -1,6 +1,6 @@
 #include <utils/networking.h>
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/style.h>
 #include <signal_path/signal_path.h>
@@ -14,7 +14,7 @@
 
 #define MAX_COMMAND_LENGTH 8192
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "rigctl_server",
     /* Description:     */ "My fancy new module",
     /* Author:          */ "Ryzerth",
@@ -29,7 +29,7 @@ enum {
 
 ConfigManager config;
 
-class SigctlServerModule : public ModuleManager::Instance {
+class SigctlServerModule : public ModuleInstance {
 public:
     SigctlServerModule(std::string name) {
         this->name = name;
@@ -705,21 +705,24 @@ private:
     bool autoStart = false;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     config.setPath(std::string(core::getRoot()) + "/rigctl_server_config.json");
     config.load(json::object());
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new SigctlServerModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (SigctlServerModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

@@ -34,8 +34,8 @@ namespace colormaps {
             return;
         }
 
-        map.entryCount = mapTxt.size();
-        map.map = new float[mapTxt.size() * 3];
+        map.entryCount = static_cast<int>(mapTxt.size());
+        map.map.resize(mapTxt.size() * 3);
         int i = 0;
         for (auto const& col : mapTxt) {
             map.map[i * 3] = std::stoi(col.substr(1, 2), NULL, 16);
@@ -44,6 +44,7 @@ namespace colormaps {
             i++;
         }
 
-        maps[map.name] = map;
+        auto mapName = map.name;
+        maps[mapName] = std::move(map);
     }
 }

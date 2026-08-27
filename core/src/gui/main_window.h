@@ -8,6 +8,7 @@
 #include <utils/event.h>
 #include <utils/arrays.h>
 #include <mutex>
+#include <thread>
 #include <gui/tuner.h>
 
 #define WINDOW_FLAGS ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
@@ -15,6 +16,7 @@
 
 class MainWindow{
 public:
+    virtual ~MainWindow();
     virtual void init();
     virtual void end() {}
     virtual void preDraw(ImGui::WaterfallVFO* *vfo);
@@ -59,8 +61,7 @@ public:
 
     // Mic stream handling
     dsp::stream<dsp::stereo_t> micStream;
-    std::shared_ptr<std::thread> micThread;
-    std::atomic<bool> micThreadRunning = false;
+    std::jthread micThread;
     std::mutex micSamplesMutex;
 
     // Main thread task queue

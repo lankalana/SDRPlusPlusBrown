@@ -1,6 +1,7 @@
 #pragma once
 #include "../block.h"
 #include "ring_buffer.h"
+#include <memory>
 
 // IMPORTANT: THIS IS TRASH AND MUST BE REWRITTEN IN THE FUTURE
 
@@ -44,10 +45,9 @@ namespace dsp::buffer {
         void setKeep(int keep) {
             assert(base_type::_block_init);
             std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
-            base_type::tempStop();
-            _keep = keep;
+            TempStopGuard stopGuard(*this);
             ringBuf.setMaxLatency(keep * 2);
-            base_type::tempStart();
+            _keep = keep;
         }
 
         void setSkip(int skip) {
@@ -99,32 +99,34 @@ namespace dsp::buffer {
         }
 
         void bufferWorker() {
-            T* buf = new T[_keep];
+            auto buf = std::make_unique_for_overwrite<T[]>(_keep);
             bool delay = _skip < 0;
 
             int readCount = std::min<int>(_keep + _skip, _keep);
             int skip = std::max<int>(_skip, 0);
             int delaySize = (-_skip) * sizeof(T);
-            int delayCount = (-_skip);
 
             T* start = &buf[std::max<int>(-_skip, 0)];
             T* delayStart = &buf[_keep + _skip];
+            bool firstFrame = true;
 
             while (true) {
                 if (delay) {
-                    memmove(buf, delayStart, delaySize);
-                    if constexpr (std::is_same_v<T, complex_t> || std::is_same_v<T, stereo_t>) {
-                        for (int i = 0; i < delayCount; i++) {
-                            buf[i].re /= 10.0f;
-                            buf[i].im /= 10.0f;
-                        }
+                    if (firstFrame) {
+                        if (ringBuf.read(buf.get(), _keep) < 0) { break; };
+                    }
+                    else {
+                        memmove(buf.get(), delayStart, delaySize);
+                        if (ringBuf.read(start, readCount) < 0) { break; };
                     }
                 }
-                if (ringBuf.readAndSkip(start, readCount, skip) < 0) { break; };
-                memcpy(out.writeBuf, buf, _keep * sizeof(T));
+                else {
+                    if (ringBuf.readAndSkip(start, readCount, skip) < 0) { break; };
+                }
+                memcpy(out.writeBuf, buf.get(), _keep * sizeof(T));
                 if (!out.swap(_keep)) { break; }
+                firstFrame = false;
             }
-            delete[] buf;
         }
 
         stream<T>* _in;

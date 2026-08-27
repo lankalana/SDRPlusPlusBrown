@@ -50,7 +50,7 @@ namespace riff {
 
         // Create chunk with the LIST ID and write id
         beginChunk(LIST_SIGNATURE);
-        write((uint8_t*)id, RIFF_LABEL_SIZE);
+        write(std::span{id, RIFF_LABEL_SIZE});
     }
 
     void Writer::endList() {
@@ -105,14 +105,14 @@ namespace riff {
         }
     }
 
-    void Writer::write(const uint8_t* data, size_t len) {
+    void Writer::write(std::span<const std::byte> data) {
         std::lock_guard<std::recursive_mutex> lck(mtx);
 
         if (chunks.empty()) {
             throw std::runtime_error("No chunk to write into");
         }
-        file.write((char*)data, len);
-        chunks.top().hdr.size += len;
+        file.write(reinterpret_cast<const char*>(data.data()), data.size());
+        chunks.top().hdr.size += data.size();
     }
 
     void Writer::beginRIFF(const char form[4]) {
@@ -124,7 +124,7 @@ namespace riff {
 
         // Create chunk with RIFF ID and write form
         beginChunk(RIFF_SIGNATURE);
-        write((uint8_t*)form, RIFF_LABEL_SIZE);
+        write(std::span{form, RIFF_LABEL_SIZE});
     }
 
     void Writer::endRIFF() {

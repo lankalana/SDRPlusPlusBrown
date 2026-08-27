@@ -74,6 +74,7 @@ namespace dsp::multirate {
             // Configure resampler
             double tapSamplerate = symbolrate * (double)interp;
             tap<float> newTaps = taps::rootRaisedCosine<float>(rrcTapCount * interp, rrcBeta, symbolrate, tapSamplerate);
+            for (int i = 0; i < newTaps.size; i++) { newTaps.taps[i] *= (float)interp; }
             try {
                 resamp.setRatio(interp, decim, newTaps);
             }

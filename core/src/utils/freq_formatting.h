@@ -1,44 +1,20 @@
 #pragma once
+#include <format>
 #include <string>
+#include <string_view>
 
 namespace utils {
-    std::string formatFreq(double freq) {
-        char str[128];
-        if (freq >= 1000000.0) {
-            snprintf(str, sizeof str, "%.06lf", freq / 1000000.0);
-            int len = strlen(str) - 1;
-            while ((str[len] == '0' || str[len] == '.') && len > 0) {
-                len--;
-                if (str[len] == '.') {
-                    len--;
-                    break;
-                }
-            }
-            return std::string(str).substr(0, len + 1) + "MHz";
-        }
-        else if (freq >= 1000.0) {
-            snprintf(str, sizeof str, "%.06lf", freq / 1000.0);
-            int len = strlen(str) - 1;
-            while ((str[len] == '0' || str[len] == '.') && len > 0) {
-                len--;
-                if (str[len] == '.') {
-                    len--;
-                    break;
-                }
-            }
-            return std::string(str).substr(0, len + 1) + "KHz";
-        }
-        else {
-            snprintf(str, sizeof str, "%.06lf", freq);
-            int len = strlen(str) - 1;
-            while ((str[len] == '0' || str[len] == '.') && len > 0) {
-                len--;
-                if (str[len] == '.') {
-                    len--;
-                    break;
-                }
-            }
-            return std::string(str).substr(0, len + 1) + "Hz";
-        }
+    inline std::string formatFreq(double freq) {
+        const auto [scaled, suffix] = freq >= 1000000.0
+            ? std::pair{ freq / 1000000.0, std::string_view{ "MHz" } }
+            : freq >= 1000.0
+                ? std::pair{ freq / 1000.0, std::string_view{ "KHz" } }
+                : std::pair{ freq, std::string_view{ "Hz" } };
+
+        auto result = std::format("{:.6f}", scaled);
+        result.erase(result.find_last_not_of('0') + 1);
+        if (result.ends_with('.')) { result.pop_back(); }
+        result += suffix;
+        return result;
     }
 }

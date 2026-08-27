@@ -2,6 +2,7 @@
 
 #include <imgui.h>
 #include <imgui_internal.h>
+#include <array>
 #include <dsp/stream.h>
 #include <mutex>
 #include <dsp/types.h>
@@ -19,6 +20,6 @@ namespace ImGui {
 
     private:
         std::mutex bufferMtx;
-        dsp::complex_t buffer[1024];
+        std::array<dsp::complex_t, 1024> buffer{};
     };
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include <memory>
+#include <span>
 #include <iostream>
 
 #ifdef WIN32
@@ -8,8 +9,6 @@
 #endif
 
 #include "dsp/block.h"
-
-#define FL_M_PI 3.1415926535f
 
 extern long long fftCumulativeTime;
 extern bool enableAcceleratedFFT;
@@ -22,8 +21,8 @@ namespace dsp {
 
     namespace math {
 
-        std::vector<float> sma(int smawindow, std::vector<float>& src);
-        std::vector<float> maxeach(int maxwindow, std::vector<float>& src);
+        std::vector<float> sma(int smawindow, std::span<const float> src);
+        std::vector<float> maxeach(int maxwindow, std::span<const float> src);
         double sinc(double omega, double x, double norm);
         float expn(float q);
         bool linearInterpolateHoles(float *arr, int narr);

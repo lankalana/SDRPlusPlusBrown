@@ -1,5 +1,5 @@
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
@@ -17,7 +17,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "hackrf_source",
     /* Description:     */ "HackRF source module for SDR++",
     /* Author:          */ "Ryzerth",
@@ -78,7 +78,7 @@ const char* bandwidthsTxt = "1.75MHz\0"
                             "28MHz\0"
                             "Auto\0";
 
-class HackRFSourceModule : public ModuleManager::Instance {
+class HackRFSourceModule : public ModuleInstance {
 public:
     HackRFSourceModule(std::string name) {
         this->name = name;
@@ -413,7 +413,7 @@ private:
     std::string devListTxt;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     def["devices"] = json({});
     def["device"] = "";
@@ -422,15 +422,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new HackRFSourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(ModuleManager::Instance* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (HackRFSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

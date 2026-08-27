@@ -4,6 +4,7 @@
 #include <imgui_internal.h>
 #include <dsp/stream.h>
 #include <mutex>
+#include <vector>
 
 #include <utils/opengl_include_code.h>
 
@@ -28,7 +29,7 @@ namespace ImGui {
         void updateTexture();
 
         std::mutex bufferMtx;
-        uint8_t* frameBuffer;
+        std::vector<uint8_t> frameBuffer;
 
         int _frameWidth;
         int _reservedIncrement;

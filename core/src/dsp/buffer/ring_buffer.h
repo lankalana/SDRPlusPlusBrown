@@ -1,239 +1,178 @@
 #pragma once
 #include "buffer.h"
-
-#define RING_BUF_SZ 1000000
-
-// IMPORTANT: THIS IS TRASH AND MUST BE REWRITTEN IN THE FUTURE
+#include <condition_variable>
+#include <mutex>
+#include <stdexcept>
 
 namespace dsp::buffer {
+    // SPSC FIFO. All state and stop predicates are protected by stateMtx.
     template <class T>
     class RingBuffer {
     public:
         RingBuffer() {}
-
         RingBuffer(int maxLatency) { init(maxLatency); }
+        ~RingBuffer() { free(); }
 
-        ~RingBuffer() {
-            if (!_init) { return; }
-            buffer::free(_buffer);
-            _init = false;
-        }
-
-        void init(int maxLatency) {
-            size = RING_BUF_SZ;
+        void init(int maxLatency, int capacity = 0) {
+            if (maxLatency <= 0) { throw std::invalid_argument("Ring buffer max latency must be positive"); }
+            if (capacity <= 0) { capacity = maxLatency * 2; }
+            if (capacity < maxLatency) { capacity = maxLatency; }
+            T* newBuffer = buffer::alloc<T>(capacity);
+            if (!newBuffer) { throw std::bad_alloc(); }
+            buffer::clear(newBuffer, capacity);
+            std::lock_guard<std::mutex> lck(stateMtx);
+            if (_buffer) { buffer::free(_buffer); }
+            _buffer = newBuffer;
+            size = capacity;
+            this->maxLatency = maxLatency;
+            readc = 0;
+            writec = 0;
+            readable = 0;
             _stopReader = false;
             _stopWriter = false;
-            this->maxLatency = maxLatency;
-            writec = 0;
-            readc = 0;
-            readable = 0;
-            writable = size;
-            _buffer = buffer::alloc<T>(size);
-            buffer::clear(_buffer, size);
-            //buffer::register_buffer_dbg(_buffer, "ringbuffer");
-            _init = true;
         }
 
-        int read(T* data, int len) {
-            assert(_init);
-            int dataRead = 0;
-            int toRead = 0;
-            while (dataRead < len) {
-                toRead = std::min<int>(waitUntilReadable(), len - dataRead);
-                if (toRead < 0) { return -1; };
-
-                if ((toRead + readc) > size) {
-                    memcpy(&data[dataRead], &_buffer[readc], (size - readc) * sizeof(T));
-                    memcpy(&data[dataRead + (size - readc)], &_buffer[0], (toRead - (size - readc)) * sizeof(T));
-                }
-                else {
-                    memcpy(&data[dataRead], &_buffer[readc], toRead * sizeof(T));
-                }
-
-                dataRead += toRead;
-
-                _readable_mtx.lock();
-                readable -= toRead;
-                _readable_mtx.unlock();
-                _writable_mtx.lock();
-                writable += toRead;
-                _writable_mtx.unlock();
-                readc = (readc + toRead) % size;
-                canWriteVar.notify_one();
-            }
-            return len;
-        }
+        int read(T* data, int len) { return readAndSkip(data, len, 0); }
 
         int readAndSkip(T* data, int len, int skip) {
-            assert(_init);
-            int dataRead = 0;
-            int toRead = 0;
-            while (dataRead < len) {
-                toRead = std::min<int>(waitUntilReadable(), len - dataRead);
-                if (toRead < 0) { return -1; };
-
-                if ((toRead + readc) > size) {
-                    memcpy(&data[dataRead], &_buffer[readc], (size - readc) * sizeof(T));
-                    memcpy(&data[dataRead + (size - readc)], &_buffer[0], (toRead - (size - readc)) * sizeof(T));
-                }
-                else {
-                    memcpy(&data[dataRead], &_buffer[readc], toRead * sizeof(T));
-                }
-
-                dataRead += toRead;
-
-                _readable_mtx.lock();
-                readable -= toRead;
-                _readable_mtx.unlock();
-                _writable_mtx.lock();
-                writable += toRead;
-                _writable_mtx.unlock();
-                readc = (readc + toRead) % size;
-                canWriteVar.notify_one();
-            }
-            dataRead = 0;
-            while (dataRead < skip) {
-                toRead = std::min<int>(waitUntilReadable(), skip - dataRead);
-                if (toRead < 0) { return -1; };
-
-                dataRead += toRead;
-
-                _readable_mtx.lock();
-                readable -= toRead;
-                _readable_mtx.unlock();
-                _writable_mtx.lock();
-                writable += toRead;
-                _writable_mtx.unlock();
-                readc = (readc + toRead) % size;
-                canWriteVar.notify_one();
-            }
+            if (len < 0 || skip < 0) { return -1; }
+            if (!consume(data, len)) { return -1; }
+            if (!consume(NULL, skip)) { return -1; }
             return len;
         }
 
-        int waitUntilReadable() {
-            assert(_init);
-            if (_stopReader) { return -1; }
-            int _r = getReadable();
-            if (_r != 0) { return _r; }
-            std::unique_lock<std::mutex> lck(_readable_mtx);
-            canReadVar.wait(lck, [=]() { return ((this->getReadable(false) > 0) || this->getReadStop()); });
-            if (_stopReader) { return -1; }
-            return getReadable(false);
-        }
-
-        int getReadable(bool lock = true) {
-            assert(_init);
-            if (lock) { _readable_mtx.lock(); };
-            int _r = readable;
-            if (lock) { _readable_mtx.unlock(); };
-            return _r;
-        }
-
-        int write(T* data, int len) {
-            assert(_init);
-            int dataWritten = 0;
-            int toWrite = 0;
-            while (dataWritten < len) {
-                toWrite = std::min<int>(waitUntilwritable(), len - dataWritten);
-                if (toWrite < 0) { return -1; };
-
-                if ((toWrite + writec) > size) {
-                    memcpy(&_buffer[writec], &data[dataWritten], (size - writec) * sizeof(T));
-                    memcpy(&_buffer[0], &data[dataWritten + (size - writec)], (toWrite - (size - writec)) * sizeof(T));
-                }
-                else {
-                    memcpy(&_buffer[writec], &data[dataWritten], toWrite * sizeof(T));
-                }
-
-                dataWritten += toWrite;
-
-                _readable_mtx.lock();
-                readable += toWrite;
-                _readable_mtx.unlock();
-                _writable_mtx.lock();
-                writable -= toWrite;
-                _writable_mtx.unlock();
-                writec = (writec + toWrite) % size;
-
+        int write(const T* data, int len) {
+            if (len < 0) { return -1; }
+            int written = 0;
+            std::unique_lock<std::mutex> lck(stateMtx);
+            while (written < len) {
+                canWriteVar.wait(lck, [this] { return _stopWriter || writableLocked() > 0; });
+                if (_stopWriter) { return -1; }
+                int count = (std::min)(len - written, writableLocked());
+                copyIn(data + written, count);
+                written += count;
+                readable += count;
                 canReadVar.notify_one();
             }
             return len;
         }
 
-        int waitUntilwritable() {
-            assert(_init);
-            if (_stopWriter) { return -1; }
-            int _w = getWritable();
-            if (_w != 0) { return _w; }
-            std::unique_lock<std::mutex> lck(_writable_mtx);
-            canWriteVar.wait(lck, [=]() { return ((this->getWritable(false) > 0) || this->getWriteStop()); });
-            if (_stopWriter) { return -1; }
-            return getWritable(false);
+        int waitUntilReadable() {
+            std::unique_lock<std::mutex> lck(stateMtx);
+            canReadVar.wait(lck, [this] { return _stopReader || readable > 0; });
+            return _stopReader ? -1 : readable;
         }
 
-        int getWritable(bool lock = true) {
-            assert(_init);
-            if (lock) { _writable_mtx.lock(); };
-            int _w = writable;
-            if (lock) {
-                _writable_mtx.unlock();
-                _readable_mtx.lock();
-            };
-            int _r = readable;
-            if (lock) { _readable_mtx.unlock(); };
-            return std::max<int>(std::min<int>(_w, maxLatency - _r), 0);
+        int waitUntilwritable() {
+            std::unique_lock<std::mutex> lck(stateMtx);
+            canWriteVar.wait(lck, [this] { return _stopWriter || writableLocked() > 0; });
+            return _stopWriter ? -1 : writableLocked();
+        }
+
+        int getReadable(bool = true) {
+            std::lock_guard<std::mutex> lck(stateMtx);
+            return readable;
+        }
+
+        int getWritable(bool = true) {
+            std::lock_guard<std::mutex> lck(stateMtx);
+            return writableLocked();
         }
 
         void stopReader() {
-            assert(_init);
+            std::lock_guard<std::mutex> lck(stateMtx);
             _stopReader = true;
-            canReadVar.notify_one();
+            canReadVar.notify_all();
         }
 
         void stopWriter() {
-            assert(_init);
+            std::lock_guard<std::mutex> lck(stateMtx);
             _stopWriter = true;
-            canWriteVar.notify_one();
+            canWriteVar.notify_all();
         }
 
-        bool getReadStop() {
-            assert(_init);
-            return _stopReader;
-        }
-
-        bool getWriteStop() {
-            assert(_init);
-            return _stopWriter;
-        }
-
-        void clearReadStop() {
-            assert(_init);
-            _stopReader = false;
-        }
-
-        void clearWriteStop() {
-            assert(_init);
-            _stopWriter = false;
-        }
+        bool getReadStop() { std::lock_guard<std::mutex> lck(stateMtx); return _stopReader; }
+        bool getWriteStop() { std::lock_guard<std::mutex> lck(stateMtx); return _stopWriter; }
+        void clearReadStop() { std::lock_guard<std::mutex> lck(stateMtx); _stopReader = false; }
+        void clearWriteStop() { std::lock_guard<std::mutex> lck(stateMtx); _stopWriter = false; }
 
         void setMaxLatency(int maxLatency) {
-            assert(_init);
+            if (maxLatency <= 0) { throw std::invalid_argument("Ring buffer max latency must be positive"); }
+            std::lock_guard<std::mutex> lck(stateMtx);
+            if (maxLatency > size) {
+                growLocked(maxLatency);
+            }
             this->maxLatency = maxLatency;
+            canWriteVar.notify_all();
         }
 
     private:
-        bool _init = false;
-        T* _buffer;
-        int size;
-        int readc;
-        int writec;
-        int readable;
-        int writable;
-        int maxLatency;
-        bool _stopReader;
-        bool _stopWriter;
-        std::mutex _readable_mtx;
-        std::mutex _writable_mtx;
+        bool consume(T* data, int len) {
+            int consumed = 0;
+            std::unique_lock<std::mutex> lck(stateMtx);
+            while (consumed < len) {
+                canReadVar.wait(lck, [this] { return _stopReader || readable > 0; });
+                if (_stopReader) { return false; }
+                int count = (std::min)(len - consumed, readable);
+                copyOut(data ? data + consumed : NULL, count);
+                consumed += count;
+                readable -= count;
+                canWriteVar.notify_one();
+            }
+            return true;
+        }
+
+        int writableLocked() const {
+            return (std::max)(0, (std::min)(size - readable, maxLatency - readable));
+        }
+
+        void growLocked(int requiredCapacity) {
+            int newSize = (std::max)(requiredCapacity, size * 2);
+            T* newBuffer = buffer::alloc<T>(newSize);
+            if (!newBuffer) { throw std::bad_alloc(); }
+
+            int first = (std::min)(readable, size - readc);
+            if (first) { memcpy(newBuffer, &_buffer[readc], first * sizeof(T)); }
+            if (readable > first) { memcpy(newBuffer + first, _buffer, (readable - first) * sizeof(T)); }
+
+            buffer::free(_buffer);
+            _buffer = newBuffer;
+            size = newSize;
+            readc = 0;
+            writec = readable;
+        }
+
+        void copyIn(const T* data, int count) {
+            int first = (std::min)(count, size - writec);
+            memcpy(&_buffer[writec], data, first * sizeof(T));
+            if (count > first) { memcpy(_buffer, data + first, (count - first) * sizeof(T)); }
+            writec = (writec + count) % size;
+        }
+
+        void copyOut(T* data, int count) {
+            int first = (std::min)(count, size - readc);
+            if (data) {
+                memcpy(data, &_buffer[readc], first * sizeof(T));
+                if (count > first) { memcpy(data + first, _buffer, (count - first) * sizeof(T)); }
+            }
+            readc = (readc + count) % size;
+        }
+
+        void free() {
+            std::lock_guard<std::mutex> lck(stateMtx);
+            if (_buffer) { buffer::free(_buffer); }
+            _buffer = NULL;
+        }
+
+        T* _buffer = NULL;
+        int size = 0;
+        int readc = 0;
+        int writec = 0;
+        int readable = 0;
+        int maxLatency = 0;
+        bool _stopReader = false;
+        bool _stopWriter = false;
+        std::mutex stateMtx;
         std::condition_variable canReadVar;
         std::condition_variable canWriteVar;
     };

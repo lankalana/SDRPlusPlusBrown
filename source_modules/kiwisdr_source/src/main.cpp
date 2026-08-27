@@ -3,29 +3,26 @@
 #include <winsock2.h>
 #include <ws2ipdef.h>
 #include <ws2tcpip.h>
-inline void usleep(int micros) {
-    Sleep(micros / 1000);
-}
 #endif
 
 #include <imgui.h>
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/widgets/simple_widgets.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
 #include <config.h>
 #include "utils/proto/kiwisdr.h"
-#include "utils/usleep.h"
 #include "gui/smgui.h"
 #include <filesystem>
 #include <chrono>
 #include <fstream>
+#include <thread>
 #include <gui/brown/kiwisdr_map.h>
 
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "kiwisdr_source",
     /* Description:     */ "KiwiSDR WebSDR source module for SDR++",
     /* Author:          */ "san",
@@ -36,7 +33,7 @@ SDRPP_MOD_INFO{
 
 ConfigManager config;
 
-struct KiwiSDRSourceModule : public ModuleManager::Instance {
+struct KiwiSDRSourceModule : public ModuleInstance {
 
     std::string kiwisdrSite = "sk6ag1.ddns.net:8071";
     std::string kiwisdrLoc = "";
@@ -138,7 +135,7 @@ struct KiwiSDRSourceModule : public ModuleManager::Instance {
                 double now = (double)currentTimeMillis();
                 if (nextSend == 0) {
                     if (bufsize < 200) {
-                        usleep(16000); // some sleep
+                        std::this_thread::sleep_for(std::chrono::microseconds(16000)); // some sleep
                         continue;      // waiting for initial batch
                     }
                     nextSend = now;
@@ -147,7 +144,7 @@ struct KiwiSDRSourceModule : public ModuleManager::Instance {
                     auto delay = nextSend - now;
                     double sleepTime = delay * 1000;
                     if (sleepTime > 0) {
-                        usleep(sleepTime);
+                        std::this_thread::sleep_for(std::chrono::microseconds(sleepTime));
                     }
                 }
                 std::vector<std::complex<float>> toSend;
@@ -219,7 +216,7 @@ struct KiwiSDRSourceModule : public ModuleManager::Instance {
                 auto delay = nextSend - now;
                 double sleepTime = delay * 1000;
                 if (sleepTime > 0) {
-                    usleep(sleepTime);
+                    std::this_thread::sleep_for(std::chrono::microseconds(sleepTime));
                 }
             }
             //            flog::info("Sending samples: {}", incomingBuffer.size());
@@ -297,23 +294,26 @@ struct KiwiSDRSourceModule : public ModuleManager::Instance {
     std::shared_ptr<KiwiSDRClient> client;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     config.setPath(std::string(core::getRoot()) + "/kiwisdr_source_config.json");
     config.load(def);
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     auto root = std::string(core::getRoot());
     return new KiwiSDRSourceModule(name, root);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(ModuleManager::Instance* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (KiwiSDRSourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

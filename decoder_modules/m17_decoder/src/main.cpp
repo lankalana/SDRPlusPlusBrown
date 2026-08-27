@@ -4,7 +4,7 @@
 #include <gui/style.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <filesystem>
 #include <dsp/stream.h>
 #include <dsp/buffer/reshaper.h>
@@ -18,7 +18,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "m17_decoder",
     /* Description:     */ "M17 Digital Voice Decoder for SDR++",
     /* Author:          */ "Ryzerth",
@@ -30,7 +30,7 @@ ConfigManager config;
 
 #define INPUT_SAMPLE_RATE 14400
 
-class M17DecoderModule : public ModuleManager::Instance {
+class M17DecoderModule : public ModuleInstance {
 public:
     M17DecoderModule(std::string name) : diag(0.6, 480) {
         this->name = name;
@@ -288,7 +288,7 @@ private:
     std::chrono::time_point<std::chrono::high_resolution_clock> lastUpdated;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Create default recording directory
     json def = json({});
     config.setPath(std::string(core::getRoot()) + "/m17_decoder_config.json");
@@ -296,15 +296,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new M17DecoderModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (M17DecoderModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

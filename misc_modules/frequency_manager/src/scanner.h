@@ -5,7 +5,7 @@
 #include <deque>
 #include <functional>
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include "frequency_manager.h"
 #include <gui/widgets/snr_meter.h>
 

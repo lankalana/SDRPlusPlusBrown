@@ -1,4 +1,6 @@
 #include "hermes.h"
+#include <chrono>
+#include <thread>
 #include <utils/flog.h>
 
 namespace hermes {
@@ -158,7 +160,7 @@ namespace hermes {
 #ifdef _WIN32
             Sleep(HERMES_I2C_DELAY);
 #else
-            usleep(HERMES_I2C_DELAY*1000);
+            std::this_thread::sleep_for(std::chrono::milliseconds(HERMES_I2C_DELAY));
 #endif
     }
 

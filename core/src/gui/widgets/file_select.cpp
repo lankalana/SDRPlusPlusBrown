@@ -1,4 +1,5 @@
 #include <gui/widgets/file_select.h>
+#include <cstdio>
 #include <regex>
 #include <filesystem>
 #include <gui/file_dialogs.h>
@@ -14,6 +15,13 @@ FileSelect::FileSelect(std::string defaultPath, std::vector<std::string> filter)
 }
 
 bool FileSelect::render(std::string id) {
+    std::optional<std::string> selection;
+    {
+        std::lock_guard lock(resultMutex);
+        selection.swap(selectedPath);
+    }
+    if (selection) { setPath(std::move(*selection), true); }
+
     bool _pathChanged = false;
     float menuColumnWidth = ImGui::GetContentRegionAvail().x;
 
@@ -23,9 +31,9 @@ bool FileSelect::render(std::string id) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.0f, 0.0f, 1.0f));
     }
     ImGui::SetNextItemWidth(menuColumnWidth - buttonWidth);
-    if (ImGui::InputText(id.c_str(), strPath, 2047)) {
-        path = std::string(strPath);
-        std::string expandedPath = expandString(strPath);
+    if (ImGui::InputText(id.c_str(), strPath.data(), strPath.size())) {
+        path = strPath.data();
+        std::string expandedPath = expandString(strPath.data());
         if (!std::filesystem::is_regular_file(expandedPath)) {
             pathValid = false;
         }
@@ -38,15 +46,16 @@ bool FileSelect::render(std::string id) {
         ImGui::PopStyleColor();
     }
     ImGui::SameLine();
-    if (ImGui::Button(("..." + id + "_winselect").c_str(), ImVec2(buttonWidth - 8.0f, 0)) && !dialogOpen) {
-        dialogOpen = true;
+    if (ImGui::Button(("..." + id + "_winselect").c_str(), ImVec2(buttonWidth - 8.0f, 0)) && !dialogOpen.exchange(true)) {
+        auto startingPath = pathValid ? std::filesystem::path(expandString(path)).parent_path().string() : "";
 #if __APPLE__
         // On macOS, run dialog synchronously on main thread to avoid WindowServer/threading issues
-        worker();
+        worker({}, std::move(startingPath));
 #else
         // On other platforms, use background thread
-        if (workerThread.joinable()) { workerThread.join(); }
-        workerThread = std::thread(&FileSelect::worker, this);
+        workerThread = std::jthread([this, startingPath = std::move(startingPath)](std::stop_token stopToken) mutable {
+            worker(stopToken, std::move(startingPath));
+        });
 #endif
     }
 
@@ -64,7 +73,7 @@ void FileSelect::setPath(std::string path, bool markChanged) {
         pathValid = false;
     }
     if (markChanged) { pathChanged = true; }
-    strcpy(strPath, path.c_str());
+    std::snprintf(strPath.data(), strPath.size(), "%s", path.c_str());
 }
 
 std::string FileSelect::expandString(std::string input) {
@@ -76,31 +85,24 @@ bool FileSelect::pathIsValid() {
     return pathValid;
 }
 
-void FileSelect::worker() {
-    auto startingPath = pathValid ? std::filesystem::path(expandString(path)).parent_path().string() : "";
-
+void FileSelect::worker(std::stop_token stopToken, std::string startingPath) {
     auto file = pfd::open_file("Open File", startingPath, _filter);
 
     // Wait for dialog to complete
-    while (!file.ready()) {
+    while (!stopToken.stop_requested() && !file.ready()) {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    if (stopToken.stop_requested()) {
+        dialogOpen = false;
+        return;
     }
 
     std::vector<std::string> res = file.result();
 
-    if (res.size() > 0) {
-        path = res[0];
-        strcpy(strPath, path.c_str());
-        pathChanged = true;
-        flog::info("FileSelect: Selected file: {0}", path);
-    }
-
-    // Update pathValid based on current path
-    auto expandedPath = expandString(path);
-    try {
-        pathValid = std::filesystem::is_regular_file(expandedPath);
-    } catch (const std::exception& e) {
-        pathValid = false;
+    if (!res.empty()) {
+        std::lock_guard lock(resultMutex);
+        selectedPath = std::move(res.front());
+        flog::info("FileSelect: Selected file: {0}", *selectedPath);
     }
 
     dialogOpen = false;

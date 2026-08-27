@@ -8,7 +8,7 @@
 Menu::Menu() {
 }
 
-void Menu::registerEntry(std::string name, void (*drawHandler)(void* ctx), void* ctx, ModuleManager::Instance* inst) {
+void Menu::registerEntry(std::string name, void (*drawHandler)(void* ctx), void* ctx, ModuleInstance* inst) {
     MenuItem_t item;
     item.drawHandler = drawHandler;
     item.ctx = ctx;

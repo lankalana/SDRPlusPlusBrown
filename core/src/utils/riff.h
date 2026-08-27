@@ -1,8 +1,11 @@
 #pragma once
+#include <cstddef>
 #include <mutex>
 #include <fstream>
+#include <span>
 #include <string>
 #include <stack>
+#include <type_traits>
 #include <stdint.h>
 
 namespace riff {
@@ -34,7 +37,14 @@ namespace riff {
         void beginChunk(const char id[4]);
         void endChunk();
 
-        void write(const uint8_t* data, size_t len);
+        void write(std::span<const std::byte> data);
+
+        template <typename T, size_t Extent>
+            requires std::is_trivially_copyable_v<T>
+        void write(std::span<T, Extent> data) {
+            const auto bytes = std::as_bytes(data);
+            write(std::span<const std::byte>{bytes.data(), bytes.size()});
+        }
 
     private:
         void beginRIFF(const char form[4]);

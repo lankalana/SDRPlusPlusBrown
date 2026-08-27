@@ -13,16 +13,14 @@
 #include <stb_image_resize.h>
 #include <gui/gui.h>
 #include <gui/menus/display.h>
-#include <utils/usleep.h>
 #include <http_debug_server.h>
+#include <chrono>
+#include <thread>
 
 #ifndef WIN32
 #include <dlfcn.h>
 #endif
 
-#ifdef BUILD_TESTS
-#include "../../tests/test_utils.h"
-#endif
 
 
 namespace backend {
@@ -239,7 +237,7 @@ namespace backend {
         glfwSwapBuffers(window);
 
         if (glSleepTime != 0) {
-            usleep(glSleepTime * 1000);
+            std::this_thread::sleep_for(std::chrono::milliseconds(glSleepTime));
         }
     }
 
@@ -259,16 +257,6 @@ namespace backend {
     int renderLoop() {
         // Main loop
         while (!glfwWindowShouldClose(window)) {
-#ifdef BUILD_TESTS
-            // Check if we should exit for testing purposes
-            if (sdrpp::test::renderLoopHook.shouldExitRenderLoop()) {
-                break;
-            }
-            // Increment the render loop counter for testing
-            sdrpp::test::renderLoopHook.insideRenderLoop();
-
-#endif
-
             glfwPollEvents();
 
             beginFrame();

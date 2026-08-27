@@ -1,5 +1,8 @@
 #pragma once
+#include <algorithm>
+#include <ranges>
 #include <string>
+#include <utility>
 #include <vector>
 #include <stdexcept>
 
@@ -7,14 +10,26 @@ template <class K, class T>
 class OptionList {
 public:
     OptionList() { updateText(); }
+    OptionList(const OptionList& other) : entries(other.entries) { updateText(); }
+    OptionList(OptionList&& other) : entries(std::move(other.entries)) { updateText(); }
+
+    OptionList& operator=(const OptionList& other) {
+        entries = other.entries;
+        updateText();
+        return *this;
+    }
+
+    OptionList& operator=(OptionList&& other) {
+        entries = std::move(other.entries);
+        updateText();
+        return *this;
+    }
 
     void define(const K& key, const std::string& name, const T& value) {
         if (keyExists(key)) { throw std::runtime_error("Key already exists"); }
         if (nameExists(name)) { throw std::runtime_error("Name already exists"); }
         if (valueExists(value)) { throw std::runtime_error("Value already exists"); }
-        keys.push_back(key);
-        names.push_back(name);
-        values.push_back(value);
+        entries.push_back({ key, name, value });
         updateText();
     }
 
@@ -23,9 +38,7 @@ public:
     }
 
     void undefine(int id) {
-        keys.erase(keys.begin() + id);
-        names.erase(names.begin() + id);
-        values.erase(values.begin() + id);
+        entries.erase(entries.begin() + id);
         updateText();
     }
 
@@ -42,83 +55,82 @@ public:
     }
 
     void clear() {
-        keys.clear();
-        names.clear();
-        values.clear();
+        entries.clear();
         updateText();
     }
 
     int size() const {
-        return keys.size();
+        return static_cast<int>(entries.size());
     }
 
     bool empty() const {
-        return keys.empty();
+        return entries.empty();
     }
 
     bool keyExists(const K& key) const {
-        if (std::find(keys.begin(), keys.end(), key) != keys.end()) { return true; }
-        return false;
+        return std::ranges::find(entries, key, &Entry::key) != entries.end();
     }
 
     bool nameExists(const std::string& name) const {
-        if (std::find(names.begin(), names.end(), name) != names.end()) { return true; }
-        return false;
+        return std::ranges::find(entries, name, &Entry::name) != entries.end();
     }
 
     bool valueExists(const T& value) const {
-        if (std::find(values.begin(), values.end(), value) != values.end()) { return true; }
-        return false;
+        return std::ranges::find(entries, value, &Entry::value) != entries.end();
     }
 
     int keyId(const K& key) const {
-        auto it = std::find(keys.begin(), keys.end(), key);
-        if (it == keys.end()) { throw std::runtime_error("Key doesn't exists"); }
-        return std::distance(keys.begin(), it);
+        auto it = std::ranges::find(entries, key, &Entry::key);
+        if (it == entries.end()) { throw std::runtime_error("Key doesn't exist"); }
+        return static_cast<int>(std::distance(entries.begin(), it));
     }
 
     int nameId(const std::string& name) const {
-        auto it = std::find(names.begin(), names.end(), name);
-        if (it == names.end()) { throw std::runtime_error("Name doesn't exists"); }
-        return std::distance(names.begin(), it);
+        auto it = std::ranges::find(entries, name, &Entry::name);
+        if (it == entries.end()) { throw std::runtime_error("Name doesn't exist"); }
+        return static_cast<int>(std::distance(entries.begin(), it));
     }
 
     int valueId(const T& value) const {
-        auto it = std::find(values.begin(), values.end(), value);
-        if (it == values.end()) { throw std::runtime_error("Value doesn't exists"); }
-        return std::distance(values.begin(), it);
+        auto it = std::ranges::find(entries, value, &Entry::value);
+        if (it == entries.end()) { throw std::runtime_error("Value doesn't exist"); }
+        return static_cast<int>(std::distance(entries.begin(), it));
     }
 
     inline const K& key(int id) const {
-        return keys[id];
+        return entries[id].key;
     }
 
     inline const std::string& name(int id) const {
-        return names[id];
+        return entries[id].name;
     }
 
     inline const T& value(int id) const {
-        return values[id];
+        return entries[id].value;
     }
 
     inline const T& operator[](int& id) const {
-        return values[id];
+        return entries[id].value;
     }
 
-    const char* txt = NULL;
+    const char* txt = nullptr;
 
 private:
+    struct Entry {
+        K key;
+        std::string name;
+        T value;
+    };
+
     void updateText() {
         _txt.clear();
-        for (auto& name : names) {
-            _txt += name;
+        for (const auto& entry : entries) {
+            _txt += entry.name;
             _txt += '\0';
         }
         txt = _txt.c_str();
     }
 
-    std::vector<K> keys;
-    std::vector<std::string> names;
-    std::vector<T> values;
+    std::vector<Entry> entries;
     std::string _txt;
 };

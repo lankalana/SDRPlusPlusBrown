@@ -4,7 +4,8 @@
 #include "source.h"
 #include "sink.h"
 #include "trx.h"
-#include <module.h>
+#include <sdrpp_export.h>
+#include <utils/event.h>
 
 namespace sigpath {
     SDRPP_EXPORT Event<bool> txState;

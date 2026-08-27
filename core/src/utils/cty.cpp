@@ -1,25 +1,23 @@
 #define _USE_MATH_DEFINES
+#include <algorithm>
 #include <cmath>
 #include <core.h>
 #include "cty.h"
 #include <fstream>
+#include <numbers>
 #include <utils/strings.h>
 
 namespace utils {
 
     static bool isSomeWeirdName(const std::string &basicString) {
-        int countDashes = 0;
-        for(auto c: basicString) {
-            if (c == '-') {
-                countDashes++;
-            }
-        }
-        return countDashes > 1;
+        return std::ranges::count(basicString, '-') > 1;
     }
 
 
     static bool isValidLocatorString(const std::string &locatorString) {
-        return tolower(locatorString[0]) >= 'a' && tolower(locatorString[0]) <= 'r' && tolower(locatorString[1]) >= 'a' && tolower(locatorString[1]) <= 'r'
+        if (locatorString.length() != 4 && locatorString.length() != 6) { return false; }
+        return std::tolower(static_cast<unsigned char>(locatorString[0])) >= 'a' && std::tolower(static_cast<unsigned char>(locatorString[0])) <= 'r'
+               && std::tolower(static_cast<unsigned char>(locatorString[1])) >= 'a' && std::tolower(static_cast<unsigned char>(locatorString[1])) <= 'r'
                && locatorString[2] >= '0' && locatorString[2] <= '9' && locatorString[3] >= '0' && locatorString[3] <= '9'
                && (locatorString.length() == 4 || (locatorString.length() == 6 && locatorString[4] >= 'a' && locatorString[4] <= 'x' && locatorString[5] >= 'a' && locatorString[5] <= 'x'));
     }
@@ -28,7 +26,7 @@ namespace utils {
 
 
     static int charToNumber(char c) {
-        return std::toupper(c) - CHAR_CODE_OFFSET;
+        return std::toupper(static_cast<unsigned char>(c)) - CHAR_CODE_OFFSET;
     }
 
 
@@ -46,8 +44,8 @@ namespace utils {
 
         auto fieldLng = charToNumber(locatorString[0]) * 20;
         auto fieldLat = charToNumber(locatorString[1]) * 10;
-        auto squareLng = std::stod(std::string()+locatorString[2]) * 2;
-        auto squareLat = std::stod(std::string()+locatorString[3]);
+        auto squareLng = (locatorString[2] - '0') * 2;
+        auto squareLat = locatorString[3] - '0';
         auto subsquareLng = (charToNumber(locatorString[4]) + 0.5) / 12;
         auto subsquareLat = (charToNumber(locatorString[5]) + 0.5) / 24;
 
@@ -58,23 +56,14 @@ namespace utils {
     }
 
     static double degToRad(double d) {
-        while(d < 0) {
-            d += 360;
-        }
-        while(d >= 360) {
-            d -= 360;
-        }
-        return d * M_PI / 180;
+        d = std::fmod(d, 360.0);
+        if (d < 0) { d += 360.0; }
+        return d * std::numbers::pi / 180.0;
     }
 
     static double radToDeg(double rad) {
-        double d = rad / M_PI * 180;
-        while(d < 0) {
-            d += 360;
-        }
-        while(d >= 360) {
-            d -= 360;
-        }
+        double d = std::fmod(rad / std::numbers::pi * 180.0, 360.0);
+        if (d < 0) { d += 360.0; }
         return d;
     }
 
@@ -86,12 +75,7 @@ namespace utils {
         auto fromLat = degToRad(fromCoords.lat); // fi 1
         auto toLat = degToRad(toCoords.lat); // fi 2
         auto a = pow(sin(dLat / 2), 2) + pow(sin(dLon / 2), 2) * cos(fromLat) * cos(toLat);
-        if (a < 0) {
-            a = 0;
-        }
-        if (a > 1) {
-            a = 1;
-        }
+        a = std::clamp(a, 0.0, 1.0);
         auto b = 2 * atan2(sqrt(a), sqrt(1 - a));
 
         auto y = sin(dLon) * cos(toLat);
@@ -100,7 +84,7 @@ namespace utils {
         auto az = atan2(y, x);
 
         if (az < 0) {
-            az += 2 * M_PI;
+            az += 2 * std::numbers::pi;
         }
 
         return { az, b * 6371};
@@ -229,7 +213,7 @@ namespace utils {
         for(auto & dxcc1 : dxcc) {
             for(auto &prefix: dxcc1.prefixes) {
                 if (!prefix.exact) {
-                    if (callsign.find(prefix.value) == 0)  {    // last one is more important
+                    if (callsign.starts_with(prefix.value))  {    // last one is more important
                         if (prefix.value.length() >= rv.value.length()) {
                             rv = prefix;
                             rv.ll = dxcc1.ll;

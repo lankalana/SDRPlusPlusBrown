@@ -22,8 +22,6 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "../../tests/test_utils.h"
-
 #ifdef __APPLE__
 #include <sys/wait.h>
 #include <signal.h>
@@ -61,10 +59,6 @@ void setproctitle(const char* fmt, ...) {
 #include <stb_image_resize.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
-
-#ifdef BUILD_TESTS
-#include "../../tests/test_runner.h"
-#endif
 
 #ifdef _WIN32
 #include <Windows.h>
@@ -489,18 +483,6 @@ int sdrpp_main(int argc, char* argv[]) {
             flog::info("  - {}", plugin);
         }
     }
-    // Handle test mode if requested
-    if (core::args["test"].type == CLI_ARG_TYPE_STRING && !core::args["test"].s().empty()) {
-        std::string testName = core::args["test"].s();
-        flog::info("Running in test mode: {}", testName);
-
-        // Run the specified test
-        sdrpp::test::TestRegistry::runTest(testName);
-    }
-    else {
-        sdrpp::test::renderLoopHook.verifyResultsFrames = -1;
-    }
-
 #endif
 
     bool serverMode = (bool)core::args["server"];
@@ -582,6 +564,7 @@ int sdrpp_main(int argc, char* argv[]) {
         { "WebSDR View", false },
         { "Noise Reduction logmmse", false },
         { "FT8/FT4 Decoder", false },
+        { "ABD-S Decoder", false },
         { "Rigctl Server", false },
         { "Module Manager", false },
     };
@@ -697,6 +680,8 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["moduleInstances"]["VHF Digital Modes"]["enabled"] = true;
     defConfig["moduleInstances"]["TETRA Demodulator"]["module"] = "ch_tetra_demodulator";
     defConfig["moduleInstances"]["TETRA Demodulator"]["enabled"] = false;
+    defConfig["moduleInstances"]["ABD-S Decoder"]["module"] = "adsb_decoder";
+    defConfig["moduleInstances"]["ABD-S Decoder"]["enabled"] = true;
     // defConfig["moduleInstances"]["Rigctl Client"] = "rigctl_client";
     // TODO: Enable rigctl_client when ready
     // defConfig["moduleInstances"]["Scanner"] = "scanner";
@@ -911,13 +896,14 @@ int sdrpp_main(int argc, char* argv[]) {
 
     backend::renderLoop();
 
+    httpdebug::stopHttpServer();
     gui::mainWindow.end();
 
     // On android, none of this shutdown should happen due to the way the UI works
 #ifndef __ANDROID__
     // Shut down all modules
     for (auto& [name, mod] : core::moduleManager.modules) {
-        mod.end();
+        mod.api->end();
     }
 
     // Terminate backend (TODO: CHECK RETURN VALUE)
@@ -930,21 +916,7 @@ int sdrpp_main(int argc, char* argv[]) {
     core::configManager.save();
 #endif
 
-#ifdef BUILD_TESTS
-    if (core::args["test"].type == CLI_ARG_TYPE_STRING && !core::args["test"].s().empty()) {
-        std::string testName = core::args["test"].s();
-        if (sdrpp::test::failed) {
-            flog::error("TEST FAILED");
-            return 1;
-        }
-        else {
-            flog::info("TEST OK");
-            return 0;
-        }
-    }
-#else
     flog::info("Exiting successfully");
-#endif
 
 
     return 0;

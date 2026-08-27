@@ -4,12 +4,13 @@
 // Based on the spec http://docs.oasis-open.org/mqtt/mqtt/v3.1.1/os/mqtt-v3.1.1-os.html#_Toc398718016
 
 #include <inttypes.h>
+#include <chrono>
 #include <string>
 #include <functional>
 #include <string.h>
+#include <thread>
 #include "http.h"
 #include "ctm.h"
-#include <utils/usleep.h>
 
 namespace net {
 
@@ -157,7 +158,7 @@ namespace net {
 #endif
                     if (n == 0 && (uint32_t) (currentTimeMillis() - start) > READ_TIMEOUT) break;
                     if (!blocking && n == 0 && remain == len) break; // available() sometimes gives false positive, exit if nothing
-                    if (n == 0) usleep(1000);
+                    if (n == 0) std::this_thread::sleep_for(std::chrono::microseconds(1000));
                     remain -= n;
                 }
                 return remain == 0;

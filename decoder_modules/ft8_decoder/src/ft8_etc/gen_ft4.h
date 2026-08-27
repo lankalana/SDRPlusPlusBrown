@@ -33,7 +33,6 @@ public:
     explicit GenFt4(bool fl);//f_dec_gen = dec=true gen=false
     ~GenFt4();
  
-    int genft4(QString,short *t_iwave,double samp_rate,double f0);//,int i3b ,int &ntxslot   
     void make_c77_i4tone(bool *c77,int *i4tone);//,bool f_gen,bool f_addc           
     QString GetUnpackMsg(){return s_unpack_msg;};
     /*void save_hash_call_from_dec(QString c13,int n10,int n12,int n22);
@@ -47,7 +46,6 @@ private:
     GenPomFt genPomFt;       
     PackUnpackMsg77 TPackUnpackMsg77;
     QString s_unpack_msg;
-    double twopi; 
     //QString format_msg(char *message_in, int cmsg);
 };
 #endif

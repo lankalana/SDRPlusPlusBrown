@@ -1,5 +1,6 @@
 #pragma once
 #include "tap.h"
+#include "../types.h"
 #include "../math/sinc.h"
 #include "../math/hz_to_rads.h"
 #include "../window/nuttall.h"

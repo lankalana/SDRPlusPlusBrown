@@ -1,4 +1,7 @@
 #include "command_args.h"
+#include <algorithm>
+#include <charconv>
+#include <cctype>
 #include <filesystem>
 
 void CommandArgsParser::defineAll() {
@@ -45,16 +48,16 @@ int CommandArgsParser::parse(int argc, char* argv[]) {
         std::string arg = argv[i];
 
         // Check for long and short name arguments
-        if (!arg.rfind("--", 0)) {
+        if (arg.starts_with("--")) {
             arg = arg.substr(2);
         }
-        else if (!arg.rfind("-", 0)) {
-            if (aliases.find(arg[1]) == aliases.end()) {
+        else if (arg.size() == 2 && arg.starts_with('-')) {
+            if (!aliases.contains(arg[1])) {
                 printf("Unknown argument\n");
                 showHelp();
                 return -1;
             }
-            arg = aliases[arg[1]];
+            arg = aliases.at(arg[1]);
         }
         else {
             printf("Invalid argument\n");
@@ -63,14 +66,14 @@ int CommandArgsParser::parse(int argc, char* argv[]) {
         }
 
         // Make sure the argument exists
-        if (args.find(arg) == args.end()) {
+        if (!args.contains(arg)) {
             printf("Unknown argument\n");
             showHelp();
             return -1;
         }
 
         // Parse depending on type
-        CLIArg& carg = args[arg];
+        CLIArg& carg = args.at(arg);
 
         // If not void, make sure an argument is available and retrieve it
         if (carg.type != CLI_ARG_TYPE_VOID && i + 1 >= argc) {
@@ -89,13 +92,13 @@ int CommandArgsParser::parse(int argc, char* argv[]) {
         arg = argv[++i];
         if (carg.type == CLI_ARG_TYPE_BOOL) {
             // Enforce lower case
-            for (int i = 0; i < arg.size(); i++) { arg[i] = std::tolower(arg[i]); }
+            std::ranges::transform(arg, arg.begin(), [](unsigned char c) { return std::tolower(c); });
 
             if (arg == "true" || arg == "on" || arg == "1") {
                 carg.bval = true;
             }
             else if (arg == "false" || arg == "off" || arg == "0") {
-                carg.bval = true;
+                carg.bval = false;
             }
             else {
                 printf("Invalid argument, expected bool (true, false, on, off, 1, 0)\n");
@@ -104,20 +107,16 @@ int CommandArgsParser::parse(int argc, char* argv[]) {
             }
         }
         else if (carg.type == CLI_ARG_TYPE_INT) {
-            try {
-                carg.ival = std::stoi(arg);
-            }
-            catch (const std::exception& e) {
+            const auto [end, error] = std::from_chars(arg.data(), arg.data() + arg.size(), carg.ival);
+            if (error != std::errc{} || end != arg.data() + arg.size()) {
                 printf("Invalid argument, failed to parse integer\n");
                 showHelp();
                 return -1;
             }
         }
         else if (carg.type == CLI_ARG_TYPE_FLOAT) {
-            try {
-                carg.fval = std::stod(arg);
-            }
-            catch (const std::exception& e) {
+            const auto [end, error] = std::from_chars(arg.data(), arg.data() + arg.size(), carg.fval);
+            if (error != std::errc{} || end != arg.data() + arg.size()) {
                 printf("Invalid argument, failed to parse float\n");
                 showHelp();
                 return -1;

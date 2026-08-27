@@ -4,7 +4,7 @@
 #include <gui/style.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <filesystem>
 #include <dsp/routing/splitter.h>
 #include <dsp/buffer/reshaper.h>
@@ -15,7 +15,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + b).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "ryfi_decoder",
     /* Description:     */ "RyFi decoder for SDR++",
     /* Author:          */ "Ryzerth",
@@ -30,7 +30,7 @@ SDRPP_MOD_INFO{
 #define SYMBOL_DIAG_RATE    30
 #define SYMBOL_DIAG_COUNT   1024
 
-class RyFiDecoderModule : public ModuleManager::Instance {
+class RyFiDecoderModule : public ModuleInstance {
 public:
     RyFiDecoderModule(std::string name) {
         this->name = name;
@@ -122,18 +122,21 @@ private:
     ImGui::ConstellationDiagram constDiagram;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
 
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new RyFiDecoderModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (RyFiDecoderModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
 
 }
+
+SDRPP_MODULE_EXPORT_API;

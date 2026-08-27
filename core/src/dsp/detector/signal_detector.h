@@ -114,7 +114,7 @@ namespace dsp::detector {
         int bufferPos = 0;
 
         std::vector<complex_t> buffer;
-        float* fftWindowBuf = nullptr;
+        std::vector<float> fftWindow;
         dsp::arrays::ComplexArray fftInArray;
         dsp::arrays::Arg<dsp::arrays::FFTPlan> fftPlan;
 

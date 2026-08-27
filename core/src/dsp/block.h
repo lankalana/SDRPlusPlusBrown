@@ -130,15 +130,18 @@ namespace dsp {
         // }
 
         void registerInput(untyped_stream* inStream) {
-            if (inputs.size() == 1 && inStream) {
-                abort();
-            } else {
+            // Keep one registration per logical input, including aliases. Lifecycle operations
+            // must wake every input slot even when multiple slots reference the same stream.
+            if (inStream) {
                 inputs.push_back(inStream);
             }
         }
 
         void unregisterInput(untyped_stream* inStream) {
-            inputs.erase(std::remove(inputs.begin(), inputs.end(), inStream), inputs.end());
+            auto input = std::find(inputs.begin(), inputs.end(), inStream);
+            if (input != inputs.end()) {
+                inputs.erase(input);
+            }
         }
 
         void registerOutput(untyped_stream* outStream) {

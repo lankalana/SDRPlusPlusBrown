@@ -1,7 +1,7 @@
 #pragma once
+#include <numbers>
 
-#define DB_M_PI     3.14159265358979323846
-#define FL_M_PI     3.1415926535f
-
-#define DB_M_SQRT2  1.4142135623730951
-#define FL_M_SQRT2  1.4142135623f
+inline constexpr double DB_M_PI = std::numbers::pi;
+inline constexpr float FL_M_PI = std::numbers::pi_v<float>;
+inline constexpr double DB_M_SQRT2 = std::numbers::sqrt2;
+inline constexpr float FL_M_SQRT2 = std::numbers::sqrt2_v<float>;

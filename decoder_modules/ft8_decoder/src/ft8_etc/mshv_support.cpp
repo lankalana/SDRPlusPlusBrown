@@ -1,10 +1,10 @@
 
 
 #include "mshv_support.h"
+#include <mutex>
 
 #include <cassert>
 
-#include "pfx_sfx.h"
 #include "decoderpom.h"
 #include <functional>
 #include <utils/strings.h>
@@ -247,15 +247,15 @@ QString QString::operator+(const char* s) {
 
 
 void mshv_init() {
-    static int initialized = 0;
-    if (initialized++) return;
-    for (int i = 0; i < 256; i++) {
-        mshv_chars[i] = i;
-        mshv_chars_m1[i] = i;
-        mshv_chars_m1[i]--;
-    }
-    init_pfx_sfx();
-    initDecoderPom();
+    static std::once_flag initialized;
+    std::call_once(initialized, [] {
+        for (int i = 0; i < 256; i++) {
+            mshv_chars[i] = i;
+            mshv_chars_m1[i] = i;
+            mshv_chars_m1[i]--;
+        }
+        initDecoderPom();
+    });
 }
 
 std::string arrayToString(const char *name, const float *arr, int len) {

@@ -98,7 +98,7 @@ namespace ImGui {
         void pushFFT();
 
         void updatePallette(float colors[][3], int colorCount);
-        void updatePalletteFromArray(float* colors, int colorCount);
+        void updatePalletteFromArray(const float* colors, int colorCount);
 
         void setCenterFrequency(double freq);
         double getCenterFrequency();
@@ -257,21 +257,14 @@ namespace ImGui {
         void onResize();
         void updateWaterfallTexture();
 
-        enum {
-            TEXTURE_SPECIFY_REQUIRED,
-            TEXTURE_PIXELS_CHANGE_REQUIRED,
-            TEXTURE_OK
-        };
-
-        void setTextureStatus(int index, int value);
-        void updateWaterfallTexturesIfNeeded();
-        void updateWaterfallTextureIfNeeded(int textureIndex, int startRowIndex);
-        void specifyTexture(int textureIndex, const uint8_t* pixels) const;
-        void changeTexturePixels(int textureIndex, const uint8_t* pixels) const;
         void drawWaterfallImages();
 
         void updateAllVFOs(bool checkRedrawRequired = false);
         bool calculateVFOSignalInfo(float* fftLine, WaterfallVFO* vfo, float& strength, float& snr);
+        void updateSignalInfo(float* fftLine);
+        void commitWaterfallRow();
+        void applyFFTPostProcessing();
+        void resizeRawFFTHistory();
 
         bool waterfallUpdate = false;
 
@@ -321,7 +314,11 @@ namespace ImGui {
         float waterfallMax;
 
         //std::vector<std::vector<float>> rawFFTs;
-        int rawFFTSize;
+        int rawFFTSize = 1;
+        std::vector<float> rawFFTsStorage;
+        std::vector<float> latestFFTStorage;
+        std::vector<float> latestFFTHoldStorage;
+        std::vector<float> smoothingBufStorage;
         float* rawFFTs = NULL;
         float* latestFFT = NULL;
         float* latestFFTHold = NULL;
@@ -329,8 +326,10 @@ namespace ImGui {
         int currentFFTLine = 0;
         int fftLines = 0;
 
-        uint32_t* waterfallFb;
-        float* tempDataForUpdateWaterfallFb;
+        std::vector<uint32_t> waterfallFbStorage;
+        std::vector<float> tempDataForUpdateWaterfallFbStorage;
+        uint32_t* waterfallFb = NULL;
+        float* tempDataForUpdateWaterfallFb = NULL;
 
         int waterfallFbHeadRowIndex = 0;
 
@@ -339,8 +338,10 @@ namespace ImGui {
         int waterfallHeadSectionIndex = 0;
         int waterfallHeadSectionHeight = 0;
 
-        GLuint* waterfallTexturesIds;
-        int* waterfallTexturesStatuses;
+        std::vector<GLuint> waterfallTexturesIdsStorage;
+        std::vector<int> waterfallTexturesStatusesStorage;
+        GLuint* waterfallTexturesIds = NULL;
+        int* waterfallTexturesStatuses = NULL;
 
         bool draggingFW = false;
         int FFTAreaHeight;
@@ -376,6 +377,14 @@ namespace ImGui {
 
         int rawFFTIndex(double frequency) const;
         void testAlloc(const std::string& where);
+
+        std::vector<ImVec2> fftTraceStorage;
+        std::vector<ImVec2> fftHoldTraceStorage;
+        std::vector<float> signalInfoScratch;
+        int rawFFTLineCapacity = 1;
+        GLuint waterfallTextureId = 0;
+        bool waterfallTextureNeedsSpecify = true;
+        std::vector<uint8_t> waterfallRowsDirty;
     };
 
 

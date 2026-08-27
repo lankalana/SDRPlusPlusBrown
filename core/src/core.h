@@ -1,7 +1,7 @@
 #pragma once
 #include <config.h>
-#include <module.h>
-#include <module_com.h>
+#include <module/module_manager.h>
+#include <module/module_com.h>
 #include "command_args.h"
 #include <atomic>
 #include <string>

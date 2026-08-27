@@ -18,24 +18,25 @@ namespace dsp::noise_reduction {
 
         void setRate(double rate) {
             assert(base_type::_block_init);
-            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
+            std::lock_guard<std::mutex> lck(stateMtx);
             _rate = rate;
             _invRate = 1.0f - _rate;
         }
 
         void setLevel(double level) {
             assert(base_type::_block_init);
-            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
+            std::lock_guard<std::mutex> lck(stateMtx);
             _level = level;
         }
 
         void reset() {
             assert(base_type::_block_init);
-            std::lock_guard<std::recursive_mutex> lck(base_type::ctrlMtx);
+            std::lock_guard<std::mutex> lck(stateMtx);
             amp = 1.0f;
         }
 
         inline int process(int count, complex_t* in, complex_t* out) {
+            std::lock_guard<std::mutex> lck(stateMtx);
             for (int i = 0; i < count; i++) {
                 // Get signal amplitude
                 float inAmp = in[i].amplitude();
@@ -68,6 +69,7 @@ namespace dsp::noise_reduction {
         }
 
     protected:
+        std::mutex stateMtx;
         float _rate;
         float _invRate;
         float _level;

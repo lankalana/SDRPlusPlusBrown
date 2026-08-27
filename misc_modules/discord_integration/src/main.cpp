@@ -1,6 +1,6 @@
 #include <imgui.h>
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/style.h>
 #include <core.h>
@@ -8,7 +8,7 @@
 #include <thread>
 #include <radio_interface.h>
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "discord_integration",
     /* Description:     */ "Discord Rich Presence module for SDR++",
     /* Author:          */ "Cam K.;Ryzerth",
@@ -18,7 +18,7 @@ SDRPP_MOD_INFO{
 
 #define DISCORD_APP_ID "834590435708108860"
 
-class DiscordIntegrationModule : public ModuleManager::Instance {
+class DiscordIntegrationModule : public ModuleInstance {
 public:
     DiscordIntegrationModule(std::string name) {
         this->name = name;
@@ -159,19 +159,21 @@ private:
     bool workerRunning;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     // Nothing here
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new DiscordIntegrationModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (DiscordIntegrationModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     // Nothing here
 }
 
+SDRPP_MODULE_EXPORT_API;

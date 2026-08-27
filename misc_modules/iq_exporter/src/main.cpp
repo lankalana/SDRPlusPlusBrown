@@ -1,6 +1,6 @@
 #include <utils/net.h>
 #include <imgui.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <gui/style.h>
 #include <utils/optionlist.h>
@@ -12,7 +12,7 @@
 #include <gui/dialogs/dialog_box.h>
 #include <core.h>
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "iq_exporter",
     /* Description:     */ "Export raw IQ through TCP or UDP",
     /* Author:          */ "Ryzerth",
@@ -41,7 +41,7 @@ enum SampleType {
     SAMPLE_TYPE_FLOAT32
 };
 
-class IQExporterModule : public ModuleManager::Instance {
+class IQExporterModule : public ModuleInstance {
 public:
     IQExporterModule(std::string name) {
         this->name = name;
@@ -568,7 +568,7 @@ private:
     std::shared_ptr<net::Listener> listener;
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
     json def = json({});
     std::string root = std::string(core::getRoot());
     config.setPath(root + "/iq_exporter_config.json");
@@ -576,15 +576,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new IQExporterModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(void* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (IQExporterModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

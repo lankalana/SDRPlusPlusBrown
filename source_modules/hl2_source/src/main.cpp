@@ -6,7 +6,7 @@
 #include <imgui.h>
 #include <gui/smgui.h>
 #include <utils/flog.h>
-#include <module.h>
+#include <module/module_api.h>
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
@@ -19,7 +19,7 @@
 
 #define CONCAT(a, b) ((std::string(a) + (b)).c_str())
 
-SDRPP_MOD_INFO{
+SDRPP_MODULE_INFO{
     /* Name:            */ "hl2_source",
     /* Description:     */ "Hermes Lite 2 module for SDR++",
     /* Author:          */ "sannysanoff",
@@ -37,7 +37,7 @@ std::string discoveredToIp(DISCOVERED& d) {
     return str;
 }
 
-class HermesLite2SourceModule : public ModuleManager::Instance, public Transmitter {
+class HermesLite2SourceModule : public ModuleInstance, public Transmitter {
 
     int adcGain = 0;
     bool sevenRelays[10]{};
@@ -739,7 +739,7 @@ public:
     }
 };
 
-MOD_EXPORT void _INIT_() {
+MOD_EXPORT void sdrppModuleInit() {
 #ifdef WIN32
     int iResult;
 
@@ -760,15 +760,18 @@ MOD_EXPORT void _INIT_() {
     config.enableAutoSave();
 }
 
-MOD_EXPORT ModuleManager::Instance* _CREATE_INSTANCE_(std::string name) {
+MOD_EXPORT void* sdrppModuleCreateInstance(const char* instanceName, size_t instanceNameLen) {
+    std::string name(instanceName, instanceNameLen);
     return new HermesLite2SourceModule(name);
 }
 
-MOD_EXPORT void _DELETE_INSTANCE_(ModuleManager::Instance* instance) {
+MOD_EXPORT void sdrppModuleDestroyInstance(void* instance) {
     delete (HermesLite2SourceModule*)instance;
 }
 
-MOD_EXPORT void _END_() {
+MOD_EXPORT void sdrppModuleEnd() {
     config.disableAutoSave();
     config.save();
 }
+
+SDRPP_MODULE_EXPORT_API;

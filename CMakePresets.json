@@ -9,6 +9,7 @@
         "OPT_BACKEND_GLFW": "ON",
         "OPT_BACKEND_ANDROID": "OFF",
         "OPT_BUILD_AUDIO_SOURCE": "ON",
+        "OPT_BUILD_FILE_SOURCE": "ON",
         "OPT_BUILD_SDRPLAY_SOURCE": "ON",
         "OPT_BUILD_AUDIO_SINK": "ON",
         "OPT_BUILD_NEW_PORTAUDIO_SINK": "ON",
@@ -20,17 +21,18 @@
         "OPT_BUILD_RADIO": "ON",
         "OPT_BUILD_FT8_DECODER": "ON",
         "OPT_BUILD_ADSB_DECODER": "ON",
-        "OPT_BUILD_RYFI_DECODER": "ON",
+        "OPT_BUILD_RYFI_DECODER": "OFF",
         "OPT_BUILD_VOR_RECEIVER": "ON",
         "OPT_BUILD_FREQUENCY_MANAGER": "ON",
         "OPT_BUILD_IQ_EXPORTER": "ON",
         "OPT_BUILD_RECORDER": "ON",
         "OPT_BUILD_SCANNER": "ON",
         "OPT_BUILD_NOISE_REDUCTION_LOGMMSE": "ON",
-        "USE_INTERNAL_LIBCORRECT": "ON",
+        "USE_INTERNAL_LIBCORRECT": "OFF",
         "USE_BUNDLE_DEFAULTS": "OFF",
         "COPY_MSVC_REDISTRIBUTABLES": "OFF",
-        "SDRPP_USE_BUNDLED_VOLK": "ON"
+        "SDRPP_USE_BUNDLED_VOLK": "ON",
+        "BUILD_TESTS": "ON"
       }
     },
     {

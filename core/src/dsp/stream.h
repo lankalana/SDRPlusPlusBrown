@@ -1,17 +1,24 @@
 #pragma once
+#include <assert.h>
+#include <chrono>
 #include <string.h>
 #include <mutex>
 #include <atomic>
 #include <functional>
+#include <new>
 #include <utils/flog.h>
 #include <condition_variable>
+#include <thread>
 //#include <volk/volk.h>
-#include <utils/usleep.h>
 
 #include "buffer/buffer.h"
 
-// 1MSample buffer
-#define STREAM_BUFFER_SIZE 1000000
+// The stream handoff is single-producer/single-consumer. Multiple independent readers are not supported.
+inline constexpr int DEFAULT_STREAM_BUFFER_SIZE = 1000000;
+#define STREAM_BUFFER_SIZE DEFAULT_STREAM_BUFFER_SIZE
+
+struct lazy_stream_t {};
+inline constexpr lazy_stream_t lazy_stream{};
 
 extern void logDebugMessage(const char *msg);
 
@@ -36,16 +43,16 @@ namespace dsp {
     public:
 
         const char *origin;
-        const char originBuf[100] = "stream without origin";
+        char originBuf[100] = "stream without origin";
         bool debugTraffic = false;
         std::function<void(const T*, int)> outputHook;
         std::function<void(const T*, int)> inputHook;
         int nReaders = 0;
 
         stream() {
-            static int streamCount = 0;
-            int sc = streamCount++;
-            snprintf((char*)originBuf, sizeof(originBuf), "stream %d", sc);
+            static std::atomic_int streamCount = 0;
+            int sc = streamCount.fetch_add(1, std::memory_order_relaxed);
+            snprintf(originBuf, sizeof(originBuf), "stream %d", sc);
             this->origin = &originBuf[0];
             initBuffers();
         }
@@ -53,18 +60,10 @@ namespace dsp {
             this->origin = origin;
         }
 
+        stream(lazy_stream_t, const char *origin) : origin(origin) {}
+
         void initBuffers() {
-            bufferSize = STREAM_BUFFER_SIZE;
-            writeBuf0 = buffer::alloc<T>(bufferSize);
-            if (!writeBuf0)
-                abort();
-            //buffer::register_buffer_dbg(writeBuf0, origin ? origin: "stream without origin");
-            readBuf0 = buffer::alloc<T>(bufferSize);
-            if (!readBuf0)
-                abort();
-            //buffer::register_buffer_dbg(readBuf0, origin ? origin: "stream without origin");
-            readBuf = readBuf0;
-            writeBuf = writeBuf0;
+            ensureCapacity(DEFAULT_STREAM_BUFFER_SIZE);
         }
 
         virtual ~stream() {
@@ -72,19 +71,16 @@ namespace dsp {
         }
 
         virtual void setBufferSize(int samples) {
-            if (!writeBuf) {
-                abort();
-            }
-            buffer::free(writeBuf0);
-            buffer::free(readBuf0);
-            bufferSize = samples;
-            writeBuf0 = buffer::alloc<T>(samples);
-            readBuf0 = buffer::alloc<T>(samples);
-            //buffer::register_buffer_dbg(writeBuf0, origin ? origin: "stream without origin, sbs");
-            //buffer::register_buffer_dbg(readBuf0, origin ? origin: "stream without origin, sbs");
-            readBuf = readBuf0;
-            writeBuf = writeBuf0;
+            resizeCapacity(samples, true);
+        }
 
+        void ensureCapacity(int samples) {
+            if (samples <= bufferSize) { return; }
+            resizeCapacity(samples, false);
+        }
+
+        bool isAllocated() const {
+            return writeBuf0 && readBuf0;
         }
 
         int getBufferSize() const {
@@ -92,6 +88,11 @@ namespace dsp {
         }
 
         virtual inline bool swap(int size) {
+            if (size < 0 || size > bufferSize || !writeBuf || !readBuf) {
+                flog::error("Stream {} rejected swap of {} samples with capacity {}", origin, size, bufferSize);
+                assert(size >= 0 && size <= bufferSize && writeBuf && readBuf);
+                return false;
+            }
             {
                 // Wait to either swap or stop
                 std::unique_lock<std::mutex> lck(swapMtx);
@@ -101,7 +102,6 @@ namespace dsp {
                 if (writerStop) { return false; }
 
                 // Swap buffers
-                dataSize = size;
                 T* temp = writeBuf;
                 writeBuf = readBuf;
                 readBuf = temp;
@@ -111,10 +111,33 @@ namespace dsp {
             // Notify reader that some data is ready
             {
                 std::lock_guard<std::mutex> lck(rdyMtx);
+                dataSize = size;
                 dataReady = true;
             }
             rdyCV.notify_all();
 
+            return true;
+        }
+
+        inline bool tryWrite(const T* data, int size) {
+            if (!data || size < 0 || size > bufferSize || !writeBuf || !readBuf) {
+                return false;
+            }
+            {
+                std::lock_guard<std::mutex> lck(swapMtx);
+                if (!canSwap || writerStop) { return false; }
+                memcpy(writeBuf, data, size * sizeof(T));
+                T* temp = writeBuf;
+                writeBuf = readBuf;
+                readBuf = temp;
+                canSwap = false;
+            }
+            {
+                std::lock_guard<std::mutex> lck(rdyMtx);
+                dataSize = size;
+                dataReady = true;
+            }
+            rdyCV.notify_all();
             return true;
         }
 
@@ -167,6 +190,7 @@ namespace dsp {
         }
 
         virtual void clearWriteStop() {
+            std::lock_guard<std::mutex> lck(swapMtx);
             writerStop = false;
         }
 
@@ -183,15 +207,17 @@ namespace dsp {
                         break;
                     }
                 }
-                usleep(1000);
+                std::this_thread::sleep_for(std::chrono::microseconds(1000));
             }
         }
 
         virtual void clearReadStop() {
+            std::lock_guard<std::mutex> lck(rdyMtx);
             readerStop = false;
         }
 
         void free() {
+            std::scoped_lock<std::mutex, std::mutex> lck(swapMtx, rdyMtx);
             if (writeBuf0) { buffer::free(writeBuf0); }
             if (readBuf0) { buffer::free(readBuf0); }
             writeBuf0 = NULL;
@@ -201,14 +227,43 @@ namespace dsp {
             bufferSize = 0;
         }
 
-        T* writeBuf;
-        T* readBuf;
-        T* writeBuf0;
-        T* readBuf0;
+        T* writeBuf = NULL;
+        T* readBuf = NULL;
+        T* writeBuf0 = NULL;
+        T* readBuf0 = NULL;
 
     private:
-
-        int initialized = 0;
+        void resizeCapacity(int samples, bool allowShrink) {
+            if (samples <= 0) {
+                flog::error("Cannot set stream {} capacity to {} samples", origin, samples);
+                assert(samples > 0);
+                return;
+            }
+            if (!allowShrink && samples <= bufferSize) { return; }
+            std::scoped_lock<std::mutex, std::mutex> lck(swapMtx, rdyMtx);
+            bool idle = canSwap && !dataReady && nReaders == 0;
+            if (!idle) {
+                flog::error("Cannot resize active stream {}", origin);
+                assert(idle);
+                return;
+            }
+            T* newWriteBuf = buffer::alloc<T>(samples);
+            T* newReadBuf = buffer::alloc<T>(samples);
+            if (!newWriteBuf || !newReadBuf) {
+                if (newWriteBuf) { buffer::free(newWriteBuf); }
+                if (newReadBuf) { buffer::free(newReadBuf); }
+                throw std::bad_alloc();
+            }
+            buffer::free(writeBuf0);
+            buffer::free(readBuf0);
+            bufferSize = samples;
+            writeBuf0 = newWriteBuf;
+            readBuf0 = newReadBuf;
+            //buffer::register_buffer_dbg(writeBuf0, origin ? origin: "stream without origin, sbs");
+            //buffer::register_buffer_dbg(readBuf0, origin ? origin: "stream without origin, sbs");
+            readBuf = readBuf0;
+            writeBuf = writeBuf0;
+        }
 
         std::mutex swapMtx;
         std::condition_variable swapCV;
@@ -231,13 +286,14 @@ namespace dsp {
         std::mutex lock;
         std::vector<T> data;
         std::atomic_int dataSize = 0;
+        size_t readOffset = 0;
 
         void fillFrom(const T*ptr, int size) {
             std::lock_guard lck(lock);
             int pos = data.size();
             data.resize(size + pos);
             memcpy(&data[pos], ptr, size * sizeof(T));
-            dataSize = data.size();
+            dataSize = (int)(data.size() - readOffset);
         }
 
         int maybeFillFrom(const dsp::stream<T> &str) {
@@ -256,7 +312,7 @@ namespace dsp {
                 data.resize(size + pos);
                 memcpy(&data[pos], str.readBuf, size * sizeof(T));
                 str.flush();
-                dataSize = data.size();
+                dataSize = (int)(data.size() - readOffset);
             }
             return size;
         }
@@ -274,11 +330,18 @@ namespace dsp {
         }
 
         bool consume_(T *dest, int size) {
-            if (dest) {
-                memcpy(dest, &data[0], size * sizeof(T));
+            if (size < 0 || size > dataSize) {
+                return false;
             }
-            data.erase(data.begin(), data.begin() + size);
-            dataSize = data.size();
+            if (dest) {
+                memcpy(dest, data.data() + readOffset, size * sizeof(T));
+            }
+            readOffset += size;
+            if (readOffset >= 1024 && readOffset >= data.size() / 2) {
+                data.erase(data.begin(), data.begin() + readOffset);
+                readOffset = 0;
+            }
+            dataSize = (int)(data.size() - readOffset);
             return true;
         }
 

@@ -1,10 +1,14 @@
 #include <gui/widgets/line_push_image.h>
+#include <stdexcept>
 
 namespace ImGui {
     LinePushImage::LinePushImage(int frameWidth, int reservedIncrement) {
+        if (frameWidth <= 0 || reservedIncrement <= 0) {
+            throw std::invalid_argument("LinePushImage dimensions must be positive");
+        }
         _frameWidth = frameWidth;
         _reservedIncrement = reservedIncrement;
-        frameBuffer = (uint8_t*)malloc(_frameWidth * _reservedIncrement * 4);
+        frameBuffer.resize(_frameWidth * _reservedIncrement * 4);
         reservedCount = reservedIncrement;
 
         glGenTextures(1, &textureId);
@@ -47,11 +51,9 @@ namespace ImGui {
         _lineCount += count;
 
         // If new data either fills up or exceeds the limit, reallocate
-        // TODO: Change it to avoid bug if count >= reservedIncrement
         if (_lineCount > reservedCount) {
-            printf("Reallocating\n");
-            reservedCount += _reservedIncrement;
-            frameBuffer = (uint8_t*)realloc(frameBuffer, _frameWidth * reservedCount * 4);
+            reservedCount = ((_lineCount + _reservedIncrement - 1) / _reservedIncrement) * _reservedIncrement;
+            frameBuffer.resize(_frameWidth * reservedCount * 4);
         }
 
         return &frameBuffer[_frameWidth * oldLineCount * 4];
@@ -65,7 +67,7 @@ namespace ImGui {
     void LinePushImage::clear() {
         std::lock_guard<std::mutex> lck(bufferMtx);
         _lineCount = 0;
-        frameBuffer = (uint8_t*)realloc(frameBuffer, _frameWidth * _reservedIncrement * 4);
+        frameBuffer.resize(_frameWidth * _reservedIncrement * 4);
         reservedCount = _reservedIncrement;
         newData = true;
     }
@@ -83,7 +85,7 @@ namespace ImGui {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, _frameWidth, _lineCount, 0, GL_RGBA, GL_UNSIGNED_BYTE, frameBuffer);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, _frameWidth, _lineCount, 0, GL_RGBA, GL_UNSIGNED_BYTE, frameBuffer.data());
     }
 
 }

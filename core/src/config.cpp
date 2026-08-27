@@ -6,9 +6,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
+#include <thread>
 #include <vector>
 #include "utils/wstr.h"
-#include "utils/usleep.h"
 #include "core.h"
 
 struct ConfigManager::SaveJob {
@@ -142,7 +142,7 @@ void ConfigManager::load(json def, bool lock) {
     }
     catch (const std::exception e) {
         flog::error("Config file '{}' with size={} is corrupted ({}), resetting it", path, (int64_t)filesize, e.what());
-        usleep(3000000);
+        std::this_thread::sleep_for(std::chrono::microseconds(3000000));
         conf = def;
         save(false);
     }

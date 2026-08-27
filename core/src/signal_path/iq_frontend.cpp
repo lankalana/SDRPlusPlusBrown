@@ -76,7 +76,9 @@ void IQFrontEnd::init(dsp::stream<dsp::complex_t>* in, double sampleRate, bool b
     // Clear the rest of the FFT input buffer
     dsp::buffer::clear(fftPlan->getInput()->data(), _fftSize - _nzFFTSize, _nzFFTSize);
 
-    split.bindStream(&fftIn);
+    split.setHook([this](dsp::complex_t* data, int count) {
+        fftIn.tryWrite(data, count);
+    });
     split.origin = "iqfrontent.split";
 
     _init = true;
@@ -107,7 +109,7 @@ void IQFrontEnd::setSampleRate(double sampleRate) {
 
 
     // Reconfigure the FFT
-    updateFFTPath();
+    updateFFTPath(false, false, false);
 
     // Restart blocks
     dcBlock.tempStart();
@@ -164,18 +166,19 @@ dsp::channel::RxVFO* IQFrontEnd::addVFO(std::string name, double sampleRate, dou
     }
 
     // Create VFO and its input stream
-    dsp::stream<dsp::complex_t>* vfoIn = new dsp::stream<dsp::complex_t>;
-    dsp::channel::RxVFO* vfo = new dsp::channel::RxVFO(vfoIn, effectiveSr, sampleRate, bandwidth, offset);
+    auto vfoIn = std::make_unique<dsp::stream<dsp::complex_t>>();
+    auto vfo = std::make_unique<dsp::channel::RxVFO>(vfoIn.get(), effectiveSr, sampleRate, bandwidth, offset);
+    auto* vfoPtr = vfo.get();
 
     // Register them
-    vfoStreams[name] = vfoIn;
-    vfos[name] = vfo;
-    bindIQStream(vfoIn);
+    bindIQStream(vfoIn.get());
+    vfoStreams.emplace(name, std::move(vfoIn));
+    vfos.emplace(name, std::move(vfo));
 
     // Start VFO
-    vfo->start();
+    vfoPtr->start();
 
-    return vfo;
+    return vfoPtr;
 }
 
 void IQFrontEnd::removeVFO(std::string name) {
@@ -186,19 +189,15 @@ void IQFrontEnd::removeVFO(std::string name) {
     }
 
     // Remove the VFO and stream from registry
-    dsp::stream<dsp::complex_t>* vfoIn = vfoStreams[name];
-    dsp::channel::RxVFO* vfo = vfos[name];
+    dsp::stream<dsp::complex_t>* vfoIn = vfoStreams.at(name).get();
+    dsp::channel::RxVFO* vfo = vfos.at(name).get();
 
     // Stop the VFO
     vfo->stop();
 
     unbindIQStream(vfoIn);
-    vfoStreams.erase(name);
     vfos.erase(name);
-
-    // Delete the VFO and its input stream
-    delete vfo;
-    delete vfoIn;
+    vfoStreams.erase(name);
 }
 
 void IQFrontEnd::setFFTSize(int size) {
@@ -208,12 +207,12 @@ void IQFrontEnd::setFFTSize(int size) {
 
 void IQFrontEnd::setFFTRate(double rate) {
     _fftRate = rate;
-    updateFFTPath();
+    updateFFTPath(false, false, false);
 }
 
 void IQFrontEnd::setFFTWindow(FFTWindow fftWindow) {
     _fftWindow = fftWindow;
-    updateFFTPath();
+    updateFFTPath(false, false, true);
 }
 
 void IQFrontEnd::flushInputBuffer() {
@@ -271,22 +270,17 @@ void IQFrontEnd::handler(dsp::complex_t* data, int count, void* ctx) {
     volk_32fc_32f_multiply_32fc((lv_32fc_t*)_this->fftPlan->getInput()->data(), (lv_32fc_t*)data, _this->fftWindowBuf, _this->_nzFFTSize);
 
     // Execute FFT
-    dsp::arrays::npfftfft(_this->fftPlan->getInput(), _this->fftPlan);
+    dsp::arrays::npfftfft(_this->fftPlan);
 //    fftwf_execute(_this->fftwPlanImplFFTW);
 
-    // Aquire buffer
     float* fftBuf = _this->_acquireFFTBuffer(_this->_fftCtx);
-
-    // Convert the complex output of the FFT to dB amplitude
     if (fftBuf) {
         volk_32fc_s32f_power_spectrum_32f(fftBuf, (lv_32fc_t*)_this->fftPlan->getOutput()->data(), _this->_fftSize, _this->_fftSize);
     }
-
-    // Release buffer
     _this->_releaseFFTBuffer(_this->_fftCtx);
 }
 
-void IQFrontEnd::updateFFTPath(bool updateWaterfall) {
+void IQFrontEnd::updateFFTPath(bool updateWaterfall, bool updatePlan, bool updateWindow) {
     // Temp stop branch
     reshape.tempStop();
     fftSink.tempStop();
@@ -298,20 +292,22 @@ void IQFrontEnd::updateFFTPath(bool updateWaterfall) {
     reshape.setSkip(skip);
 
     // Update window
-    dsp::buffer::free(fftWindowBuf);
-    fftWindowBuf = dsp::buffer::alloc<float>(_nzFFTSize);
-    if (_fftWindow == FFTWindow::RECTANGULAR) {
-        for (int i = 0; i < _nzFFTSize; i++) { fftWindowBuf[i] = 1.0f * ((i % 2) ? -1.0f : 1.0f); }
-    }
-    else if (_fftWindow == FFTWindow::BLACKMAN) {
-        for (int i = 0; i < _nzFFTSize; i++) { fftWindowBuf[i] = dsp::window::blackman(i, _nzFFTSize) * ((i % 2) ? -1.0f : 1.0f); }
-    }
-    else if (_fftWindow == FFTWindow::NUTTALL) {
-        for (int i = 0; i < _nzFFTSize; i++) { fftWindowBuf[i] = dsp::window::nuttall(i, _nzFFTSize) * ((i % 2) ? -1.0f : 1.0f); }
+    if (updateWindow) {
+        dsp::buffer::free(fftWindowBuf);
+        fftWindowBuf = dsp::buffer::alloc<float>(_nzFFTSize);
+        if (_fftWindow == FFTWindow::RECTANGULAR) {
+            for (int i = 0; i < _nzFFTSize; i++) { fftWindowBuf[i] = 1.0f * ((i % 2) ? -1.0f : 1.0f); }
+        }
+        else if (_fftWindow == FFTWindow::BLACKMAN) {
+            for (int i = 0; i < _nzFFTSize; i++) { fftWindowBuf[i] = dsp::window::blackman(i, _nzFFTSize) * ((i % 2) ? -1.0f : 1.0f); }
+        }
+        else if (_fftWindow == FFTWindow::NUTTALL) {
+            for (int i = 0; i < _nzFFTSize; i++) { fftWindowBuf[i] = dsp::window::nuttall(i, _nzFFTSize) * ((i % 2) ? -1.0f : 1.0f); }
+        }
     }
 
     // Update FFT plan
-    fftPlan = dsp::arrays::allocateFFTWPlan(false, _fftSize);
+    if (updatePlan) { fftPlan = dsp::arrays::allocateFFTWPlan(false, _fftSize); }
 
     // Clear the rest of the FFT input buffer
     dsp::buffer::clear(fftPlan->getInput()->data(), _fftSize - _nzFFTSize, _nzFFTSize);
