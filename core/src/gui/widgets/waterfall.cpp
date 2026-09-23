@@ -294,6 +294,80 @@ namespace ImGui {
         }
     }
 
+    void WaterFall::setDetectionMarkers(const std::vector<DetectionMarker>& markers) {
+        std::lock_guard<std::mutex> lck(detectionMtx);
+        detectionMarkers = markers;
+    }
+
+    void WaterFall::clearDetectionMarkers() {
+        std::lock_guard<std::mutex> lck(detectionMtx);
+        detectionMarkers.clear();
+    }
+
+    void WaterFall::drawDetections() {
+        if (!showDetections) { return; }
+
+        std::vector<DetectionMarker> markers;
+        {
+            std::lock_guard<std::mutex> lck(detectionMtx);
+            if (detectionMarkers.empty()) { return; }
+            markers = detectionMarkers;
+        }
+
+        double horizScale = (double)dataWidth / viewBandwidth;
+        float top = fftAreaMin.y + 1;
+        float bottom = fftAreaMax.y;
+
+        for (const auto& marker : markers) {
+            // Skip markers entirely outside the current view rather than clamping them into a
+            // sliver at the edge, which would read as a detection that isn't there.
+            if (marker.upperFrequency < lowerFreq || marker.lowerFrequency > upperFreq) { continue; }
+
+            double left = fftAreaMin.x + ((marker.lowerFrequency - lowerFreq) * horizScale);
+            double right = fftAreaMin.x + ((marker.upperFrequency - lowerFreq) * horizScale);
+            left = std::clamp<double>(left, fftAreaMin.x, fftAreaMax.x);
+            right = std::clamp<double>(right, fftAreaMin.x, fftAreaMax.x);
+            // Always give a narrow detection something visible to draw.
+            if (right - left < 2.0 * style::uiScale) { right = left + (2.0 * style::uiScale); }
+
+            ImU32 outline, fill;
+            switch (marker.state) {
+            case DetectionMarker::ACTIVE:
+                outline = IM_COL32(80, 255, 80, 220);
+                fill = IM_COL32(80, 255, 80, 40);
+                break;
+            case DetectionMarker::RECORDING:
+                outline = IM_COL32(255, 60, 60, 230);
+                fill = IM_COL32(255, 60, 60, 50);
+                break;
+            case DetectionMarker::IGNORED:
+                outline = IM_COL32(130, 130, 130, 160);
+                fill = IM_COL32(0, 0, 0, 0);
+                break;
+            case DetectionMarker::CANDIDATE:
+            default:
+                outline = IM_COL32(220, 220, 80, 150);
+                fill = IM_COL32(0, 0, 0, 0);
+                break;
+            }
+
+            ImVec2 rmin((float)left, top);
+            ImVec2 rmax((float)right, bottom);
+            if (fill != IM_COL32(0, 0, 0, 0)) {
+                window->DrawList->AddRectFilled(rmin, rmax, fill);
+            }
+            window->DrawList->AddRect(rmin, rmax, outline, 0.0f, 0, style::uiScale);
+
+            if (!marker.label.empty()) {
+                ImVec2 txtSz = ImGui::CalcTextSize(marker.label.c_str());
+                float x = std::clamp<float>((float)((left + right) / 2.0) - (txtSz.x / 2.0f),
+                                            fftAreaMin.x, std::max<float>(fftAreaMin.x, fftAreaMax.x - txtSz.x));
+                window->DrawList->AddText(ImVec2(x, bottom - txtSz.y - (2.0f * style::uiScale)), outline,
+                                          marker.label.c_str());
+            }
+        }
+    }
+
     void WaterFall::drawWaterfall() {
         {
             if (waterfallUpdate) {
@@ -1135,6 +1209,7 @@ namespace ImGui {
         updateAllVFOs(true);
 
         drawFFT();
+        drawDetections();
         if (waterfallVisible) {
             drawWaterfall();
         }
@@ -1193,6 +1268,18 @@ namespace ImGui {
         applyFFTPostProcessing();
         updateSignalInfo(rawFFT);
         buf_mtx.unlock();
+
+        // Emitted after the lock is released. pushFFT() is only ever called from the single FFT
+        // thread, so the frame cannot be overwritten while a handler is reading it.
+        if (!onRawFFT.empty()) {
+            RawFFTFrame frame;
+            frame.data = rawFFT;
+            frame.binCount = rawFFTSize;
+            frame.centerFrequency = centerFreq;
+            frame.spanHz = wholeBandwidth;
+            frame.usableSpectrumRatio = usableSpectrumRatio;
+            onRawFFT.emit(frame);
+        }
     }
 
     void WaterFall::commitWaterfallRow() {

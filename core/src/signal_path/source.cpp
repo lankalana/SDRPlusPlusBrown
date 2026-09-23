@@ -101,7 +101,29 @@ void SourceManager::selectSource(std::string name) {
     }
     // Set server input here
     registerSourceConfigEndpoint(name, selectedHandler);
+
+    State previous = state;
+    state.sourceName = name;
+    emitStateIfChanged(previous);
+
     onSourceSelected.emit(name);
+}
+
+void SourceManager::emitStateIfChanged(const State& previous) {
+    if (state == previous) { return; }
+    onSourceStateChanged.emit(state);
+}
+
+void SourceManager::reportSampleRate(double sampleRate) {
+    State previous = state;
+    state.sampleRate = sampleRate;
+    emitStateIfChanged(previous);
+}
+
+void SourceManager::reportDecimation(int decimation) {
+    State previous = state;
+    state.decimation = decimation;
+    emitStateIfChanged(previous);
 }
 
 void SourceManager::showSelectedMenu() {
@@ -133,6 +155,11 @@ void SourceManager::tune(double freq) {
     selectedHandler->tuneHandler(abs(((tuneMode == TuningMode::NORMAL) ? freq : ifFreq) + tuneOffset), selectedHandler->ctx);
     onRetune.emit(freq);
     currentFreq = freq;
+
+    State previous = state;
+    state.centerFrequency = freq;
+    emitStateIfChanged(previous);
+
     onTuneChanged.emit(freq);
 }
 

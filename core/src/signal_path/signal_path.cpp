@@ -7,6 +7,7 @@ namespace sigpath {
     VFOManager vfoManager;
     SourceManager sourceManager;
     SinkManager sinkManager;
+    AutoReceiverManager autoReceiverManager;
     Transmitter *transmitter;
 
 };

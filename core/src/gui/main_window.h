@@ -4,6 +4,7 @@
 #include <dsp/types.h>
 #include <dsp/stream.h>
 #include <signal_path/vfo_manager.h>
+#include <signal_path/source.h>
 #include <string>
 #include <utils/event.h>
 #include <utils/arrays.h>
@@ -79,6 +80,10 @@ protected:
     void displayVariousWindows();
     static void vfoAddedHandler(VFOManager::VFO* vfo, void* ctx);
 
+    // Automatic reception: feed the captured spectrum in, push the detection overlay back out.
+    static void rawFFTHandler(ImGui::WaterFall::RawFFTFrame frame, void* ctx);
+    static void sourceStateHandler(SourceManager::State state, void* ctx);
+
     // FFT Variables
     int fftSize = 8192 * 8;
     std::mutex fft_mtx;
@@ -110,6 +115,8 @@ protected:
     bool autostart = false;
 
     EventHandler<VFOManager::VFO*> vfoCreatedHandler;
+    EventHandler<ImGui::WaterFall::RawFFTFrame> rawFFTHandlerEntry;
+    EventHandler<SourceManager::State> sourceStateHandlerEntry;
 
     void updateWaterfallZoomBandwidth(float bw);
     void handleWaterfallInput(ImGui::WaterfallVFO* vfo);

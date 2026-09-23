@@ -212,6 +212,9 @@ namespace core {
         sigpath::iqFrontEnd.setSampleRate(samplerate);
         double effectiveSr = sigpath::iqFrontEnd.getEffectiveSamplerate();
 
+        // Let calibration-critical consumers know before the GUI is reconfigured.
+        sigpath::sourceManager.reportSampleRate(samplerate);
+
         // Reset zoom
         gui::waterfall.setUsableSpectrumRatio(usableSpectrumRatio);
         gui::waterfall.setBandwidth(effectiveSr);
@@ -568,6 +571,7 @@ int sdrpp_main(int argc, char* argv[]) {
         { "Rigctl Server", false },
         { "Module Manager", false },
         { "Receivers", false },
+        { "Automatic Reception", false },
     };
     for (auto& p : openState) {
         menuElements[menuElements.size() - 0]["name"] = p.first;

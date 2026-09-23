@@ -24,6 +24,7 @@
 #include <gui/menus/vfo_color.h>
 #include <gui/menus/module_manager.h>
 #include <gui/menus/receiver_manager.h>
+#include <gui/menus/automatic_reception.h>
 #include <gui/menus/theme.h>
 #include <gui/dialogs/credits.h>
 #include <cstring>
@@ -95,6 +96,7 @@ void MainWindow::init() {
     gui::menu.registerEntry("Theme", thememenu::draw, NULL);
     gui::menu.registerEntry("VFO Color", vfo_color_menu::draw, NULL);
     gui::menu.registerEntry("Receivers", receiver_manager_menu::draw, NULL);
+    gui::menu.registerEntry("Automatic Reception", automatic_reception_menu::draw, NULL);
     gui::menu.registerEntry("Module Manager", module_manager_menu::draw, NULL);
 
     gui::freqSelect.init();
@@ -109,6 +111,14 @@ void MainWindow::init() {
     vfoCreatedHandler.handler = vfoAddedHandler;
     vfoCreatedHandler.ctx = this;
     sigpath::vfoManager.onVfoCreated.bindHandler(&vfoCreatedHandler);
+
+    rawFFTHandlerEntry.handler = rawFFTHandler;
+    rawFFTHandlerEntry.ctx = this;
+    gui::waterfall.onRawFFT.bindHandler(&rawFFTHandlerEntry);
+
+    sourceStateHandlerEntry.handler = sourceStateHandler;
+    sourceStateHandlerEntry.ctx = this;
+    sigpath::sourceManager.onSourceStateChanged.bindHandler(&sourceStateHandlerEntry);
 
     flog::info("Loading modules");
 
@@ -189,6 +199,7 @@ void MainWindow::init() {
     vfo_color_menu::init();
     module_manager_menu::init();
     receiver_manager_menu::init();
+    automatic_reception_menu::init();
 
     // TODO for 0.2.5
     // Fix gain not updated on startup, soapysdr
@@ -257,6 +268,41 @@ float* MainWindow::acquireFFTBuffer(void* ctx) {
 
 void MainWindow::releaseFFTBuffer(void* ctx) {
     gui::waterfall.pushFFT();
+}
+
+void MainWindow::rawFFTHandler(ImGui::WaterFall::RawFFTFrame frame, void* ctx) {
+    if (!sigpath::autoReceiverManager.isEnabled()) {
+        gui::waterfall.clearDetectionMarkers();
+        return;
+    }
+
+    sigpath::autoReceiverManager.onFFTFrame(frame.data, frame.binCount, frame.centerFrequency,
+                                            frame.spanHz, frame.usableSpectrumRatio,
+                                            sigpath::iqFrontEnd.getFFTRate(), currentTimeMillis());
+
+    std::vector<ImGui::DetectionMarker> markers;
+    for (const auto& track : sigpath::autoReceiverManager.getTrackedSignals()) {
+        ImGui::DetectionMarker marker;
+        marker.lowerFrequency = track.signal.lowerFrequency;
+        marker.upperFrequency = track.signal.upperFrequency;
+        switch (track.state) {
+        case dsp::detector::SignalState::ACTIVE:
+        case dsp::detector::SignalState::RELEASING:
+            marker.state = ImGui::DetectionMarker::ACTIVE;
+            break;
+        default:
+            marker.state = ImGui::DetectionMarker::CANDIDATE;
+            break;
+        }
+        markers.push_back(marker);
+    }
+    gui::waterfall.setDetectionMarkers(markers);
+}
+
+void MainWindow::sourceStateHandler(SourceManager::State state, void* ctx) {
+    // The user owns the source. Any calibration-critical change rebuilds the noise model; the
+    // automatic subsystem never tunes back.
+    sigpath::autoReceiverManager.updateSourceState(state);
 }
 
 void MainWindow::vfoAddedHandler(VFOManager::VFO* vfo, void* ctx) {

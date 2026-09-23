@@ -138,6 +138,8 @@ void IQFrontEnd::setDecimation(int ratio) {
     // Enable or disable in the chain
     preproc.setBlockEnabled(&decim, _decimRatio > 1, [=](dsp::stream<dsp::complex_t>* out){ split.setInput(out); });
 
+    sigpath::sourceManager.reportDecimation(ratio);
+
     // Update the DSP sample rate (TODO: Find a way to get rid of this)
     core::setInputSampleRate(_sampleRate);
 }

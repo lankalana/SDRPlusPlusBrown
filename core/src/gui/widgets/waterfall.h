@@ -97,6 +97,24 @@ namespace ImGui {
         Event<int> onUserChangedDemodulator;
     };
 
+    /**
+     * A detected signal drawn over the FFT. Frequencies are absolute, so markers stay correct
+     * while the user pans and zooms.
+     */
+    struct DetectionMarker {
+        enum State {
+            CANDIDATE, // not confirmed yet: thin outline only
+            ACTIVE,    // confirmed
+            IGNORED,   // matched an ignore rule
+            RECORDING
+        };
+
+        double lowerFrequency = 0.0;
+        double upperFrequency = 0.0;
+        State state = CANDIDATE;
+        std::string label;
+    };
+
     class WaterFall {
     public:
         WaterFall();
@@ -175,6 +193,11 @@ namespace ImGui {
         float* acquireLatestFFT(int& width);
         void releaseLatestFFT();
 
+        // Replace the detection overlay. Safe to call from the DSP thread.
+        void setDetectionMarkers(const std::vector<DetectionMarker>& markers);
+        void clearDetectionMarkers();
+        bool showDetections = true;
+
         bool centerFreqMoved = false;
         bool vfoFreqChanged = false;
         bool bandplanEnabled = false;
@@ -207,6 +230,21 @@ namespace ImGui {
         };
 
         Event<FFTRedrawArgs> onFFTRedraw;
+
+        /**
+         * One complete raw (unzoomed) FFT frame of the captured spectrum, as pushed by the IQ
+         * front end. Emitted from the DSP thread once per frame; `data` is only valid for the
+         * duration of the call.
+         */
+        struct RawFFTFrame {
+            const float* data;
+            int binCount;
+            double centerFrequency;
+            double spanHz; // whole captured bandwidth
+            double usableSpectrumRatio;
+        };
+
+        Event<RawFFTFrame> onRawFFT;
 
         struct WaterfallDrawArgs {
             ImGuiWindow* window;
@@ -265,6 +303,7 @@ namespace ImGui {
     private:
         void drawWaterfall();
         void drawFFT();
+        void drawDetections();
         void drawVFOs();
         void drawBandPlan();
         void processInputs();
@@ -296,6 +335,9 @@ namespace ImGui {
         std::recursive_mutex latestFFTMtx;
         std::mutex texMtx;
         std::mutex smoothingBufMtx;
+
+        std::mutex detectionMtx;
+        std::vector<DetectionMarker> detectionMarkers;
 
         float vRange;
 

@@ -28,6 +28,9 @@ public:
         }
     }
 
+    // Lets a hot emitter skip building its argument when nobody is listening.
+    bool empty() const { return handlers.empty(); }
+
     void bindHandler(EventHandler<T>* handler) {
         handlers.push_back(handler);
     }
