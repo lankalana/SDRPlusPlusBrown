@@ -63,9 +63,24 @@ namespace dsp::detector {
 
             float peak = -std::numeric_limits<float>::infinity();
             double floorSum = 0.0;
+            // Power-weighted centroid, using each bin's excess over its own floor in linear
+            // power. Working in linear power rather than dB keeps a strong carrier from being
+            // outvoted by a wide spread of barely-above-threshold bins.
+            double weightSum = 0.0;
+            double weightedFreqSum = 0.0;
+
             for (int i = start; i <= end; i++) {
                 peak = std::max<float>(peak, fft[i]);
-                floorSum += floor.getFloorDb(i);
+                double binFloor = floor.getFloorDb(i);
+                floorSum += binFloor;
+
+                double excessDb = fft[i] - binFloor;
+                if (excessDb > 0.0) {
+                    double weight = std::pow(10.0, excessDb / 10.0) - 1.0;
+                    double binCenter = specLow + ((i + 0.5) * binWidth);
+                    weightSum += weight;
+                    weightedFreqSum += weight * binCenter;
+                }
             }
             float noiseFloor = (float)(floorSum / (double)width);
 
@@ -74,6 +89,8 @@ namespace dsp::detector {
             sig.upperFrequency = specLow + ((end + 1) * binWidth);
             sig.centerFrequency = (sig.lowerFrequency + sig.upperFrequency) / 2.0;
             sig.bandwidth = sig.upperFrequency - sig.lowerFrequency;
+            sig.centroidFrequency =
+                (weightSum > 0.0) ? (weightedFreqSum / weightSum) : sig.centerFrequency;
             sig.peakDb = peak;
             sig.noiseFloorDb = noiseFloor;
             sig.snrDb = peak - noiseFloor;

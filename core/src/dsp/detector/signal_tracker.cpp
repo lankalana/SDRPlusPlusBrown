@@ -3,6 +3,10 @@
 
 namespace dsp::detector {
 
+    bool SignalTracker::sameChannel(const DetectedSignal& a, const DetectedSignal& b) {
+        return a.channelFrequency != 0.0 && a.channelFrequency == b.channelFrequency;
+    }
+
     double SignalTracker::overlapRatio(const DetectedSignal& a, const DetectedSignal& b) {
         double lo = std::max(a.lowerFrequency, b.lowerFrequency);
         double hi = std::min(a.upperFrequency, b.upperFrequency);
@@ -31,12 +35,29 @@ namespace dsp::detector {
             auto& track = tracked[t];
             int bestIdx = -1;
             double bestRatio = params.minOverlapRatio;
+
+            // A matching channel is decisive: two fragments of one station need not overlap.
             for (size_t d = 0; d < detections.size(); d++) {
                 if (detectionUsed[d]) { continue; }
-                double ratio = overlapRatio(track.signal, detections[d]);
-                if (ratio >= bestRatio) {
-                    bestRatio = ratio;
+                if (sameChannel(track.signal, detections[d])) {
                     bestIdx = (int)d;
+                    break;
+                }
+            }
+
+            if (bestIdx < 0) {
+                for (size_t d = 0; d < detections.size(); d++) {
+                    if (detectionUsed[d]) { continue; }
+                    // Never steal a detection that belongs to some other channel.
+                    if (detections[d].channelFrequency != 0.0 &&
+                        track.signal.channelFrequency != 0.0) {
+                        continue;
+                    }
+                    double ratio = overlapRatio(track.signal, detections[d]);
+                    if (ratio >= bestRatio) {
+                        bestRatio = ratio;
+                        bestIdx = (int)d;
+                    }
                 }
             }
 

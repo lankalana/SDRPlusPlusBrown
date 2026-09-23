@@ -47,11 +47,27 @@ struct ReceptionProfile {
     double minDetectionBandwidth = 0.0;
     double maxDetectionBandwidth = 0.0;
 
+    /**
+     * Channel raster, in Hz. Zero disables rounding.
+     *
+     * On a channelized band this does two jobs. It puts the receiver exactly on channel instead
+     * of on the detected centre, which for a modulated carrier wanders by tens of kHz. And it
+     * lets several fragments of one transmission be recognised as the same channel and merged,
+     * rather than being reported as a crowd of narrow signals.
+     */
+    double frequencyStep = 0.0;
+
     // Highest priority wins when several profiles match.
     int priority = 0;
 
     bool matchesFrequency(double frequency) const;
+
+    // `frequency` rounded to the nearest multiple of frequencyStep, or unchanged if no step.
+    double snapFrequency(double frequency) const;
 };
+
+// Nearest multiple of `step` (from 0 Hz), or `frequency` unchanged when step <= 0.
+double snapToStep(double frequency, double step);
 
 /**
  * An ordered set of profiles, plus the lookup the allocator uses.

@@ -300,18 +300,38 @@ void MainWindow::rawFFTHandler(ImGui::WaterFall::RawFFTFrame frame, void* ctx) {
     }
 
     std::vector<ImGui::DetectionMarker> markers;
-    for (const auto& track : sigpath::autoReceiverManager.getTrackedSignals()) {
+    char label[64];
+    for (const auto& cs : sigpath::autoReceiverManager.getClassifiedSignals()) {
+        const auto& sig = cs.tracked.signal;
         ImGui::DetectionMarker marker;
-        marker.lowerFrequency = track.signal.lowerFrequency;
-        marker.upperFrequency = track.signal.upperFrequency;
-        switch (track.state) {
-        case dsp::detector::SignalState::ACTIVE:
-        case dsp::detector::SignalState::RELEASING:
-            marker.state = ImGui::DetectionMarker::ACTIVE;
-            break;
-        default:
-            marker.state = ImGui::DetectionMarker::CANDIDATE;
-            break;
+
+        if (cs.hasProfile && cs.receiverBandwidth > 0.0) {
+            // Draw the channel the receiver would occupy, not the raw above-threshold extent.
+            // The extent moves with the modulation every frame; the channel does not, and the
+            // channel is what the user is actually being offered.
+            marker.lowerFrequency = cs.tuneFrequency - (cs.receiverBandwidth / 2.0);
+            marker.upperFrequency = cs.tuneFrequency + (cs.receiverBandwidth / 2.0);
+            snprintf(label, sizeof label, "%.4f %s", cs.tuneFrequency / 1e6, toString(cs.demod));
+            marker.label = label;
+        }
+        else {
+            marker.lowerFrequency = sig.lowerFrequency;
+            marker.upperFrequency = sig.upperFrequency;
+        }
+
+        if (cs.ignored) {
+            marker.state = ImGui::DetectionMarker::IGNORED;
+        }
+        else {
+            switch (cs.tracked.state) {
+            case dsp::detector::SignalState::ACTIVE:
+            case dsp::detector::SignalState::RELEASING:
+                marker.state = ImGui::DetectionMarker::ACTIVE;
+                break;
+            default:
+                marker.state = ImGui::DetectionMarker::CANDIDATE;
+                break;
+            }
         }
         markers.push_back(marker);
     }

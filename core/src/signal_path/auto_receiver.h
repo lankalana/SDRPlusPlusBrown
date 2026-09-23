@@ -56,11 +56,14 @@ public:
         int minDetectionBins = 2;
 
         /**
-         * When set, only detections inside an enabled reception profile are kept, and each
-         * profile's own bandwidth limits apply there. This is the per-band way to say "on the FM
-         * band I only care about 100-400 kHz signals" without touching the global limits.
+         * Drop detections that no enabled profile covers.
+         *
+         * This only controls what happens *outside* every profile. A profile that matches always
+         * supplies its own channel raster, bandwidth limits and demodulator -- those are
+         * properties of the band, not an optional mode, and gating them behind a flag made the
+         * raster silently do nothing for anyone whose config predated it.
          */
-        bool useProfiles = false;
+        bool restrictToProfiles = false;
     };
 
     // A tracked signal together with what the configuration says about it.
@@ -72,6 +75,8 @@ public:
         std::string profileName;
         ProfileDemod demod = ProfileDemod::NFM;
         double receiverBandwidth = 0.0;
+        // Where a receiver would be tuned, after sideband reference and channel rounding.
+        double tuneFrequency = 0.0;
         bool hasProfile = false;
     };
 
@@ -131,6 +136,13 @@ public:
 
     FloorCurve getFloorCurve(int maxSamples = 512) const;
     uint64_t getFloorVersion() const;
+
+    /**
+     * Where a receiver for this signal should be tuned: the profile's reference point (signal
+     * centroid for centre-referenced modes, the lower edge for USB/CW, the upper edge for LSB),
+     * rounded to the profile's channel raster.
+     */
+    double getTuneFrequency(const dsp::detector::DetectedSignal& signal) const;
 
     void setProfiles(const ReceptionProfileSet& profiles);
     ReceptionProfileSet getProfiles() const;

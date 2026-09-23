@@ -11,6 +11,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <dsp/detector/noise_floor.h>
+#include <signal_path/auto_receiver.h>
 #include <dsp/detector/signal_tracker.h>
 #include <dsp/detector/spectrum_detector.h>
 #include <utils/arrays.h>
@@ -158,8 +159,13 @@ TEST_CASE("baseband recording detection survey", "[.][fmdiag]") {
 
     const int FFT_SIZE = 16384;
     const double SPAN = file.sampleRate;
-    const double CENTER = 0.0; // report offsets from the capture centre
     const double BIN_HZ = SPAN / FFT_SIZE;
+
+    // Absolute centre frequency, so detections can be checked against a known channel raster.
+    const char* centerEnv = std::getenv("SDRPP_TEST_CENTER");
+    const double CENTER = centerEnv ? atof(centerEnv) : 0.0;
+    const char* rasterEnv = std::getenv("SDRPP_TEST_RASTER");
+    const double RASTER = rasterEnv ? atof(rasterEnv) : 0.0;
 
     printf("\n=== %s ===\n", path.c_str());
     printf("sample rate %.0f Hz, FFT %d bins, %.1f Hz/bin\n", file.sampleRate, FFT_SIZE, BIN_HZ);
@@ -232,10 +238,22 @@ TEST_CASE("baseband recording detection survey", "[.][fmdiag]") {
                s.narrowest / 1e3, s.medianBandwidth / 1e3, s.widest / 1e3);
 
         if (listSignals) {
-            for (const auto& tr : tracked) {
-                printf("    %+9.3f MHz  bw %7.1f kHz  snr %5.1f dB  %s\n",
-                       tr.signal.centerFrequency / 1e6, tr.signal.bandwidth / 1e3, tr.signal.snrDb,
-                       toString(tr.state));
+            std::vector<DetectedSignal> sorted = asSignals;
+            std::sort(sorted.begin(), sorted.end(),
+                      [](const DetectedSignal& a, const DetectedSignal& b) {
+                          return a.centerFrequency < b.centerFrequency;
+                      });
+            for (const auto& sig : sorted) {
+                // If a channel raster is known, how far the detected centre sits from it is a
+                // direct check that centre/bandwidth are computed correctly.
+                char rasterNote[64] = "";
+                if (RASTER > 0.0) {
+                    double nearest = std::round(sig.centerFrequency / RASTER) * RASTER;
+                    snprintf(rasterNote, sizeof rasterNote, "  raster %+7.1f kHz",
+                             (sig.centerFrequency - nearest) / 1e3);
+                }
+                printf("    %10.4f MHz  bw %7.1f kHz  snr %5.1f dB%s\n",
+                       sig.centerFrequency / 1e6, sig.bandwidth / 1e3, sig.snrDb, rasterNote);
             }
         }
     };
@@ -250,6 +268,92 @@ TEST_CASE("baseband recording detection survey", "[.][fmdiag]") {
             floor.setMarginDb(10.0f);
             runSurvey("manual", floor, avgFrames, minBwHz, 20e3,
                       avgFrames == 4 && minBwHz == 100e3);
+        }
+    }
+
+    printf("\n--- merge gap sweep (flat floor, avg=4, minBw=100 kHz, maxBw=400 kHz) ---\n");
+    for (double gapHz : { 10e3, 30e3, 60e3, 100e3, 150e3 }) {
+        NoiseFloorModel floor;
+        floor.configure(FFT_SIZE, BIN_HZ);
+        floor.setMode(NoiseFloorMode::MANUAL);
+        floor.setManualFloorDb(flatFloorDb);
+        floor.setMarginDb(10.0f);
+
+        SignalTracker tracker;
+        tracker.params.activationMs = 300;
+        tracker.params.releaseMs = 2000;
+        DetectionParams p;
+        p.minBins = 2;
+        p.minBandwidthHz = 100e3;
+        p.maxBandwidthHz = 400e3;
+        p.mergeGapHz = gapHz;
+
+        uint64_t t = 0;
+        for (int f = 0; f + 4 <= (int)frames.size(); f += 4) {
+            auto avg = averaged(f, 4);
+            tracker.update(detectSignals(avg.data(), FFT_SIZE, floor, CENTER, SPAN, p), t);
+            t += 200;
+        }
+        auto tracked = tracker.getTracked();
+        std::vector<DetectedSignal> sigs;
+        for (const auto& tr : tracked) { sigs.push_back(tr.signal); }
+        auto s = summarize(sigs);
+
+        double midErr = 0.0;
+        double centroidErr = 0.0;
+        if (RASTER > 0.0 && !sigs.empty()) {
+            for (const auto& sig : sigs) {
+                double n1 = std::round(sig.centerFrequency / RASTER) * RASTER;
+                midErr += std::fabs(sig.centerFrequency - n1);
+                double n2 = std::round(sig.centroidFrequency / RASTER) * RASTER;
+                centroidErr += std::fabs(sig.centroidFrequency - n2);
+            }
+            midErr /= sigs.size();
+            centroidErr /= sigs.size();
+        }
+        printf("gap=%6.0f kHz -> %2d tracked, bw min %6.1f median %6.1f max %7.1f kHz | "
+               "raster err: midpoint %5.1f kHz, centroid %5.1f kHz\n",
+               gapHz / 1e3, s.detectionCount, s.narrowest / 1e3, s.medianBandwidth / 1e3,
+               s.widest / 1e3, midErr / 1e3, centroidErr / 1e3);
+    }
+
+    // Full production pipeline: AutoReceiverManager with the shipped Broadcast FM profile.
+    if (CENTER > 0.0) {
+        printf("\n--- full pipeline, default Broadcast FM profile ---\n");
+        AutoReceiverManager mgr;
+        AutoReceiverManager::Config cfg;
+        cfg.enabled = true;
+        cfg.floorMode = NoiseFloorMode::MANUAL;
+        cfg.manualFloorDb = flatFloorDb;
+        cfg.marginDb = 10.0f;
+        cfg.detectionAveragingFrames = 4;
+        cfg.mergeGapHz = 20e3;
+        cfg.restrictToProfiles = true;
+        cfg.activationMs = 300;
+        cfg.releaseMs = 2000;
+        mgr.setConfig(cfg);
+        mgr.setProfiles(ReceptionProfileSet::defaults());
+
+        uint64_t t = 0;
+        for (size_t f = 0; f < frames.size(); f++) {
+            mgr.onFFTFrame(frames[f].data(), FFT_SIZE, CENTER, SPAN, 1.0, 20.0, t);
+            t += 50;
+        }
+
+        auto classified = mgr.getClassifiedSignals();
+        std::sort(classified.begin(), classified.end(),
+                  [](const AutoReceiverManager::ClassifiedSignal& a,
+                     const AutoReceiverManager::ClassifiedSignal& b) {
+                      return a.tracked.signal.centroidFrequency < b.tracked.signal.centroidFrequency;
+                  });
+
+        printf("%d signals tracked\n", (int)classified.size());
+        for (const auto& cs : classified) {
+            printf("    tune %10.4f MHz  %-4s bw %6.1f kHz | detected %10.4f MHz w %6.1f kHz "
+                   "snr %5.1f dB  %s\n",
+                   cs.tuneFrequency / 1e6, toString(cs.demod), cs.receiverBandwidth / 1e3,
+                   cs.tracked.signal.centroidFrequency / 1e6, cs.tracked.signal.bandwidth / 1e3,
+                   cs.tracked.signal.snrDb, toString(cs.tracked.state));
         }
     }
 

@@ -245,6 +245,33 @@ TEST_CASE("a maximum bandwidth of zero means no upper limit", "[detector][groupi
     CHECK(detectSignals(frame.data(), BINS, floor, CENTER, SPAN, params).size() == 1);
 }
 
+TEST_CASE("the centroid follows the power, not the extent midpoint", "[detector][grouping]") {
+    auto floor = flatFloor();
+    auto frame = quietFrame();
+    // A lopsided signal: strong at the low end, weak skirt trailing up.
+    for (int b = 40; b <= 49; b++) { frame[b] = -50.0f; }
+    for (int b = 50; b <= 59; b++) { frame[b] = -87.0f; }
+
+    auto signals = detectSignals(frame.data(), BINS, floor, CENTER, SPAN, DetectionParams{});
+    REQUIRE(signals.size() == 1);
+
+    // The extent midpoint sits at bin 50; the power is all below it.
+    CHECK(signals[0].centerFrequency == Catch::Approx(binLowEdge(50)));
+    CHECK(signals[0].centroidFrequency < signals[0].centerFrequency);
+    CHECK(signals[0].centroidFrequency == Catch::Approx(binLowEdge(45)).margin(bwOfBins(1)));
+}
+
+TEST_CASE("the centroid of a symmetric signal is its centre", "[detector][grouping]") {
+    auto floor = flatFloor();
+    auto frame = quietFrame();
+    for (int b = 40; b <= 59; b++) { frame[b] = -60.0f; }
+
+    auto signals = detectSignals(frame.data(), BINS, floor, CENTER, SPAN, DetectionParams{});
+    REQUIRE(signals.size() == 1);
+    CHECK(signals[0].centroidFrequency ==
+          Catch::Approx(signals[0].centerFrequency).margin(bwOfBins(1)));
+}
+
 TEST_CASE("a wide merge gap keeps a notched transmission whole", "[detector][grouping]") {
     // What a single frame of broadcast FM looks like: one channel, deeply notched.
     auto floor = flatFloor();

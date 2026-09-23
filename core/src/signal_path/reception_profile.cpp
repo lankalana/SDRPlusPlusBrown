@@ -1,5 +1,6 @@
 #include <signal_path/reception_profile.h>
 #include <algorithm>
+#include <cmath>
 
 const char* toString(ProfileDemod demod) {
     switch (demod) {
@@ -17,6 +18,15 @@ const char* toString(ProfileDemod demod) {
 
 const char* profileDemodComboItems() {
     return "NFM\0WFM\0AM\0DSB\0USB\0CW\0LSB\0RAW\0";
+}
+
+double snapToStep(double frequency, double step) {
+    if (step <= 0.0) { return frequency; }
+    return std::round(frequency / step) * step;
+}
+
+double ReceptionProfile::snapFrequency(double frequency) const {
+    return snapToStep(frequency, frequencyStep);
 }
 
 bool ReceptionProfile::matchesFrequency(double frequency) const {
@@ -76,7 +86,7 @@ ReceptionProfileSet ReceptionProfileSet::defaults() {
     ReceptionProfileSet set;
 
     auto add = [&](const char* name, double lo, double hi, ProfileDemod demod, double bw,
-                   double minDet, double maxDet, bool enabled) {
+                   double minDet, double maxDet, double step, bool enabled) {
         ReceptionProfile p;
         p.name = name;
         p.minFrequency = lo;
@@ -85,19 +95,21 @@ ReceptionProfileSet ReceptionProfileSet::defaults() {
         p.bandwidth = bw;
         p.minDetectionBandwidth = minDet;
         p.maxDetectionBandwidth = maxDet;
+        p.frequencyStep = step;
         p.enabled = enabled;
         p.priority = 0;
         set.profiles.push_back(p);
     };
 
-    // Broadcast FM channels are ~180 kHz wide; the minimum detection bandwidth is what keeps one
-    // station from being reported as a handful of narrow fragments.
-    add("Broadcast FM", 87.5e6, 108e6, ProfileDemod::WFM, 150e3, 100e3, 400e3, true);
-    add("Airband", 118e6, 137e6, ProfileDemod::AM, 10e3, 4e3, 25e3, true);
-    add("2 m voice", 144e6, 146e6, ProfileDemod::NFM, 12.5e3, 5e3, 25e3, true);
-    add("70 cm voice", 430e6, 440e6, ProfileDemod::NFM, 12.5e3, 5e3, 25e3, true);
-    add("40 m LSB", 7.0e6, 7.3e6, ProfileDemod::LSB, 2.8e3, 1e3, 6e3, true);
-    add("20 m USB", 14.0e6, 14.35e6, ProfileDemod::USB, 2.8e3, 1e3, 6e3, true);
+    // Broadcast FM channels are ~180 kHz wide on a 100 kHz raster. The minimum detection
+    // bandwidth and the raster together are what keep one station from being reported as a
+    // handful of narrow fragments.
+    add("Broadcast FM", 87.5e6, 108e6, ProfileDemod::WFM, 150e3, 60e3, 400e3, 100e3, true);
+    add("Airband", 118e6, 137e6, ProfileDemod::AM, 10e3, 4e3, 25e3, 8.33e3, true);
+    add("2 m voice", 144e6, 146e6, ProfileDemod::NFM, 12.5e3, 5e3, 25e3, 12.5e3, true);
+    add("70 cm voice", 430e6, 440e6, ProfileDemod::NFM, 12.5e3, 5e3, 25e3, 12.5e3, true);
+    add("40 m LSB", 7.0e6, 7.3e6, ProfileDemod::LSB, 2.8e3, 1e3, 6e3, 0.0, true);
+    add("20 m USB", 14.0e6, 14.35e6, ProfileDemod::USB, 2.8e3, 1e3, 6e3, 0.0, true);
 
     return set;
 }

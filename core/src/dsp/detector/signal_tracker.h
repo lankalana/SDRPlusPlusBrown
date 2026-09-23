@@ -47,6 +47,9 @@ namespace dsp::detector {
         // Overlap of two frequency ranges as a fraction of the narrower one. 0 if disjoint.
         static double overlapRatio(const DetectedSignal& a, const DetectedSignal& b);
 
+        // True when both carry the same non-zero channel frequency.
+        static bool sameChannel(const DetectedSignal& a, const DetectedSignal& b);
+
     private:
         std::vector<TrackedSignal> tracked;
         std::vector<TrackedSignal> recentlyEnded;

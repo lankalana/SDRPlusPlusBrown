@@ -7,6 +7,8 @@
 #include <signal_path/ignore_rules.h>
 #include <signal_path/reception_profile.h>
 
+#include <cmath>
+
 namespace {
     ReceptionProfile makeProfile(const char* name, double lo, double hi, ProfileDemod demod,
                                  int priority = 0) {
@@ -118,6 +120,43 @@ TEST_CASE("the default profile set covers broadcast FM with a wide minimum", "[p
     CHECK(fm->demod == ProfileDemod::WFM);
     // The point of the default: narrow fragments of an FM channel are not signals.
     CHECK(fm->minDetectionBandwidth >= 50e3);
+}
+
+// ------------------------------------------------------------ channel raster
+
+TEST_CASE("snapToStep rounds to the nearest multiple", "[profiles]") {
+    CHECK(snapToStep(101.087e6, 100e3) == Catch::Approx(101.1e6));
+    CHECK(snapToStep(101.049e6, 100e3) == Catch::Approx(101.0e6));
+    CHECK(snapToStep(101.051e6, 100e3) == Catch::Approx(101.1e6));
+    // Exactly halfway rounds away from zero, consistently.
+    CHECK(snapToStep(101.05e6, 100e3) == Catch::Approx(101.1e6));
+}
+
+TEST_CASE("a step of zero leaves the frequency alone", "[profiles]") {
+    CHECK(snapToStep(14.19512e6, 0.0) == Catch::Approx(14.19512e6));
+
+    auto p = makeProfile("SSB", 14e6, 14.35e6, ProfileDemod::USB);
+    p.frequencyStep = 0.0;
+    CHECK(p.snapFrequency(14.19512e6) == Catch::Approx(14.19512e6));
+}
+
+TEST_CASE("a profile snaps to its own raster", "[profiles]") {
+    auto p = makeProfile("FM", 87.5e6, 108e6, ProfileDemod::WFM);
+    p.frequencyStep = 100e3;
+    // Detected centres wander by tens of kHz; the raster puts the receiver on channel.
+    CHECK(p.snapFrequency(103.6937e6) == Catch::Approx(103.7e6));
+    CHECK(p.snapFrequency(105.5554e6) == Catch::Approx(105.6e6));
+
+    auto air = makeProfile("Airband", 118e6, 137e6, ProfileDemod::AM);
+    air.frequencyStep = 8.33e3;
+    CHECK(air.snapFrequency(118.1e6) == Catch::Approx(std::round(118.1e6 / 8.33e3) * 8.33e3));
+}
+
+TEST_CASE("the default FM profile uses the 100 kHz raster", "[profiles]") {
+    auto set = ReceptionProfileSet::defaults();
+    const auto* fm = set.findFor(98e6);
+    REQUIRE(fm != nullptr);
+    CHECK(fm->frequencyStep == Catch::Approx(100e3));
 }
 
 // -------------------------------------------------------------- ignore rules

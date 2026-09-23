@@ -176,6 +176,56 @@ TEST_CASE("overlapRatio measures against the narrower range", "[detector][tracke
     CHECK(SignalTracker::overlapRatio(at(100e6, 100.1e6), at(100.1e6, 100.2e6)) == 0.0);
 }
 
+TEST_CASE("same-channel fragments are one signal even when disjoint", "[detector][tracker]") {
+    // Two above-threshold runs from opposite sides of one FM channel, seen in different frames.
+    // They do not overlap at all, so only the channel tag can tie them together.
+    SignalTracker tracker;
+    tracker.params.activationMs = 0;
+
+    auto lower = at(103.62e6, 103.66e6);
+    lower.channelFrequency = 103.7e6;
+    auto upper = at(103.74e6, 103.78e6);
+    upper.channelFrequency = 103.7e6;
+
+    REQUIRE(SignalTracker::overlapRatio(lower, upper) == 0.0);
+
+    tracker.update({ lower }, 0);
+    uint64_t id = tracker.getTracked()[0].signal.id;
+    tracker.update({ upper }, 100);
+
+    REQUIRE(tracker.getTracked().size() == 1);
+    CHECK(tracker.getTracked()[0].signal.id == id);
+}
+
+TEST_CASE("different channels stay separate even when they overlap", "[detector][tracker]") {
+    SignalTracker tracker;
+    tracker.params.activationMs = 0;
+
+    auto a = at(103.65e6, 103.75e6);
+    a.channelFrequency = 103.7e6;
+    tracker.update({ a }, 0);
+
+    // Overlapping in frequency, but a different channel: adjacent stations must not be merged.
+    auto b = at(103.70e6, 103.80e6);
+    b.channelFrequency = 103.8e6;
+    tracker.update({ a, b }, 100);
+
+    CHECK(tracker.getTracked().size() == 2);
+}
+
+TEST_CASE("untagged signals still associate by overlap", "[detector][tracker]") {
+    SignalTracker tracker;
+    tracker.params.activationMs = 0;
+
+    // No raster configured, so channelFrequency stays zero and overlap decides.
+    tracker.update({ at(14.1950e6, 14.1978e6) }, 0);
+    uint64_t id = tracker.getTracked()[0].signal.id;
+    tracker.update({ at(14.1951e6, 14.1979e6) }, 100);
+
+    REQUIRE(tracker.getTracked().size() == 1);
+    CHECK(tracker.getTracked()[0].signal.id == id);
+}
+
 TEST_CASE("clear forgets everything", "[detector][tracker]") {
     SignalTracker tracker;
     tracker.params.activationMs = 0;

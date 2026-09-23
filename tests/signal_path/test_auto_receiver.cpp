@@ -10,6 +10,7 @@
 
 #include <signal_path/auto_receiver.h>
 
+#include <cmath>
 #include <vector>
 
 using namespace dsp::detector;
@@ -317,7 +318,7 @@ TEST_CASE("ignoreSignal creates a rule from a tracked signal", "[auto_receiver]"
 TEST_CASE("profiles gate detection when enabled", "[auto_receiver]") {
     AutoReceiverManager mgr;
     auto c = manualConfig();
-    c.useProfiles = true;
+    c.restrictToProfiles = true;
     mgr.setConfig(c);
 
     ReceptionProfileSet set;
@@ -343,7 +344,7 @@ TEST_CASE("profiles gate detection when enabled", "[auto_receiver]") {
 TEST_CASE("a profile's bandwidth limits reject a too-narrow detection", "[auto_receiver]") {
     AutoReceiverManager mgr;
     auto c = manualConfig();
-    c.useProfiles = true;
+    c.restrictToProfiles = true;
     mgr.setConfig(c);
 
     ReceptionProfileSet set;
@@ -387,6 +388,162 @@ TEST_CASE("classified signals report the matching profile", "[auto_receiver]") {
     CHECK(classified[0].demod == ProfileDemod::WFM);
     CHECK(classified[0].receiverBandwidth == Catch::Approx(150e3));
     CHECK_FALSE(classified[0].ignored);
+}
+
+TEST_CASE("a profile's raster applies without restrictToProfiles", "[auto_receiver]") {
+    // Regression: the raster used to be gated behind the same flag that drops uncovered
+    // detections, so anyone whose config had that flag off got no rounding and no fragment
+    // merging at all -- detections jumped around and never landed on channel.
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.restrictToProfiles = false;
+    c.activationMs = 0;
+    mgr.setConfig(c);
+
+    ReceptionProfileSet set;
+    ReceptionProfile p;
+    p.name = "FM";
+    p.minFrequency = CENTER - SPAN;
+    p.maxFrequency = CENTER + SPAN;
+    p.demod = ProfileDemod::WFM;
+    p.bandwidth = 150e3;
+    p.frequencyStep = 100e3;
+    set.profiles.push_back(p);
+    mgr.setProfiles(set);
+
+    feed(mgr, frameWithSignal(), 4, 0);
+    REQUIRE(mgr.getTrackedSignals().size() == 1);
+    CHECK(mgr.getTrackedSignals()[0].signal.channelFrequency != 0.0);
+
+    auto classified = mgr.getClassifiedSignals();
+    REQUIRE(classified.size() == 1);
+    double tune = classified[0].tuneFrequency;
+    CHECK(std::fabs(tune - (std::round(tune / 100e3) * 100e3)) < 1.0);
+}
+
+TEST_CASE("an uncovered detection survives unless restricted", "[auto_receiver]") {
+    ReceptionProfileSet set;
+    ReceptionProfile p;
+    p.name = "Elsewhere";
+    p.minFrequency = 400e6;
+    p.maxFrequency = 410e6;
+    set.profiles.push_back(p);
+
+    SECTION("kept by default") {
+        AutoReceiverManager mgr;
+        auto c = manualConfig();
+        c.restrictToProfiles = false;
+        mgr.setConfig(c);
+        mgr.setProfiles(set);
+
+        feed(mgr, frameWithSignal(), 8, 0);
+        CHECK(mgr.getActiveSignalCount() == 1);
+    }
+
+    SECTION("dropped when restricted") {
+        AutoReceiverManager mgr;
+        auto c = manualConfig();
+        c.restrictToProfiles = true;
+        mgr.setConfig(c);
+        mgr.setProfiles(set);
+
+        feed(mgr, frameWithSignal(), 8, 0);
+        CHECK(mgr.getTrackedSignals().empty());
+    }
+}
+
+TEST_CASE("a channel raster merges fragments of one transmission", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.restrictToProfiles = true;
+    c.activationMs = 0;
+    mgr.setConfig(c);
+
+    ReceptionProfileSet set;
+    ReceptionProfile p;
+    p.name = "Rastered";
+    p.minFrequency = CENTER - SPAN;
+    p.maxFrequency = CENTER + SPAN;
+    p.demod = ProfileDemod::WFM;
+    p.bandwidth = 150e3;
+    p.frequencyStep = SPAN / 4.0; // 250 kHz raster
+    set.profiles.push_back(p);
+    mgr.setProfiles(set);
+
+    // Two separate above-threshold runs, both inside the same 250 kHz channel.
+    auto frame = quietFrame();
+    for (int b = 28; b <= 30; b++) { frame[b] = -40.0f; }
+    for (int b = 34; b <= 36; b++) { frame[b] = -40.0f; }
+
+    feed(mgr, frame, 4, 0);
+
+    // One station, not two.
+    REQUIRE(mgr.getTrackedSignals().size() == 1);
+    const auto& sig = mgr.getTrackedSignals()[0].signal;
+    CHECK(sig.channelFrequency != 0.0);
+    // The merged extent spans both fragments.
+    CHECK(sig.bandwidth >= 8 * (SPAN / BINS));
+}
+
+TEST_CASE("the tune frequency is snapped onto the channel raster", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.restrictToProfiles = true;
+    c.activationMs = 0;
+    mgr.setConfig(c);
+
+    ReceptionProfileSet set;
+    ReceptionProfile p;
+    p.name = "FM";
+    p.minFrequency = CENTER - SPAN;
+    p.maxFrequency = CENTER + SPAN;
+    p.demod = ProfileDemod::WFM;
+    p.bandwidth = 150e3;
+    p.frequencyStep = 100e3;
+    set.profiles.push_back(p);
+    mgr.setProfiles(set);
+
+    feed(mgr, frameWithSignal(), 4, 0);
+    auto classified = mgr.getClassifiedSignals();
+    REQUIRE(classified.size() == 1);
+
+    // Whatever the detected centre, the receiver goes on channel.
+    double tune = classified[0].tuneFrequency;
+    CHECK(std::fabs(tune - (std::round(tune / 100e3) * 100e3)) < 1.0);
+    CHECK(std::fabs(tune - classified[0].tracked.signal.centroidFrequency) <= 50e3);
+}
+
+TEST_CASE("SSB tunes to the signal edge, not its centre", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.restrictToProfiles = true;
+    c.activationMs = 0;
+    mgr.setConfig(c);
+
+    ReceptionProfileSet set;
+    ReceptionProfile usb;
+    usb.name = "USB";
+    usb.minFrequency = CENTER - SPAN;
+    usb.maxFrequency = CENTER + SPAN;
+    usb.demod = ProfileDemod::USB;
+    usb.bandwidth = 2.8e3;
+    set.profiles.push_back(usb);
+    mgr.setProfiles(set);
+
+    feed(mgr, frameWithSignal(), 4, 0);
+    auto classified = mgr.getClassifiedSignals();
+    REQUIRE(classified.size() == 1);
+    CHECK(classified[0].tuneFrequency ==
+          Catch::Approx(classified[0].tracked.signal.lowerFrequency));
+
+    // LSB takes the other edge.
+    set.profiles[0].demod = ProfileDemod::LSB;
+    mgr.setProfiles(set);
+    feed(mgr, frameWithSignal(), 4, 5000);
+    classified = mgr.getClassifiedSignals();
+    REQUIRE(classified.size() == 1);
+    CHECK(classified[0].tuneFrequency ==
+          Catch::Approx(classified[0].tracked.signal.upperFrequency));
 }
 
 TEST_CASE("onDetectionUpdate reports the active signals", "[auto_receiver]") {

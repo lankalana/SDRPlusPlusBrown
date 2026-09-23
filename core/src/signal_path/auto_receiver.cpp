@@ -250,6 +250,28 @@ AutoReceiverManager::FloorCurve AutoReceiverManager::getFloorCurve(int maxSample
     return curve;
 }
 
+// Combine two detections known to belong to the same channel.
+static DetectedSignal mergeSignals(const DetectedSignal& a, const DetectedSignal& b) {
+    DetectedSignal out;
+    out.lowerFrequency = std::min(a.lowerFrequency, b.lowerFrequency);
+    out.upperFrequency = std::max(a.upperFrequency, b.upperFrequency);
+    out.centerFrequency = (out.lowerFrequency + out.upperFrequency) / 2.0;
+    out.bandwidth = out.upperFrequency - out.lowerFrequency;
+    out.peakDb = std::max(a.peakDb, b.peakDb);
+    out.noiseFloorDb = std::min(a.noiseFloorDb, b.noiseFloorDb);
+    out.snrDb = out.peakDb - out.noiseFloorDb;
+
+    // Weight each fragment's centroid by its linear power above the floor, so the combined
+    // centroid follows the dominant part of the transmission.
+    double wa = std::pow(10.0, a.snrDb / 10.0);
+    double wb = std::pow(10.0, b.snrDb / 10.0);
+    double total = wa + wb;
+    out.centroidFrequency = (total > 0.0)
+                                ? ((a.centroidFrequency * wa) + (b.centroidFrequency * wb)) / total
+                                : out.centerFrequency;
+    return out;
+}
+
 std::vector<DetectedSignal> AutoReceiverManager::filterLocked(
     const std::vector<DetectedSignal>& detections) const {
     std::vector<DetectedSignal> kept;
@@ -259,18 +281,96 @@ std::vector<DetectedSignal> AutoReceiverManager::filterLocked(
         // Ignored ranges never reach the tracker, so they never allocate a receiver or start a
         // recording. They stay visible in the spectrum itself and in the history later.
         if (ignoreRules.isIgnored(sig.lowerFrequency, sig.upperFrequency)) { continue; }
-
-        if (config.useProfiles) {
-            double minBw = 0.0;
-            double maxBw = 0.0;
-            if (!profiles.detectionLimitsAt(sig.centerFrequency, minBw, maxBw)) { continue; }
-            if (minBw > 0.0 && sig.bandwidth < minBw) { continue; }
-            if (maxBw > 0.0 && sig.bandwidth > maxBw) { continue; }
-        }
-
+        // A detection nowhere near an enabled profile is only dropped if the user asked for that.
+        if (config.restrictToProfiles && !profiles.covers(sig.centroidFrequency)) { continue; }
         kept.push_back(sig);
     }
-    return kept;
+
+    // Collapse fragments onto their channel. A modulated carrier breaks into several
+    // above-threshold runs within one channel; on a rastered band those all snap to the same
+    // frequency and are one signal, not several.
+    //
+    // This runs whenever a matching profile defines a raster, regardless of restrictToProfiles.
+    {
+        std::vector<std::pair<double, size_t>> channelOf; // snapped frequency -> index in merged
+        std::vector<DetectedSignal> merged;
+
+        for (const auto& sig : kept) {
+            const ReceptionProfile* profile = profiles.findFor(sig.centroidFrequency);
+            double step = (profile != nullptr) ? profile->frequencyStep : 0.0;
+            if (step <= 0.0) {
+                merged.push_back(sig);
+                continue;
+            }
+
+            double channel = snapToStep(sig.centroidFrequency, step);
+            bool combined = false;
+            for (auto& [existing, idx] : channelOf) {
+                if (existing == channel) {
+                    double keep = merged[idx].channelFrequency;
+                    merged[idx] = mergeSignals(merged[idx], sig);
+                    merged[idx].channelFrequency = keep;
+                    combined = true;
+                    break;
+                }
+            }
+            if (!combined) {
+                DetectedSignal tagged = sig;
+                tagged.channelFrequency = channel;
+                channelOf.emplace_back(channel, merged.size());
+                merged.push_back(tagged);
+            }
+        }
+        kept.swap(merged);
+    }
+
+    // Bandwidth limits are judged after merging, so that a channel assembled from fragments is
+    // measured at its true width rather than each fragment being rejected on its own.
+    std::vector<DetectedSignal> result;
+    result.reserve(kept.size());
+    for (const auto& sig : kept) {
+        double minBw = config.minBandwidthHz;
+        double maxBw = config.maxBandwidthHz;
+
+        // A matching profile's limits are more specific than the global ones, so they win.
+        double pMin = 0.0;
+        double pMax = 0.0;
+        if (profiles.detectionLimitsAt(sig.centroidFrequency, pMin, pMax)) {
+            minBw = pMin;
+            maxBw = pMax;
+        }
+        else if (config.restrictToProfiles) {
+            continue;
+        }
+
+        if (minBw > 0.0 && sig.bandwidth < minBw) { continue; }
+        if (maxBw > 0.0 && sig.bandwidth > maxBw) { continue; }
+        result.push_back(sig);
+    }
+    return result;
+}
+
+double AutoReceiverManager::getTuneFrequency(const DetectedSignal& signal) const {
+    std::lock_guard<std::recursive_mutex> lck(mtx);
+
+    const ReceptionProfile* profile = profiles.findFor(signal.centroidFrequency);
+    if (profile == nullptr) { return signal.centroidFrequency; }
+
+    // SSB is referenced to the edge of the signal, everything else to its centre.
+    switch (profile->demod) {
+    case ProfileDemod::USB:
+    case ProfileDemod::CW:
+        return profile->snapFrequency(signal.lowerFrequency);
+    case ProfileDemod::LSB:
+        return profile->snapFrequency(signal.upperFrequency);
+    default:
+        break;
+    }
+
+    // For a centre-referenced mode on a rastered band, the channel the signal was assigned to is
+    // a better answer than re-snapping a centroid that has since drifted across a channel edge.
+    if (signal.channelFrequency != 0.0) { return signal.channelFrequency; }
+    return profile->snapFrequency(signal.centroidFrequency);
 }
 
 void AutoReceiverManager::setProfiles(const ReceptionProfileSet& newProfiles) {
@@ -326,12 +426,16 @@ std::vector<AutoReceiverManager::ClassifiedSignal> AutoReceiverManager::getClass
             cs.ignoreReason = rule->reason;
         }
 
-        const ReceptionProfile* profile = profiles.findFor(track.signal.centerFrequency);
+        const ReceptionProfile* profile = profiles.findFor(track.signal.centroidFrequency);
         if (profile != nullptr) {
             cs.hasProfile = true;
             cs.profileName = profile->name;
             cs.demod = profile->demod;
             cs.receiverBandwidth = profile->bandwidth;
+            cs.tuneFrequency = getTuneFrequency(track.signal);
+        }
+        else {
+            cs.tuneFrequency = track.signal.centroidFrequency;
         }
         out.push_back(cs);
     }
