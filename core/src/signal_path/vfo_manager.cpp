@@ -14,6 +14,8 @@ VFOManager::VFO::VFO(std::string name, int reference, double offset, double band
     wtfVFO->minBandwidth = minBandwidth;
     wtfVFO->maxBandwidth = maxBandwidth;
     wtfVFO->bandwidthLocked = bandwidthLocked;
+    wtfVFO->label = name;
+    wtfVFO->owner = receivers::ownerFromName(name);
     output = &dspVFO->out;
     gui::waterfall.vfos[name] = wtfVFO;
 }
@@ -87,6 +89,18 @@ void VFOManager::VFO::setColor(ImU32 color) {
 
 std::string VFOManager::VFO::getName() {
     return name;
+}
+
+ReceiverOwner VFOManager::VFO::getOwner() {
+    return wtfVFO->owner;
+}
+
+void VFOManager::VFO::setLabel(const std::string& label) {
+    wtfVFO->label = label;
+}
+
+void VFOManager::VFO::setStatusText(const std::string& status) {
+    wtfVFO->statusText = status;
 }
 
 VFOManager::VFOManager() {
@@ -199,6 +213,86 @@ void VFOManager::setColor(std::string name, ImU32 color) {
 
 bool VFOManager::vfoExists(std::string name) {
     return vfos.contains(name);
+}
+
+void VFOManager::setStatusText(std::string name, const std::string& status) {
+    auto it = vfos.find(name);
+    if (it == vfos.end()) {
+        return;
+    }
+    it->second->setStatusText(status);
+}
+
+VFOManager::VFO* VFOManager::getVFO(const std::string& name) {
+    auto it = vfos.find(name);
+    if (it == vfos.end()) {
+        return NULL;
+    }
+    return it->second.get();
+}
+
+std::vector<VFOManager::VFOState> VFOManager::getVFOStates() const {
+    std::vector<VFOState> states;
+    states.reserve(vfos.size());
+    for (auto const& [name, vfo] : vfos) {
+        VFOState state;
+        state.name = name;
+        state.offset = vfo->wtfVFO->generalOffset;
+        state.bandwidth = vfo->wtfVFO->bandwidth;
+        state.reference = vfo->wtfVFO->reference;
+        state.owner = vfo->wtfVFO->owner;
+        states.push_back(state);
+    }
+    return states;
+}
+
+std::vector<std::string> VFOManager::getVFONames() const {
+    std::vector<std::string> names;
+    names.reserve(vfos.size());
+    for (auto const& [name, vfo] : vfos) {
+        names.push_back(name);
+    }
+    return names;
+}
+
+bool VFOManager::setAbsoluteFrequency(const std::string& name, double centerFrequency, double absoluteFrequency) {
+    auto it = vfos.find(name);
+    if (it == vfos.end()) {
+        return false;
+    }
+    // Only the offset moves. The source center frequency belongs to the user.
+    it->second->setOffset(absoluteFrequency - centerFrequency);
+    return true;
+}
+
+double VFOManager::getAbsoluteFrequency(const std::string& name, double centerFrequency) {
+    auto it = vfos.find(name);
+    if (it == vfos.end()) {
+        return NAN;
+    }
+    return centerFrequency + it->second->getOffset();
+}
+
+bool VFOManager::passbandFitsInSpectrum(double centerFrequency, double usableBandwidth,
+                                        double tuneFrequency, double bandwidth, int reference) {
+    double specLow = centerFrequency - (usableBandwidth / 2.0);
+    double specHigh = centerFrequency + (usableBandwidth / 2.0);
+
+    double passLow, passHigh;
+    if (reference == ImGui::WaterfallVFO::REF_LOWER) {
+        passLow = tuneFrequency;
+        passHigh = tuneFrequency + bandwidth;
+    }
+    else if (reference == ImGui::WaterfallVFO::REF_UPPER) {
+        passLow = tuneFrequency - bandwidth;
+        passHigh = tuneFrequency;
+    }
+    else {
+        passLow = tuneFrequency - (bandwidth / 2.0);
+        passHigh = tuneFrequency + (bandwidth / 2.0);
+    }
+
+    return passLow >= specLow && passHigh <= specHigh;
 }
 
 void VFOManager::updateFromWaterfall(ImGui::WaterFall* wtf) {

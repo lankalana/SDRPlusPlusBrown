@@ -3,6 +3,7 @@
 #include <vector>
 #include <mutex>
 #include <gui/widgets/bandplan.h>
+#include <signal_path/receiver.h>
 #include <imgui/imgui.h>
 #include <imgui/imgui_internal.h>
 #include <utils/event.h>
@@ -46,6 +47,14 @@ namespace ImGui {
         double notchOffset = 0;
         bool notchVisible = false;
 
+        // Presentation metadata. The label identifies overlapping receivers where color alone
+        // isn't enough; statusText is an optional short suffix such as "REC".
+        std::string label;
+        std::string statusText;
+        bool showLabel = true;
+        ReceiverOwner owner = ReceiverOwner::MANUAL;
+        std::string labelText; // label + statusText, rebuilt in updateDrawingVars
+
         bool leftClamped;
         bool rightClamped;
 
@@ -67,6 +76,8 @@ namespace ImGui {
         ImVec2 wfRbwSelMax;
         ImVec2 notchMin;
         ImVec2 notchMax;
+        ImVec2 labelMin;
+        ImVec2 labelMax;
 
         bool centerOffsetChanged = false;
         bool lowerOffsetChanged = false;
@@ -132,6 +143,9 @@ namespace ImGui {
 
         std::pair<int, int> autoRange();
 
+        // Single entry point for changing the active receiver. Every selection path (cursor click,
+        // label click, receiver dropdown, Page Up/Down, creation, deletion) must go through this.
+        void selectVFO(const std::string& name);
         void selectFirstVFO();
 
         void showWaterfall();
@@ -179,6 +193,7 @@ namespace ImGui {
         std::map<std::string, WaterfallVFO*> vfos;
         std::string selectedVFO = "";
         bool selectedVFOChanged = false;
+        Event<std::string> onVFOSelected;
         bool quiet = false;
 
         struct FFTRedrawArgs {

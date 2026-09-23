@@ -23,6 +23,7 @@
 #include <gui/menus/sink.h>
 #include <gui/menus/vfo_color.h>
 #include <gui/menus/module_manager.h>
+#include <gui/menus/receiver_manager.h>
 #include <gui/menus/theme.h>
 #include <gui/dialogs/credits.h>
 #include <cstring>
@@ -93,6 +94,7 @@ void MainWindow::init() {
     gui::menu.registerEntry("Display", displaymenu::draw, NULL);
     gui::menu.registerEntry("Theme", thememenu::draw, NULL);
     gui::menu.registerEntry("VFO Color", vfo_color_menu::draw, NULL);
+    gui::menu.registerEntry("Receivers", receiver_manager_menu::draw, NULL);
     gui::menu.registerEntry("Module Manager", module_manager_menu::draw, NULL);
 
     gui::freqSelect.init();
@@ -186,6 +188,7 @@ void MainWindow::init() {
     displaymenu::init();
     vfo_color_menu::init();
     module_manager_menu::init();
+    receiver_manager_menu::init();
 
     // TODO for 0.2.5
     // Fix gain not updated on startup, soapysdr
@@ -383,6 +386,13 @@ void MainWindow::drawUpperLine(ImGui::WaterfallVFO* vfo) {
     ImGui::SameLine();
     float origY = ImGui::GetCursorPosY();
 
+    // Active receiver selector. Everything to its right (frequency, volume, SNR) refers to
+    // whichever receiver is selected here.
+    ImGui::SetCursorPosY(origY + (5.0f * style::uiScale));
+    receiver_manager_menu::drawSelector(80.0f * style::uiScale);
+    ImGui::SameLine();
+    ImGui::SetCursorPosY(origY);
+
     sigpath::sinkManager.showVolumeSlider(gui::waterfall.selectedVFO, "##_sdrpp_main_volume_", 248 * style::uiScale, btnSize.x, 5, true);
 
     ImGui::SameLine();
@@ -418,6 +428,15 @@ void MainWindow::drawUpperLine(ImGui::WaterfallVFO* vfo) {
     }
 
     ImGui::SameLine();
+
+    // Mode and bandwidth of the active receiver, between the tuning button and the SNR meter.
+    std::string rxSummary = receiver_manager_menu::activeReceiverSummary();
+    if (!rxSummary.empty()) {
+        ImGui::SetCursorPosY(origY + (8.0f * style::uiScale));
+        ImGui::TextUnformatted(rxSummary.c_str());
+        ImGui::SameLine();
+        ImGui::SetCursorPosY(origY);
+    }
 
     int snrOffset = 87.0f * style::uiScale;
     int snrWidth = std::clamp<int>(ImGui::GetWindowSize().x - ImGui::GetCursorPosX() - snrOffset, 100.0f * style::uiScale, 300.0f * style::uiScale);

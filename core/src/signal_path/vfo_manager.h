@@ -1,12 +1,23 @@
 #pragma once
 #include "../dsp/channel/rx_vfo.h"
 #include <gui/widgets/waterfall.h>
+#include <signal_path/receiver.h>
 #include <utils/event.h>
 #include <memory>
+#include <vector>
 
 class VFOManager {
 public:
     VFOManager();
+
+    // Read-only snapshot of a VFO, so that callers don't have to reach into gui::waterfall.vfos.
+    struct VFOState {
+        std::string name;
+        double offset;
+        double bandwidth;
+        int reference;
+        ReceiverOwner owner;
+    };
 
     class VFO {
     public:
@@ -26,6 +37,9 @@ public:
         int getReference();
         void setColor(ImU32 color);
         std::string getName();
+        ReceiverOwner getOwner();
+        void setLabel(const std::string& label);
+        void setStatusText(const std::string& status);
 
         dsp::stream<dsp::complex_t>* output;
 
@@ -57,6 +71,31 @@ public:
     std::string getName();
     int getReference(std::string name);
     bool vfoExists(std::string name);
+    void setStatusText(std::string name, const std::string& status);
+
+    // Read APIs. Prefer these over touching gui::waterfall.vfos directly.
+    VFO* getVFO(const std::string& name);
+    std::vector<VFOState> getVFOStates() const;
+    std::vector<std::string> getVFONames() const;
+
+    /**
+     * Move a VFO to an absolute frequency by changing only its offset. This never touches the
+     * source: the SDR center frequency is owned by the user.
+     * Returns false if the VFO doesn't exist.
+     */
+    bool setAbsoluteFrequency(const std::string& name, double centerFrequency, double absoluteFrequency);
+    double getAbsoluteFrequency(const std::string& name, double centerFrequency);
+
+    /**
+     * Fixed-center placement check: does a receiver tuned to `tuneFrequency` with the given
+     * bandwidth and reference fit entirely inside the usable spectrum
+     * [centerFrequency - usableBandwidth/2, centerFrequency + usableBandwidth/2]?
+     *
+     * REF_CENTER covers [tune - bw/2, tune + bw/2], REF_LOWER (USB) covers [tune, tune + bw],
+     * REF_UPPER (LSB) covers [tune - bw, tune].
+     */
+    static bool passbandFitsInSpectrum(double centerFrequency, double usableBandwidth,
+                                       double tuneFrequency, double bandwidth, int reference);
 
     void updateFromWaterfall(ImGui::WaterFall* wtf);
 

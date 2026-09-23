@@ -340,18 +340,18 @@ namespace ImGui {
         }
     }
 
+    void WaterFall::selectVFO(const std::string& name) {
+        selectedVFO = name;
+        selectedVFOChanged = true;
+        onVFOSelected.emit(selectedVFO);
+    }
+
     void WaterFall::selectFirstVFO() {
-        bool available = false;
         for (auto const& [name, vfo] : vfos) {
-            available = true;
-            selectedVFO = name;
-            selectedVFOChanged = true;
+            selectVFO(name);
             return;
         }
-        if (!available) {
-            selectedVFO = "";
-            selectedVFOChanged = true;
-        }
+        selectVFO("");
     }
 
     void WaterFall::processInputs() {
@@ -379,11 +379,21 @@ namespace ImGui {
         if (mousePos.x != lastMousePos.x || mousePos.y != lastMousePos.y) { mouseMoved = true; }
         lastMousePos = mousePos;
 
+        // Labels are checked first: they sit on top of the cursors and may overlap a neighbouring
+        // receiver's body, so clicking a label must always select the receiver it names.
         std::string hoveredVFOName = "";
         for (auto const& [name, _vfo] : vfos) {
-            if (ImGui::IsMouseHoveringRect(_vfo->rectMin, _vfo->rectMax) || ImGui::IsMouseHoveringRect(_vfo->wfRectMin, _vfo->wfRectMax)) {
+            if (_vfo->labelMax.x > _vfo->labelMin.x && ImGui::IsMouseHoveringRect(_vfo->labelMin, _vfo->labelMax)) {
                 hoveredVFOName = name;
                 break;
+            }
+        }
+        if (hoveredVFOName == "") {
+            for (auto const& [name, _vfo] : vfos) {
+                if (ImGui::IsMouseHoveringRect(_vfo->rectMin, _vfo->rectMax) || ImGui::IsMouseHoveringRect(_vfo->wfRectMin, _vfo->wfRectMax)) {
+                    hoveredVFOName = name;
+                    break;
+                }
             }
         }
 
@@ -442,8 +452,7 @@ namespace ImGui {
 
             // Next, check if a VFO was selected
             if (!targetFound && hoveredVFOName != "") {
-                selectedVFO = hoveredVFOName;
-                selectedVFOChanged = true;
+                selectVFO(hoveredVFOName);
                 targetFound = true;
                 return;
             }
@@ -645,8 +654,7 @@ namespace ImGui {
                     lowest = _name;
                 }
             }
-            selectedVFO = found ? next : lowest;
-            selectedVFOChanged = true;
+            selectVFO(found ? next : lowest);
         }
 
         // Handle Page Down to cycle through VFOs
@@ -668,8 +676,7 @@ namespace ImGui {
                     highest = _name;
                 }
             }
-            selectedVFO = found ? next : highest;
-            selectedVFOChanged = true;
+            selectVFO(found ? next : highest);
         }
     }
 
@@ -1677,6 +1684,26 @@ namespace ImGui {
 
         notchMin = ImVec2(gui::waterfall.fftAreaMin.x + notch - gripSize, gui::waterfall.fftAreaMin.y);
         notchMax = ImVec2(gui::waterfall.fftAreaMin.x + notch + gripSize, gui::waterfall.fftAreaMax.y - 1);
+
+        // Receiver label, centered on the reference line and clamped into the FFT area
+        labelText.clear();
+        if (showLabel && !label.empty() && lineVisible) {
+            labelText = label;
+            if (!statusText.empty()) { labelText += " " + statusText; }
+            ImVec2 txtSz = ImGui::CalcTextSize(labelText.c_str());
+            float pad = 3.0f * style::uiScale;
+            float w = txtSz.x + (2.0f * pad);
+            float x = std::clamp<float>(lineMin.x - (w / 2.0f),
+                                        gui::waterfall.fftAreaMin.x,
+                                        std::max<float>(gui::waterfall.fftAreaMin.x, gui::waterfall.fftAreaMax.x - w));
+            float y = gui::waterfall.fftAreaMin.y + (2.0f * style::uiScale);
+            labelMin = ImVec2(x, y);
+            labelMax = ImVec2(x + w, y + txtSz.y);
+        }
+        else {
+            labelMin = ImVec2(0, 0);
+            labelMax = ImVec2(0, 0);
+        }
     }
 
     void WaterfallVFO::draw(ImGuiWindow* window, bool selected) {
@@ -1687,6 +1714,17 @@ namespace ImGui {
 
         if (notchVisible) {
             window->DrawList->AddRectFilled(notchMin, notchMax, IM_COL32(255, 0, 0, 127));
+        }
+
+        if (!labelText.empty()) {
+            // The receiver's own color tints the label so it stays associated with its cursor,
+            // but the border/text does the actual identification. Don't rely only on color.
+            ImU32 opaqueColor = color | IM_COL32(0, 0, 0, 200);
+            window->DrawList->AddRectFilled(labelMin, labelMax, selected ? IM_COL32(120, 0, 0, 220) : IM_COL32(20, 20, 20, 190), 2.0f * style::uiScale);
+            window->DrawList->AddRect(labelMin, labelMax, selected ? IM_COL32(255, 0, 0, 255) : opaqueColor, 2.0f * style::uiScale, 0, style::uiScale);
+            window->DrawList->AddText(ImVec2(labelMin.x + (3.0f * style::uiScale), labelMin.y),
+                                      selected ? IM_COL32(255, 255, 255, 255) : IM_COL32(220, 220, 220, 255),
+                                      labelText.c_str());
         }
 
         if (!gui::mainWindow.lockWaterfallControls && !gui::waterfall.inputHandled && ImGui::GetTopMostPopupModal() == NULL) {

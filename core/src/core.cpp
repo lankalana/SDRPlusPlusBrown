@@ -567,6 +567,7 @@ int sdrpp_main(int argc, char* argv[]) {
         { "ABD-S Decoder", false },
         { "Rigctl Server", false },
         { "Module Manager", false },
+        { "Receivers", false },
     };
     for (auto& p : openState) {
         menuElements[menuElements.size() - 0]["name"] = p.first;
