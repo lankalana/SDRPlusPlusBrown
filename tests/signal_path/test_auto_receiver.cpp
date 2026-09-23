@@ -1,8 +1,9 @@
-// AutoReceiverManager: calibration lifecycle and its relationship with source changes.
+// AutoReceiverManager: the detection floor and its relationship with source changes.
 //
 // The invariant under test throughout is the one the whole design hangs off: the user owns the
-// SDR centre frequency. The manager observes the captured spectrum and rebuilds its noise model
-// whenever that spectrum changes meaning; it never asks the source to move.
+// SDR centre frequency. The manager observes the captured spectrum and never asks the source to
+// move -- and, since the floor is either set by the user or measured on request, it never starts
+// measuring by itself either.
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -16,29 +17,36 @@ using namespace dsp::detector;
 namespace {
     const int BINS = 64;
     const double CENTER = 100e6;
-    const double SPAN = 1e6;
-    const double FRAME_RATE = 20.0; // 20 frames per second
+    const double SPAN = 1e6; // 15.625 kHz per bin
+    const double FRAME_RATE = 20.0;
     const double USABLE = 1.0;
 
-    AutoReceiverManager::Config fastConfig() {
+    AutoReceiverManager::Config manualConfig() {
         AutoReceiverManager::Config c;
         c.enabled = true;
-        c.calibrationSeconds = 1.0; // 20 frames
-        c.minSnrDb = 10.0f;
+        c.floorMode = NoiseFloorMode::MANUAL;
+        c.manualFloorDb = -100.0f;
+        c.marginDb = 10.0f;
         c.activationMs = 300;
         c.releaseMs = 2000;
+        c.detectionAveragingFrames = 1;
         c.minDetectionBins = 2;
         return c;
     }
 
     std::vector<float> quietFrame() { return std::vector<float>(BINS, -100.0f); }
 
-    // Drive `frames` quiet frames through, 50 ms apart, starting at `startMs`.
-    uint64_t feedQuiet(AutoReceiverManager& mgr, int frames, uint64_t startMs) {
-        auto frame = quietFrame();
+    std::vector<float> frameWithSignal() {
+        auto f = quietFrame();
+        for (int b = 30; b <= 35; b++) { f[b] = -40.0f; }
+        return f;
+    }
+
+    uint64_t feed(AutoReceiverManager& mgr, const std::vector<float>& frame, int count,
+                  uint64_t startMs, double center = CENTER) {
         uint64_t t = startMs;
-        for (int i = 0; i < frames; i++) {
-            mgr.onFFTFrame(frame.data(), BINS, CENTER, SPAN, USABLE, FRAME_RATE, t);
+        for (int i = 0; i < count; i++) {
+            mgr.onFFTFrame(frame.data(), BINS, center, SPAN, USABLE, FRAME_RATE, t);
             t += 50;
         }
         return t;
@@ -58,240 +66,332 @@ TEST_CASE("a disabled manager ignores the spectrum entirely", "[auto_receiver]")
     AutoReceiverManager mgr;
     REQUIRE_FALSE(mgr.isEnabled());
 
-    feedQuiet(mgr, 100, 0);
-    CHECK(mgr.getCalibrationState() == CalibrationState::UNCALIBRATED);
+    feed(mgr, frameWithSignal(), 100, 0);
     CHECK(mgr.getTrackedSignals().empty());
 }
 
-TEST_CASE("enabling starts calibration on the first frame", "[auto_receiver]") {
+TEST_CASE("a manual floor detects from the very first frame", "[auto_receiver]") {
     AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
+    mgr.setConfig(manualConfig());
 
-    feedQuiet(mgr, 1, 0);
-    CHECK(mgr.getCalibrationState() == CalibrationState::CALIBRATING);
-    CHECK(mgr.getCalibrationProgress() > 0.0f);
-    CHECK(mgr.getCalibrationProgress() < 1.0f);
-}
-
-TEST_CASE("calibration completes after the configured duration", "[auto_receiver]") {
-    AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
-
-    feedQuiet(mgr, 20, 0);
-    CHECK(mgr.getCalibrationState() == CalibrationState::READY);
-    CHECK(mgr.getCalibrationProgress() == 1.0f);
-}
-
-TEST_CASE("no detections are produced while calibrating", "[auto_receiver]") {
-    AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
-
-    // A loud signal present from the very start must not be reported before the model exists.
-    auto frame = quietFrame();
-    for (int b = 30; b <= 35; b++) { frame[b] = -40.0f; }
-
-    uint64_t t = 0;
-    for (int i = 0; i < 10; i++) {
-        mgr.onFFTFrame(frame.data(), BINS, CENTER, SPAN, USABLE, FRAME_RATE, t);
-        CHECK(mgr.getTrackedSignals().empty());
-        t += 50;
-    }
-    CHECK(mgr.getCalibrationState() == CalibrationState::CALIBRATING);
-}
-
-TEST_CASE("a signal is detected and confirmed after calibration", "[auto_receiver]") {
-    AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
-
-    uint64_t t = feedQuiet(mgr, 20, 0);
-    REQUIRE(mgr.getCalibrationState() == CalibrationState::READY);
-
-    auto frame = quietFrame();
-    for (int b = 30; b <= 35; b++) { frame[b] = -40.0f; }
-
-    mgr.onFFTFrame(frame.data(), BINS, CENTER, SPAN, USABLE, FRAME_RATE, t);
+    // No warm-up, no calibration: the user already said where the floor is.
+    feed(mgr, frameWithSignal(), 1, 0);
     REQUIRE(mgr.getTrackedSignals().size() == 1);
     CHECK(mgr.getTrackedSignals()[0].state == SignalState::CANDIDATE);
-    CHECK(mgr.getActiveSignalCount() == 0);
+    CHECK(mgr.isFloorUsable());
+}
 
-    // Past the 300 ms activation delay.
-    for (int i = 0; i < 8; i++) {
-        t += 50;
-        mgr.onFFTFrame(frame.data(), BINS, CENTER, SPAN, USABLE, FRAME_RATE, t);
-    }
+TEST_CASE("a manual floor confirms a signal after the activation delay", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    mgr.setConfig(manualConfig());
+
+    feed(mgr, frameWithSignal(), 8, 0);
     CHECK(mgr.getActiveSignalCount() == 1);
-
-    const auto& sig = mgr.getTrackedSignals()[0].signal;
-    CHECK(sig.snrDb == Catch::Approx(60.0f));
-    CHECK(sig.centerFrequency > CENTER);
+    CHECK(mgr.getTrackedSignals()[0].signal.snrDb == Catch::Approx(60.0f));
 }
 
-TEST_CASE("noise after calibration does not trigger repeatedly", "[auto_receiver]") {
+TEST_CASE("raising the manual floor above a signal hides it", "[auto_receiver]") {
     AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
+    auto c = manualConfig();
+    mgr.setConfig(c);
+    feed(mgr, frameWithSignal(), 8, 0);
+    REQUIRE(mgr.getActiveSignalCount() == 1);
 
-    // Calibrate on noisy but signal-free spectrum, then keep feeding the same kind of noise.
-    uint32_t s = 999;
-    auto noise = [&]() {
-        s = s * 1664525u + 1013904223u;
-        return (((float)(s >> 8) / (float)(1 << 24)) - 0.5f) * 4.0f;
-    };
+    // The signal peaks at -40 dB; put the threshold above it.
+    c.manualFloorDb = -20.0f;
+    mgr.setConfig(c);
+    feed(mgr, frameWithSignal(), 60, 1000);
+    CHECK(mgr.getActiveSignalCount() == 0);
+}
 
-    std::vector<float> frame(BINS);
+TEST_CASE("nothing is measured unless the user asks", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.floorMode = NoiseFloorMode::MEASURED;
+    mgr.setConfig(c);
+
+    feed(mgr, frameWithSignal(), 200, 0);
+    CHECK(mgr.getMeasurementState() == MeasurementState::IDLE);
+    CHECK_FALSE(mgr.isFloorUsable());
+    CHECK(mgr.getTrackedSignals().empty());
+}
+
+TEST_CASE("a requested measurement completes and then detects", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.measurementSeconds = 0.5; // 10 frames at 20 fps
+    c.spectralWindowHz = SPAN / 4.0;
+    mgr.setConfig(c);
+
+    // The manager needs to have seen a frame before it knows the spectrum shape.
+    uint64_t t = feed(mgr, quietFrame(), 1, 0);
+    mgr.startMeasurement();
+    CHECK(mgr.getMeasurementState() == MeasurementState::MEASURING);
+
+    t = feed(mgr, quietFrame(), 9, t);
+    CHECK(mgr.getMeasurementState() == MeasurementState::MEASURING);
+    CHECK(mgr.getTrackedSignals().empty());
+
+    t = feed(mgr, quietFrame(), 1, t);
+    CHECK(mgr.getMeasurementState() == MeasurementState::READY);
+    CHECK(mgr.isFloorUsable());
+
+    t = feed(mgr, frameWithSignal(), 8, t);
+    CHECK(mgr.getActiveSignalCount() == 1);
+}
+
+TEST_CASE("a measurement cannot start before any spectrum has arrived", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    mgr.setConfig(manualConfig());
+    mgr.startMeasurement();
+    CHECK(mgr.getMeasurementState() == MeasurementState::IDLE);
+}
+
+TEST_CASE("a manual floor survives a retune", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    mgr.setConfig(manualConfig());
+    mgr.updateSourceState(stateAt(CENTER));
+    feed(mgr, frameWithSignal(), 8, 0);
+    REQUIRE(mgr.getActiveSignalCount() == 1);
+
+    // A flat level means something at any tuning, so detection keeps working immediately.
+    mgr.updateSourceState(stateAt(CENTER + 5e6));
+    CHECK(mgr.isFloorUsable());
+    feed(mgr, frameWithSignal(), 8, 1000, CENTER + 5e6);
+    CHECK(mgr.getActiveSignalCount() == 1);
+}
+
+TEST_CASE("a measured floor is discarded on a retune", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.measurementSeconds = 0.25; // 5 frames
+    mgr.setConfig(c);
+    mgr.updateSourceState(stateAt(CENTER));
+
+    uint64_t t = feed(mgr, quietFrame(), 1, 0);
+    mgr.startMeasurement();
+    t = feed(mgr, quietFrame(), 5, t);
+    REQUIRE(mgr.getMeasurementState() == MeasurementState::READY);
+
+    // A per-bin floor is tied to the spectrum it was measured on.
+    mgr.updateSourceState(stateAt(CENTER + 5e6));
+    CHECK(mgr.getMeasurementState() == MeasurementState::IDLE);
+    CHECK_FALSE(mgr.isFloorUsable());
+
+    // And it does not quietly re-measure itself.
+    feed(mgr, frameWithSignal(), 100, 2000, CENTER + 5e6);
+    CHECK(mgr.getMeasurementState() == MeasurementState::IDLE);
+    CHECK(mgr.getTrackedSignals().empty());
+}
+
+TEST_CASE("setManualFloorFromSpectrum uses the last frame seen", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.manualFloorDb = -10.0f; // deliberately useless
+    mgr.setConfig(c);
+
+    CHECK_FALSE(mgr.setManualFloorFromSpectrum()); // nothing seen yet
+
+    feed(mgr, frameWithSignal(), 1, 0);
+    REQUIRE(mgr.setManualFloorFromSpectrum());
+    // The quiet part of the frame is at -100 dB, and only 6 of 64 bins are occupied.
+    CHECK(mgr.getConfig().manualFloorDb == Catch::Approx(-100.0f).margin(1.0));
+    CHECK(mgr.getFloorMode() == NoiseFloorMode::MANUAL);
+}
+
+TEST_CASE("detection averaging smooths a notched signal into one detection", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.detectionAveragingFrames = 4;
+    c.activationMs = 0;
+    mgr.setConfig(c);
+
+    // A wide signal whose notch moves between frames, as broadcast FM does. Averaged, the whole
+    // channel sits above the floor; frame by frame it would break into pieces.
+    std::vector<std::vector<float>> frames;
+    for (int k = 0; k < 4; k++) {
+        auto f = quietFrame();
+        for (int b = 20; b <= 43; b++) { f[b] = -50.0f; }
+        for (int b = 22 + (k * 5); b <= 24 + (k * 5); b++) { f[b] = -100.0f; }
+        frames.push_back(f);
+    }
+
     uint64_t t = 0;
-    for (int i = 0; i < 20; i++) {
-        for (int b = 0; b < BINS; b++) { frame[b] = -100.0f + noise(); }
-        mgr.onFFTFrame(frame.data(), BINS, CENTER, SPAN, USABLE, FRAME_RATE, t);
+    for (int k = 0; k < 4; k++) {
+        mgr.onFFTFrame(frames[k].data(), BINS, CENTER, SPAN, USABLE, FRAME_RATE, t);
         t += 50;
     }
-    REQUIRE(mgr.getCalibrationState() == CalibrationState::READY);
 
-    for (int i = 0; i < 200; i++) {
-        for (int b = 0; b < BINS; b++) { frame[b] = -100.0f + noise(); }
-        mgr.onFFTFrame(frame.data(), BINS, CENTER, SPAN, USABLE, FRAME_RATE, t);
-        t += 50;
-        CHECK(mgr.getActiveSignalCount() == 0);
+    REQUIRE(mgr.getTrackedSignals().size() == 1);
+    CHECK(mgr.getTrackedSignals()[0].signal.bandwidth == Catch::Approx(24 * SPAN / BINS));
+}
+
+TEST_CASE("the floor curve describes a flat manual level", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    mgr.setConfig(manualConfig());
+
+    auto curve = mgr.getFloorCurve();
+    CHECK(curve.usable);
+    CHECK(curve.flat);
+    REQUIRE(curve.floorDb.size() == 1);
+    CHECK(curve.floorDb[0] == -100.0f);
+    CHECK(curve.thresholdDb[0] == -90.0f);
+}
+
+TEST_CASE("the floor curve describes a measured per-bin floor", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.measurementSeconds = 0.25;
+    c.spectralWindowHz = SPAN / 4.0;
+    mgr.setConfig(c);
+
+    uint64_t t = feed(mgr, quietFrame(), 1, 0);
+    mgr.startMeasurement();
+    feed(mgr, quietFrame(), 5, t);
+    REQUIRE(mgr.getMeasurementState() == MeasurementState::READY);
+
+    auto curve = mgr.getFloorCurve(128);
+    CHECK(curve.usable);
+    CHECK_FALSE(curve.flat);
+    CHECK(curve.floorDb.size() == 64); // capped at the bin count
+    CHECK(curve.lowFrequency == Catch::Approx(CENTER - (SPAN / 2.0)));
+    CHECK(curve.highFrequency == Catch::Approx(CENTER + (SPAN / 2.0)));
+    for (size_t i = 0; i < curve.thresholdDb.size(); i++) {
+        CHECK(curve.thresholdDb[i] == Catch::Approx(curve.floorDb[i] + 10.0f));
     }
 }
 
-TEST_CASE("changing the center frequency invalidates calibration", "[auto_receiver]") {
+TEST_CASE("the floor version changes only when the model does", "[auto_receiver]") {
     AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
-    mgr.updateSourceState(stateAt(CENTER));
+    mgr.setConfig(manualConfig());
 
-    feedQuiet(mgr, 20, 0);
-    REQUIRE(mgr.getCalibrationState() == CalibrationState::READY);
+    // The first frame establishes the spectrum geometry the curve is drawn against, so it does
+    // bump the version. Steady-state frames afterwards must not.
+    feed(mgr, frameWithSignal(), 1, 0);
+    uint64_t v0 = mgr.getFloorVersion();
 
-    mgr.updateSourceState(stateAt(CENTER + 1e6));
-    CHECK(mgr.getCalibrationState() == CalibrationState::UNCALIBRATED);
-    CHECK(mgr.getLastInvalidationReason() == CalibrationInvalidationReason::CENTER_FREQUENCY);
+    feed(mgr, frameWithSignal(), 10, 50);
+    CHECK(mgr.getFloorVersion() == v0);
+
+    auto c = manualConfig();
+    c.manualFloorDb = -95.0f;
+    mgr.setConfig(c);
+    CHECK(mgr.getFloorVersion() != v0);
+}
+
+TEST_CASE("an ignore rule suppresses a signal entirely", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    mgr.setConfig(manualConfig());
+
+    // Bins 30..35 of a 1 MHz span centred at 100 MHz.
+    double binHz = SPAN / BINS;
+    double low = CENTER - (SPAN / 2.0) + (30 * binHz);
+    double high = CENTER - (SPAN / 2.0) + (36 * binHz);
+
+    IgnoreRuleSet rules;
+    rules.addForSignal(low, high, "test", 0.0);
+    mgr.setIgnoreRules(rules);
+
+    feed(mgr, frameWithSignal(), 20, 0);
+    CHECK(mgr.getTrackedSignals().empty());
+    CHECK(mgr.getActiveSignalCount() == 0);
+}
+
+TEST_CASE("ignoreSignal creates a rule from a tracked signal", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    mgr.setConfig(manualConfig());
+    feed(mgr, frameWithSignal(), 8, 0);
+    REQUIRE(mgr.getActiveSignalCount() == 1);
+
+    uint64_t id = mgr.getTrackedSignals()[0].signal.id;
+    mgr.ignoreSignal(id, "operator", 1e3);
+
+    CHECK(mgr.getIgnoreRules().rules.size() == 1);
+    CHECK(mgr.getIgnoreRules().rules[0].reason == "operator");
+
+    // It stays gone as long as the rule is there.
+    feed(mgr, frameWithSignal(), 20, 1000);
     CHECK(mgr.getTrackedSignals().empty());
 }
 
-TEST_CASE("changing the sample rate or source invalidates calibration", "[auto_receiver]") {
-    SECTION("sample rate") {
-        AutoReceiverManager mgr;
-        mgr.setConfig(fastConfig());
-        mgr.updateSourceState(stateAt(CENTER));
-        feedQuiet(mgr, 20, 0);
-        REQUIRE(mgr.getCalibrationState() == CalibrationState::READY);
-
-        auto next = stateAt(CENTER);
-        next.sampleRate = SPAN * 2;
-        mgr.updateSourceState(next);
-        CHECK(mgr.getCalibrationState() == CalibrationState::UNCALIBRATED);
-        CHECK(mgr.getLastInvalidationReason() == CalibrationInvalidationReason::SAMPLE_RATE);
-    }
-
-    SECTION("source device") {
-        AutoReceiverManager mgr;
-        mgr.setConfig(fastConfig());
-        mgr.updateSourceState(stateAt(CENTER));
-        feedQuiet(mgr, 20, 0);
-        REQUIRE(mgr.getCalibrationState() == CalibrationState::READY);
-
-        auto next = stateAt(CENTER);
-        next.sourceName = "Another Source";
-        mgr.updateSourceState(next);
-        CHECK(mgr.getCalibrationState() == CalibrationState::UNCALIBRATED);
-        CHECK(mgr.getLastInvalidationReason() == CalibrationInvalidationReason::SOURCE_DEVICE);
-    }
-
-    SECTION("decimation") {
-        AutoReceiverManager mgr;
-        mgr.setConfig(fastConfig());
-        mgr.updateSourceState(stateAt(CENTER));
-        feedQuiet(mgr, 20, 0);
-        REQUIRE(mgr.getCalibrationState() == CalibrationState::READY);
-
-        auto next = stateAt(CENTER);
-        next.decimation = 2;
-        mgr.updateSourceState(next);
-        CHECK(mgr.getCalibrationState() == CalibrationState::UNCALIBRATED);
-        CHECK(mgr.getLastInvalidationReason() == CalibrationInvalidationReason::DECIMATION);
-    }
-}
-
-TEST_CASE("an unchanged source state does not invalidate calibration", "[auto_receiver]") {
+TEST_CASE("profiles gate detection when enabled", "[auto_receiver]") {
     AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
-    mgr.updateSourceState(stateAt(CENTER));
-    feedQuiet(mgr, 20, 0);
-    REQUIRE(mgr.getCalibrationState() == CalibrationState::READY);
+    auto c = manualConfig();
+    c.useProfiles = true;
+    mgr.setConfig(c);
 
-    mgr.updateSourceState(stateAt(CENTER));
-    CHECK(mgr.getCalibrationState() == CalibrationState::READY);
-}
+    ReceptionProfileSet set;
+    ReceptionProfile p;
+    p.name = "Elsewhere";
+    p.minFrequency = 400e6;
+    p.maxFrequency = 410e6;
+    set.profiles.push_back(p);
+    mgr.setProfiles(set);
 
-TEST_CASE("detection resumes only after the new calibration completes", "[auto_receiver]") {
-    AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
-    mgr.updateSourceState(stateAt(CENTER));
-
-    uint64_t t = feedQuiet(mgr, 20, 0);
-    REQUIRE(mgr.getCalibrationState() == CalibrationState::READY);
-
-    mgr.updateSourceState(stateAt(CENTER + 1e6));
-
-    auto frame = quietFrame();
-    for (int b = 30; b <= 35; b++) { frame[b] = -40.0f; }
-
-    // The signal is right there, but nothing may be reported until the model is rebuilt.
-    for (int i = 0; i < 19; i++) {
-        mgr.onFFTFrame(frame.data(), BINS, CENTER + 1e6, SPAN, USABLE, FRAME_RATE, t);
-        CHECK(mgr.getTrackedSignals().empty());
-        CHECK(mgr.getCalibrationState() == CalibrationState::CALIBRATING);
-        t += 50;
-    }
-
-    mgr.onFFTFrame(frame.data(), BINS, CENTER + 1e6, SPAN, USABLE, FRAME_RATE, t);
-    CHECK(mgr.getCalibrationState() == CalibrationState::READY);
-}
-
-TEST_CASE("an FFT size change invalidates calibration", "[auto_receiver]") {
-    AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
-    feedQuiet(mgr, 20, 0);
-    REQUIRE(mgr.getCalibrationState() == CalibrationState::READY);
-
-    std::vector<float> wider(BINS * 2, -100.0f);
-    mgr.onFFTFrame(wider.data(), BINS * 2, CENTER, SPAN, USABLE, FRAME_RATE, 2000);
-    CHECK(mgr.getLastInvalidationReason() == CalibrationInvalidationReason::SPECTRUM_SHAPE);
-    CHECK(mgr.getCalibrationState() == CalibrationState::CALIBRATING);
-}
-
-TEST_CASE("disabling clears the model and tracked signals", "[auto_receiver]") {
-    AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
-
-    uint64_t t = feedQuiet(mgr, 20, 0);
-    auto frame = quietFrame();
-    for (int b = 30; b <= 35; b++) { frame[b] = -40.0f; }
-    mgr.onFFTFrame(frame.data(), BINS, CENTER, SPAN, USABLE, FRAME_RATE, t);
-    REQUIRE_FALSE(mgr.getTrackedSignals().empty());
-
-    mgr.setEnabled(false);
-    CHECK(mgr.getCalibrationState() == CalibrationState::UNCALIBRATED);
+    // The signal is at 100 MHz, nowhere near the only profile.
+    feed(mgr, frameWithSignal(), 20, 0);
     CHECK(mgr.getTrackedSignals().empty());
-    CHECK(mgr.getLastInvalidationReason() == CalibrationInvalidationReason::NOT_ENABLED);
+
+    // Cover it, and it comes through.
+    set.profiles[0].minFrequency = CENTER - SPAN;
+    set.profiles[0].maxFrequency = CENTER + SPAN;
+    mgr.setProfiles(set);
+    feed(mgr, frameWithSignal(), 20, 2000);
+    CHECK(mgr.getActiveSignalCount() == 1);
 }
 
-TEST_CASE("manual recalibration restarts the model", "[auto_receiver]") {
+TEST_CASE("a profile's bandwidth limits reject a too-narrow detection", "[auto_receiver]") {
     AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
-    feedQuiet(mgr, 20, 0);
-    REQUIRE(mgr.getCalibrationState() == CalibrationState::READY);
+    auto c = manualConfig();
+    c.useProfiles = true;
+    mgr.setConfig(c);
 
-    mgr.invalidateCalibration(CalibrationInvalidationReason::MANUAL);
-    CHECK(mgr.getCalibrationState() == CalibrationState::UNCALIBRATED);
+    ReceptionProfileSet set;
+    ReceptionProfile p;
+    p.name = "Wide only";
+    p.minFrequency = CENTER - SPAN;
+    p.maxFrequency = CENTER + SPAN;
+    // The test signal is 6 bins = ~94 kHz wide.
+    p.minDetectionBandwidth = 200e3;
+    set.profiles.push_back(p);
+    mgr.setProfiles(set);
 
-    feedQuiet(mgr, 20, 5000);
-    CHECK(mgr.getCalibrationState() == CalibrationState::READY);
+    feed(mgr, frameWithSignal(), 20, 0);
+    CHECK(mgr.getTrackedSignals().empty());
+
+    set.profiles[0].minDetectionBandwidth = 50e3;
+    mgr.setProfiles(set);
+    feed(mgr, frameWithSignal(), 20, 2000);
+    CHECK(mgr.getActiveSignalCount() == 1);
+}
+
+TEST_CASE("classified signals report the matching profile", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    mgr.setConfig(manualConfig());
+
+    ReceptionProfileSet set;
+    ReceptionProfile p;
+    p.name = "Here";
+    p.minFrequency = CENTER - SPAN;
+    p.maxFrequency = CENTER + SPAN;
+    p.demod = ProfileDemod::WFM;
+    p.bandwidth = 150e3;
+    set.profiles.push_back(p);
+    mgr.setProfiles(set);
+
+    feed(mgr, frameWithSignal(), 8, 0);
+    auto classified = mgr.getClassifiedSignals();
+    REQUIRE(classified.size() == 1);
+    CHECK(classified[0].hasProfile);
+    CHECK(classified[0].profileName == "Here");
+    CHECK(classified[0].demod == ProfileDemod::WFM);
+    CHECK(classified[0].receiverBandwidth == Catch::Approx(150e3));
+    CHECK_FALSE(classified[0].ignored);
 }
 
 TEST_CASE("onDetectionUpdate reports the active signals", "[auto_receiver]") {
     AutoReceiverManager mgr;
-    mgr.setConfig(fastConfig());
+    mgr.setConfig(manualConfig());
 
     std::vector<DetectedSignal> lastUpdate;
     int updateCount = 0;
@@ -309,17 +409,7 @@ TEST_CASE("onDetectionUpdate reports the active signals", "[auto_receiver]") {
         &ctx);
     mgr.onDetectionUpdate.bindHandler(&handler);
 
-    // Nothing is emitted while calibrating.
-    uint64_t t = feedQuiet(mgr, 20, 0);
-    CHECK(updateCount == 0);
-
-    auto frame = quietFrame();
-    for (int b = 30; b <= 35; b++) { frame[b] = -40.0f; }
-    for (int i = 0; i < 10; i++) {
-        mgr.onFFTFrame(frame.data(), BINS, CENTER, SPAN, USABLE, FRAME_RATE, t);
-        t += 50;
-    }
-
+    feed(mgr, frameWithSignal(), 10, 0);
     CHECK(updateCount == 10);
     REQUIRE(lastUpdate.size() == 1);
     CHECK(lastUpdate[0].snrDb == Catch::Approx(60.0f));

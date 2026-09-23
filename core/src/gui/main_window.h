@@ -116,6 +116,7 @@ protected:
 
     EventHandler<VFOManager::VFO*> vfoCreatedHandler;
     EventHandler<ImGui::WaterFall::RawFFTFrame> rawFFTHandlerEntry;
+    uint64_t lastFloorVersion = 0;
     EventHandler<SourceManager::State> sourceStateHandlerEntry;
 
     void updateWaterfallZoomBandwidth(float bw);

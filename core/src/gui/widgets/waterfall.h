@@ -198,6 +198,25 @@ namespace ImGui {
         void clearDetectionMarkers();
         bool showDetections = true;
 
+        /**
+         * The detection floor and the threshold derived from it, drawn across the FFT so the user
+         * can place a manual floor against what they can actually see.
+         *
+         * `floorDb`/`thresholdDb` are uniform samples across [lowFrequency, highFrequency]. A
+         * single sample means a flat level that spans the whole width.
+         */
+        struct NoiseFloorOverlay {
+            bool visible = false;
+            double lowFrequency = 0.0;
+            double highFrequency = 0.0;
+            std::vector<float> floorDb;
+            std::vector<float> thresholdDb;
+        };
+
+        void setNoiseFloorOverlay(const NoiseFloorOverlay& overlay);
+        void clearNoiseFloorOverlay();
+        bool showNoiseFloor = true;
+
         bool centerFreqMoved = false;
         bool vfoFreqChanged = false;
         bool bandplanEnabled = false;
@@ -304,6 +323,7 @@ namespace ImGui {
         void drawWaterfall();
         void drawFFT();
         void drawDetections();
+        void drawNoiseFloor();
         void drawVFOs();
         void drawBandPlan();
         void processInputs();
@@ -338,6 +358,7 @@ namespace ImGui {
 
         std::mutex detectionMtx;
         std::vector<DetectionMarker> detectionMarkers;
+        NoiseFloorOverlay noiseFloorOverlay;
 
         float vRange;
 
@@ -437,6 +458,8 @@ namespace ImGui {
 
         std::vector<ImVec2> fftTraceStorage;
         std::vector<ImVec2> fftHoldTraceStorage;
+        std::vector<ImVec2> floorTraceStorage;
+        std::vector<ImVec2> thresholdTraceStorage;
         std::vector<float> signalInfoScratch;
         int rawFFTLineCapacity = 1;
         GLuint waterfallTextureId = 0;

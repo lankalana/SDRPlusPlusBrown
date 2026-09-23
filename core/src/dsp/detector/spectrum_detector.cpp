@@ -16,13 +16,18 @@ namespace dsp::detector {
     }
 
     std::vector<DetectedSignal> detectSignals(const float* fft, int count,
-                                              const NoiseFloorCalibration& calibration,
+                                              const NoiseFloorModel& floor,
                                               double centerFrequency, double spanHz,
                                               const DetectionParams& params) {
         std::vector<DetectedSignal> signals;
 
         if (fft == nullptr || count <= 0 || spanHz <= 0.0) { return signals; }
-        if (!calibration.isReady() || calibration.getBinCount() != count) { return signals; }
+        if (!floor.isUsable()) { return signals; }
+        // A measured floor is per-bin, so it only applies to a frame of the same width. A manual
+        // floor is flat and applies to any frame.
+        if (floor.getMode() == NoiseFloorMode::MEASURED && floor.getBinCount() != count) {
+            return signals;
+        }
 
         // Restrict to the usable, centered part of the capture.
         double ratio = std::clamp(params.usableSpectrumRatio, 0.0, 1.0);
@@ -35,7 +40,17 @@ namespace dsp::detector {
         double specLow = centerFrequency - (spanHz / 2.0);
 
         int minBins = std::max<int>(params.minBins, 1);
-        int maxGap = std::max<int>(params.maxGapBins, 0);
+        if (params.minBandwidthHz > 0.0) {
+            minBins = std::max<int>(minBins, (int)std::floor(params.minBandwidthHz / binWidth));
+        }
+        int maxGap = 0;
+        if (params.mergeGapHz > 0.0) {
+            maxGap = (int)std::lround(params.mergeGapHz / binWidth);
+        }
+        int maxBins = std::numeric_limits<int>::max();
+        if (params.maxBandwidthHz > 0.0) {
+            maxBins = std::max<int>(1, (int)std::ceil(params.maxBandwidthHz / binWidth));
+        }
 
         int runStart = -1;  // first bin of the run being built
         int runEnd = -1;    // last above-threshold bin of the run being built
@@ -43,15 +58,16 @@ namespace dsp::detector {
 
         auto emit = [&](int start, int end) {
             if (start < 0 || end < start) { return; }
-            if ((end - start + 1) < minBins) { return; }
+            int width = end - start + 1;
+            if (width < minBins || width > maxBins) { return; }
 
             float peak = -std::numeric_limits<float>::infinity();
             double floorSum = 0.0;
             for (int i = start; i <= end; i++) {
                 peak = std::max<float>(peak, fft[i]);
-                floorSum += calibration.getBaselineDb(i);
+                floorSum += floor.getFloorDb(i);
             }
-            float noiseFloor = (float)(floorSum / (double)(end - start + 1));
+            float noiseFloor = (float)(floorSum / (double)width);
 
             DetectedSignal sig;
             sig.lowerFrequency = specLow + (start * binWidth);
@@ -65,7 +81,7 @@ namespace dsp::detector {
         };
 
         for (int i = loBin; i < hiBin; i++) {
-            bool above = fft[i] > calibration.getThresholdDb(i);
+            bool above = fft[i] > floor.getThresholdDb(i);
             if (above) {
                 if (runStart < 0) { runStart = i; }
                 runEnd = i;

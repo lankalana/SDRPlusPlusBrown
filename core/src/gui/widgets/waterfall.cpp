@@ -304,6 +304,81 @@ namespace ImGui {
         detectionMarkers.clear();
     }
 
+    void WaterFall::setNoiseFloorOverlay(const NoiseFloorOverlay& overlay) {
+        std::lock_guard<std::mutex> lck(detectionMtx);
+        noiseFloorOverlay = overlay;
+    }
+
+    void WaterFall::clearNoiseFloorOverlay() {
+        std::lock_guard<std::mutex> lck(detectionMtx);
+        noiseFloorOverlay.visible = false;
+    }
+
+    void WaterFall::drawNoiseFloor() {
+        if (!showNoiseFloor) { return; }
+
+        NoiseFloorOverlay overlay;
+        {
+            std::lock_guard<std::mutex> lck(detectionMtx);
+            if (!noiseFloorOverlay.visible || noiseFloorOverlay.thresholdDb.empty()) { return; }
+            overlay = noiseFloorOverlay;
+        }
+
+        // Same vertical mapping the FFT trace uses, so the lines sit where the trace crosses them.
+        float scaleFactor = fftHeight / (fftMax - fftMin);
+        auto yOf = [&](float db) {
+            double y = fftAreaMax.y - ((db - fftMin) * scaleFactor);
+            return (float)std::clamp<double>(y, fftAreaMin.y + 1, fftAreaMax.y);
+        };
+
+        // Sample the curve per pixel column. A single-entry curve is a flat level.
+        auto sampleAt = [&](const std::vector<float>& curve, double freq) {
+            if (curve.size() == 1) { return curve[0]; }
+            double span = overlay.highFrequency - overlay.lowFrequency;
+            if (span <= 0.0) { return curve[0]; }
+            double t = (freq - overlay.lowFrequency) / span;
+            t = std::clamp(t, 0.0, 1.0);
+            double pos = t * (curve.size() - 1);
+            int i0 = (int)pos;
+            int i1 = std::min<int>(i0 + 1, (int)curve.size() - 1);
+            float frac = (float)(pos - i0);
+            return curve[i0] + ((curve[i1] - curve[i0]) * frac);
+        };
+
+        const ImU32 floorCol = IM_COL32(90, 170, 255, 170);
+        const ImU32 threshCol = IM_COL32(255, 140, 40, 210);
+
+        floorTraceStorage.resize(dataWidth);
+        thresholdTraceStorage.resize(dataWidth);
+        for (int i = 0; i < dataWidth; i++) {
+            double freq = lowerFreq + ((double)i / (double)dataWidth) * (upperFreq - lowerFreq);
+            float x = fftAreaMin.x + i;
+            floorTraceStorage[i] = ImVec2(x, yOf(sampleAt(overlay.floorDb, freq)));
+            thresholdTraceStorage[i] = ImVec2(x, yOf(sampleAt(overlay.thresholdDb, freq)));
+        }
+
+        if (!overlay.floorDb.empty()) {
+            window->DrawList->AddPolyline(floorTraceStorage.data(), dataWidth, floorCol, 0, style::uiScale);
+        }
+        window->DrawList->AddPolyline(thresholdTraceStorage.data(), dataWidth, threshCol, 0,
+                                      style::uiScale);
+
+        // Label both lines at the right edge, where they are least likely to sit on a signal.
+        char buf[64];
+        if (!overlay.floorDb.empty()) {
+            snprintf(buf, sizeof buf, "floor %.0f dB", overlay.floorDb.back());
+            ImVec2 sz = ImGui::CalcTextSize(buf);
+            window->DrawList->AddText(ImVec2(fftAreaMax.x - sz.x - (4.0f * style::uiScale),
+                                             floorTraceStorage[dataWidth - 1].y - sz.y),
+                                      floorCol, buf);
+        }
+        snprintf(buf, sizeof buf, "threshold %.0f dB", overlay.thresholdDb.back());
+        ImVec2 sz = ImGui::CalcTextSize(buf);
+        window->DrawList->AddText(ImVec2(fftAreaMax.x - sz.x - (4.0f * style::uiScale),
+                                         thresholdTraceStorage[dataWidth - 1].y - sz.y),
+                                  threshCol, buf);
+    }
+
     void WaterFall::drawDetections() {
         if (!showDetections) { return; }
 
@@ -1209,6 +1284,7 @@ namespace ImGui {
         updateAllVFOs(true);
 
         drawFFT();
+        drawNoiseFloor();
         drawDetections();
         if (waterfallVisible) {
             drawWaterfall();

@@ -8,53 +8,156 @@
 #include <algorithm>
 #include <string>
 
-using dsp::detector::CalibrationState;
+using dsp::detector::MeasurementState;
+using dsp::detector::NoiseFloorMode;
 using dsp::detector::SignalState;
 
 namespace automatic_reception_menu {
     // Kept out of the main config so that the automatic subsystem's settings can be edited,
-    // backed up and reset independently. The calibrated noise floor is deliberately NOT stored:
-    // it depends on centre frequency, sample rate, gain, device and antenna, so it is always
-    // rebuilt when automatic reception starts.
+    // backed up and reset independently. A measured noise floor is never persisted: it depends on
+    // centre frequency, sample rate, gain, device and antenna.
     ConfigManager config;
     bool initialized = false;
 
     // Mirrors of the manager's config, as the widget-friendly types ImGui wants.
     bool enabled = false;
-    float calibrationSeconds = 15.0f;
-    float minSnrDb = 10.0f;
-    float deviationMultiplier = 3.0f;
+    int floorModeIdx = 0; // 0 = manual, 1 = measured
+    float manualFloorDb = -85.0f;
+    float marginDb = 10.0f;
+    float measurementSeconds = 1.0f;
+    float spectralWindowKHz = 2000.0f;
+    float spectralPercentile = 0.25f;
     int activationMs = 300;
     int releaseMs = 2000;
-    int minDetectionBins = 2;
+    int averagingFrames = 4;
+    float minBandwidthKHz = 0.0f;
+    float maxBandwidthKHz = 0.0f;
+    float mergeGapKHz = 0.0f;
+    bool useProfiles = false;
+    float ignorePaddingKHz = 5.0f;
 
     static AutoReceiverManager::Config toManagerConfig() {
         AutoReceiverManager::Config c = sigpath::autoReceiverManager.getConfig();
         c.enabled = enabled;
-        c.calibrationSeconds = calibrationSeconds;
-        c.minSnrDb = minSnrDb;
-        c.deviationMultiplier = deviationMultiplier;
+        c.floorMode = (floorModeIdx == 1) ? NoiseFloorMode::MEASURED : NoiseFloorMode::MANUAL;
+        c.manualFloorDb = manualFloorDb;
+        c.marginDb = marginDb;
+        c.measurementSeconds = measurementSeconds;
+        c.spectralWindowHz = spectralWindowKHz * 1e3;
+        c.spectralPercentile = spectralPercentile;
         c.activationMs = (uint64_t)std::max<int>(activationMs, 0);
         c.releaseMs = (uint64_t)std::max<int>(releaseMs, 0);
-        c.minDetectionBins = std::max<int>(minDetectionBins, 1);
+        c.detectionAveragingFrames = std::max<int>(averagingFrames, 1);
+        c.minBandwidthHz = minBandwidthKHz * 1e3;
+        c.maxBandwidthHz = maxBandwidthKHz * 1e3;
+        c.mergeGapHz = mergeGapKHz * 1e3;
+        c.useProfiles = useProfiles;
         return c;
+    }
+
+    static json profilesToJson(const ReceptionProfileSet& set) {
+        json arr = json::array();
+        for (const auto& p : set.profiles) {
+            json j;
+            j["name"] = p.name;
+            j["enabled"] = p.enabled;
+            j["minFrequency"] = p.minFrequency;
+            j["maxFrequency"] = p.maxFrequency;
+            j["demod"] = (int)p.demod;
+            j["bandwidth"] = p.bandwidth;
+            j["minDetectionBandwidth"] = p.minDetectionBandwidth;
+            j["maxDetectionBandwidth"] = p.maxDetectionBandwidth;
+            j["priority"] = p.priority;
+            arr.push_back(j);
+        }
+        return arr;
+    }
+
+    static ReceptionProfileSet profilesFromJson(const json& arr) {
+        ReceptionProfileSet set;
+        if (!arr.is_array()) { return set; }
+        for (const auto& j : arr) {
+            ReceptionProfile p;
+            p.name = j.value("name", "Profile");
+            p.enabled = j.value("enabled", true);
+            p.minFrequency = j.value("minFrequency", 0.0);
+            p.maxFrequency = j.value("maxFrequency", 0.0);
+            int demod = j.value("demod", (int)ProfileDemod::NFM);
+            p.demod = (ProfileDemod)std::clamp(demod, 0, (int)ProfileDemod::_COUNT - 1);
+            p.bandwidth = j.value("bandwidth", 12500.0);
+            p.minDetectionBandwidth = j.value("minDetectionBandwidth", 0.0);
+            p.maxDetectionBandwidth = j.value("maxDetectionBandwidth", 0.0);
+            p.priority = j.value("priority", 0);
+            set.profiles.push_back(p);
+        }
+        return set;
+    }
+
+    static json ignoreRulesToJson(const IgnoreRuleSet& set) {
+        json arr = json::array();
+        for (const auto& r : set.rules) {
+            json j;
+            j["lowerFrequency"] = r.lowerFrequency;
+            j["upperFrequency"] = r.upperFrequency;
+            j["reason"] = r.reason;
+            j["enabled"] = r.enabled;
+            arr.push_back(j);
+        }
+        return arr;
+    }
+
+    static IgnoreRuleSet ignoreRulesFromJson(const json& arr) {
+        IgnoreRuleSet set;
+        if (!arr.is_array()) { return set; }
+        for (const auto& j : arr) {
+            IgnoreRule r;
+            r.lowerFrequency = j.value("lowerFrequency", 0.0);
+            r.upperFrequency = j.value("upperFrequency", 0.0);
+            r.reason = j.value("reason", "");
+            r.enabled = j.value("enabled", true);
+            set.rules.push_back(r);
+        }
+        return set;
+    }
+
+    static void saveProfiles() {
+        config.acquire();
+        config.conf["profiles"] = profilesToJson(sigpath::autoReceiverManager.getProfiles());
+        config.release(true);
+    }
+
+    static void saveIgnoreRules() {
+        config.acquire();
+        config.conf["ignoreRules"] = ignoreRulesToJson(sigpath::autoReceiverManager.getIgnoreRules());
+        config.release(true);
     }
 
     static void save() {
         config.acquire();
         config.conf["enabled"] = enabled;
-        config.conf["calibrationSeconds"] = calibrationSeconds;
-        config.conf["minSnrDb"] = minSnrDb;
-        config.conf["deviationMultiplier"] = deviationMultiplier;
+        config.conf["floorMode"] = (floorModeIdx == 1) ? "measured" : "manual";
+        config.conf["manualFloorDb"] = manualFloorDb;
+        config.conf["marginDb"] = marginDb;
+        config.conf["measurementSeconds"] = measurementSeconds;
+        config.conf["spectralWindowKHz"] = spectralWindowKHz;
+        config.conf["spectralPercentile"] = spectralPercentile;
         config.conf["activationMs"] = activationMs;
         config.conf["releaseMs"] = releaseMs;
-        config.conf["minDetectionBins"] = minDetectionBins;
+        config.conf["averagingFrames"] = averagingFrames;
+        config.conf["minBandwidthKHz"] = minBandwidthKHz;
+        config.conf["maxBandwidthKHz"] = maxBandwidthKHz;
+        config.conf["mergeGapKHz"] = mergeGapKHz;
+        config.conf["useProfiles"] = useProfiles;
+        config.conf["ignorePaddingKHz"] = ignorePaddingKHz;
         config.release(true);
     }
 
     static void apply(bool persist) {
         sigpath::autoReceiverManager.setConfig(toManagerConfig());
-        if (!enabled) { gui::waterfall.clearDetectionMarkers(); }
+        if (!enabled) {
+            gui::waterfall.clearDetectionMarkers();
+            gui::waterfall.clearNoiseFloorOverlay();
+        }
         if (persist) { save(); }
     }
 
@@ -64,16 +167,22 @@ namespace automatic_reception_menu {
 
         json def;
         def["enabled"] = false;
-        def["calibrationSeconds"] = 15.0;
-        def["minSnrDb"] = 10.0;
-        def["deviationMultiplier"] = 3.0;
+        def["floorMode"] = "manual";
+        def["manualFloorDb"] = -85.0;
+        def["marginDb"] = 10.0;
+        def["measurementSeconds"] = 1.0;
+        def["spectralWindowKHz"] = 2000.0;
+        def["spectralPercentile"] = 0.25;
         def["activationMs"] = 300;
         def["releaseMs"] = 2000;
-        def["minDetectionBins"] = 2;
-        // Present from the start so the file matches the documented schema; populated in later
-        // phases.
+        def["averagingFrames"] = 4;
+        def["minBandwidthKHz"] = 0.0;
+        def["maxBandwidthKHz"] = 0.0;
+        def["mergeGapKHz"] = 0.0;
+        def["useProfiles"] = false;
+        def["ignorePaddingKHz"] = 5.0;
         def["recordingPath"] = "recordings/automatic";
-        def["profiles"] = json::array();
+        def["profiles"] = profilesToJson(ReceptionProfileSet::defaults());
         def["ignoreRules"] = json::array();
 
         config.setPath(std::string(core::getRoot()) + "/auto_receiver_config.json");
@@ -81,47 +190,326 @@ namespace automatic_reception_menu {
         config.enableAutoSave();
 
         config.acquire();
-        enabled = config.conf["enabled"];
-        calibrationSeconds = config.conf["calibrationSeconds"];
-        minSnrDb = config.conf["minSnrDb"];
-        deviationMultiplier = config.conf["deviationMultiplier"];
-        activationMs = config.conf["activationMs"];
-        releaseMs = config.conf["releaseMs"];
-        minDetectionBins = config.conf["minDetectionBins"];
-        config.release();
+        // ConfigManager::load() does not merge defaults into an existing file, so every read has
+        // to tolerate a key written by an older version not being there.
+        bool repaired = false;
+        for (auto& [key, value] : def.items()) {
+            if (!config.conf.contains(key)) {
+                config.conf[key] = value;
+                repaired = true;
+            }
+        }
 
+        enabled = config.conf.value("enabled", false);
+        floorModeIdx = (config.conf.value("floorMode", std::string("manual")) == "measured") ? 1 : 0;
+        manualFloorDb = config.conf.value("manualFloorDb", -85.0f);
+        marginDb = config.conf.value("marginDb", 10.0f);
+        measurementSeconds = config.conf.value("measurementSeconds", 1.0f);
+        spectralWindowKHz = config.conf.value("spectralWindowKHz", 2000.0f);
+        spectralPercentile = config.conf.value("spectralPercentile", 0.25f);
+        activationMs = config.conf.value("activationMs", 300);
+        releaseMs = config.conf.value("releaseMs", 2000);
+        averagingFrames = config.conf.value("averagingFrames", 4);
+        minBandwidthKHz = config.conf.value("minBandwidthKHz", 0.0f);
+        maxBandwidthKHz = config.conf.value("maxBandwidthKHz", 0.0f);
+        mergeGapKHz = config.conf.value("mergeGapKHz", 0.0f);
+        useProfiles = config.conf.value("useProfiles", false);
+        ignorePaddingKHz = config.conf.value("ignorePaddingKHz", 5.0f);
+
+        auto loadedProfiles = profilesFromJson(config.conf["profiles"]);
+        // An existing file from before profiles existed has an empty list; seed it rather than
+        // presenting an empty table.
+        if (loadedProfiles.profiles.empty()) {
+            loadedProfiles = ReceptionProfileSet::defaults();
+            config.conf["profiles"] = profilesToJson(loadedProfiles);
+            repaired = true;
+        }
+        auto loadedIgnores = ignoreRulesFromJson(config.conf["ignoreRules"]);
+        config.release(repaired);
+
+        sigpath::autoReceiverManager.setProfiles(loadedProfiles);
+        sigpath::autoReceiverManager.setIgnoreRules(loadedIgnores);
         apply(false);
     }
 
-    static void drawCalibrationState() {
-        auto state = sigpath::autoReceiverManager.getCalibrationState();
+    static void drawFloorSection(float width) {
+        ImGui::TextUnformatted("Noise floor");
 
-        ImGui::TextUnformatted("State");
+        ImGui::SetNextItemWidth(width / 2);
+        if (ImGui::Combo("Source##auto_rx_floormode", &floorModeIdx, "Manual (flat)\0Measured\0")) {
+            apply(true);
+        }
+
+        if (floorModeIdx == 0) {
+            ImGui::SetNextItemWidth(width / 2);
+            if (ImGui::SliderFloat("Floor (dB)##auto_rx_floor", &manualFloorDb, -140.0f, 0.0f, "%.0f")) {
+                apply(true);
+            }
+            if (ImGui::Button("Set from current spectrum##auto_rx_floorauto", ImVec2(width, 0))) {
+                if (sigpath::autoReceiverManager.setManualFloorFromSpectrum()) {
+                    manualFloorDb = sigpath::autoReceiverManager.getConfig().manualFloorDb;
+                    save();
+                }
+            }
+            ImGui::TextDisabled("A flat level survives retuning, so detection keeps working.");
+        }
+        else {
+            auto state = sigpath::autoReceiverManager.getMeasurementState();
+            switch (state) {
+            case MeasurementState::READY:
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Measured");
+                break;
+            case MeasurementState::MEASURING:
+                ImGui::ProgressBar(sigpath::autoReceiverManager.getMeasurementProgress(),
+                                   ImVec2(width, 0), "Measuring...");
+                break;
+            case MeasurementState::IDLE:
+            default:
+                ImGui::TextUnformatted("Not measured yet");
+                break;
+            }
+
+            if (ImGui::Button("Measure now##auto_rx_measure", ImVec2(width, 0))) {
+                sigpath::autoReceiverManager.startMeasurement();
+            }
+            if (state == MeasurementState::MEASURING) {
+                if (ImGui::Button("Cancel##auto_rx_measure_cancel", ImVec2(width, 0))) {
+                    sigpath::autoReceiverManager.cancelMeasurement();
+                }
+            }
+
+            ImGui::SetNextItemWidth(width / 2);
+            if (ImGui::SliderFloat("Duration (s)##auto_rx_measdur", &measurementSeconds, 0.2f, 10.0f,
+                                   "%.1f")) {
+                apply(true);
+            }
+
+            ImGui::SetNextItemWidth(width / 2);
+            if (ImGui::SliderFloat("Window (kHz)##auto_rx_specwin", &spectralWindowKHz, 100.0f,
+                                   10000.0f, "%.0f")) {
+                apply(true);
+            }
+            ImGui::TextDisabled("Must be wider than the widest signal to detect.");
+
+            ImGui::SetNextItemWidth(width / 2);
+            if (ImGui::SliderFloat("Percentile##auto_rx_specpct", &spectralPercentile, 0.02f, 0.5f,
+                                   "%.2f")) {
+                apply(true);
+            }
+            ImGui::TextDisabled("Discarded on retune; measure again.");
+        }
+
+        ImGui::SetNextItemWidth(width / 2);
+        if (ImGui::SliderFloat("Margin (dB)##auto_rx_margin", &marginDb, 0.0f, 40.0f, "%.0f")) {
+            apply(true);
+        }
+        ImGui::TextDisabled("Detection threshold = floor + margin.");
+
+        ImGui::Checkbox("Show floor on waterfall##auto_rx_floorshow", &gui::waterfall.showNoiseFloor);
+    }
+
+    static void drawProfiles(float width) {
+        ImGui::TextUnformatted("Reception profiles");
+        if (ImGui::Checkbox("Only receive inside a profile##auto_rx_useprof", &useProfiles)) {
+            apply(true);
+        }
+        ImGui::TextDisabled("Applies each profile's bandwidth limits to its own range.");
+
+        auto set = sigpath::autoReceiverManager.getProfiles();
+        bool modified = false;
+        int toRemove = -1;
+
+        if (ImGui::BeginTable("Reception Profiles Table", 6,
+                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                  ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX,
+                              ImVec2(0, 170.0f * style::uiScale))) {
+            ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 26.0f * style::uiScale);
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 100.0f * style::uiScale);
+            ImGui::TableSetupColumn("Range (MHz)", ImGuiTableColumnFlags_WidthFixed,
+                                    150.0f * style::uiScale);
+            ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 70.0f * style::uiScale);
+            ImGui::TableSetupColumn("RX BW / Detect BW (kHz)", ImGuiTableColumnFlags_WidthFixed,
+                                    220.0f * style::uiScale);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 26.0f * style::uiScale);
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableHeadersRow();
+
+            for (size_t i = 0; i < set.profiles.size(); i++) {
+                auto& p = set.profiles[i];
+                std::string id = "##prof_" + std::to_string(i);
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                if (ImGui::Checkbox(("##en" + id).c_str(), &p.enabled)) { modified = true; }
+
+                ImGui::TableSetColumnIndex(1);
+                char nameBuf[64];
+                snprintf(nameBuf, sizeof nameBuf, "%s", p.name.c_str());
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::InputText(("##name" + id).c_str(), nameBuf, sizeof nameBuf)) {
+                    p.name = nameBuf;
+                    modified = true;
+                }
+
+                ImGui::TableSetColumnIndex(2);
+                double loMHz = p.minFrequency / 1e6;
+                double hiMHz = p.maxFrequency / 1e6;
+                ImGui::SetNextItemWidth(70.0f * style::uiScale);
+                if (ImGui::InputDouble(("##lo" + id).c_str(), &loMHz, 0.0, 0.0, "%.3f")) {
+                    p.minFrequency = loMHz * 1e6;
+                    modified = true;
+                }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(70.0f * style::uiScale);
+                if (ImGui::InputDouble(("##hi" + id).c_str(), &hiMHz, 0.0, 0.0, "%.3f")) {
+                    p.maxFrequency = hiMHz * 1e6;
+                    modified = true;
+                }
+
+                ImGui::TableSetColumnIndex(3);
+                int demodIdx = (int)p.demod;
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::Combo(("##mode" + id).c_str(), &demodIdx, profileDemodComboItems())) {
+                    p.demod = (ProfileDemod)demodIdx;
+                    modified = true;
+                }
+
+                ImGui::TableSetColumnIndex(4);
+                double bwK = p.bandwidth / 1e3;
+                double minK = p.minDetectionBandwidth / 1e3;
+                double maxK = p.maxDetectionBandwidth / 1e3;
+                ImGui::SetNextItemWidth(64.0f * style::uiScale);
+                if (ImGui::InputDouble(("##bw" + id).c_str(), &bwK, 0.0, 0.0, "%.1f")) {
+                    p.bandwidth = bwK * 1e3;
+                    modified = true;
+                }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(64.0f * style::uiScale);
+                if (ImGui::InputDouble(("##dmin" + id).c_str(), &minK, 0.0, 0.0, "%.1f")) {
+                    p.minDetectionBandwidth = minK * 1e3;
+                    modified = true;
+                }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(64.0f * style::uiScale);
+                if (ImGui::InputDouble(("##dmax" + id).c_str(), &maxK, 0.0, 0.0, "%.1f")) {
+                    p.maxDetectionBandwidth = maxK * 1e3;
+                    modified = true;
+                }
+
+                ImGui::TableSetColumnIndex(5);
+                if (ImGui::SmallButton(("x" + id).c_str())) { toRemove = (int)i; }
+            }
+            ImGui::EndTable();
+        }
+
+        if (toRemove >= 0) {
+            set.profiles.erase(set.profiles.begin() + toRemove);
+            modified = true;
+        }
+
+        if (ImGui::Button("Add profile##auto_rx_addprof", ImVec2(width / 2, 0))) {
+            ReceptionProfile p;
+            p.name = "New profile";
+            p.minFrequency = gui::waterfall.getCenterFrequency() - (gui::waterfall.getBandwidth() / 2.0);
+            p.maxFrequency = gui::waterfall.getCenterFrequency() + (gui::waterfall.getBandwidth() / 2.0);
+            set.profiles.push_back(p);
+            modified = true;
+        }
         ImGui::SameLine();
-        if (!enabled) {
-            ImGui::TextUnformatted("Disabled");
-            return;
+        if (ImGui::Button("Restore defaults##auto_rx_defprof", ImVec2(width / 2, 0))) {
+            set = ReceptionProfileSet::defaults();
+            modified = true;
         }
 
-        switch (state) {
-        case CalibrationState::READY:
-            ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "Ready");
-            break;
-        case CalibrationState::CALIBRATING: {
-            float progress = sigpath::autoReceiverManager.getCalibrationProgress();
-            ImGui::Text("Calibrating... %d%%", (int)(progress * 100.0f));
-            ImGui::ProgressBar(progress, ImVec2(ImGui::GetContentRegionAvail().x, 0));
-            break;
+        if (modified) {
+            sigpath::autoReceiverManager.setProfiles(set);
+            saveProfiles();
         }
-        case CalibrationState::UNCALIBRATED:
-        default:
-            ImGui::TextUnformatted("Waiting for spectrum");
-            break;
+    }
+
+    static void drawIgnoreRules(float width) {
+        ImGui::TextUnformatted("Ignore rules");
+
+        auto set = sigpath::autoReceiverManager.getIgnoreRules();
+        bool modified = false;
+        int toRemove = -1;
+
+        if (ImGui::BeginTable("Ignore Rules Table", 4,
+                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                  ImGuiTableFlags_ScrollY,
+                              ImVec2(0, 120.0f * style::uiScale))) {
+            ImGui::TableSetupColumn("On", ImGuiTableColumnFlags_WidthFixed, 26.0f * style::uiScale);
+            ImGui::TableSetupColumn("Range (MHz)", ImGuiTableColumnFlags_WidthFixed,
+                                    150.0f * style::uiScale);
+            ImGui::TableSetupColumn("Reason");
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 26.0f * style::uiScale);
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableHeadersRow();
+
+            for (size_t i = 0; i < set.rules.size(); i++) {
+                auto& r = set.rules[i];
+                std::string id = "##ign_" + std::to_string(i);
+                ImGui::TableNextRow();
+
+                ImGui::TableSetColumnIndex(0);
+                if (ImGui::Checkbox(("##en" + id).c_str(), &r.enabled)) { modified = true; }
+
+                ImGui::TableSetColumnIndex(1);
+                double loMHz = r.lowerFrequency / 1e6;
+                double hiMHz = r.upperFrequency / 1e6;
+                ImGui::SetNextItemWidth(70.0f * style::uiScale);
+                if (ImGui::InputDouble(("##lo" + id).c_str(), &loMHz, 0.0, 0.0, "%.4f")) {
+                    r.lowerFrequency = loMHz * 1e6;
+                    modified = true;
+                }
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(70.0f * style::uiScale);
+                if (ImGui::InputDouble(("##hi" + id).c_str(), &hiMHz, 0.0, 0.0, "%.4f")) {
+                    r.upperFrequency = hiMHz * 1e6;
+                    modified = true;
+                }
+
+                ImGui::TableSetColumnIndex(2);
+                char reasonBuf[96];
+                snprintf(reasonBuf, sizeof reasonBuf, "%s", r.reason.c_str());
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::InputText(("##reason" + id).c_str(), reasonBuf, sizeof reasonBuf)) {
+                    r.reason = reasonBuf;
+                    modified = true;
+                }
+
+                ImGui::TableSetColumnIndex(3);
+                if (ImGui::SmallButton(("x" + id).c_str())) { toRemove = (int)i; }
+            }
+            ImGui::EndTable();
         }
 
-        auto reason = sigpath::autoReceiverManager.getLastInvalidationReason();
-        if (reason != CalibrationInvalidationReason::NONE && state != CalibrationState::READY) {
-            ImGui::TextDisabled("%s", toString(reason));
+        if (toRemove >= 0) {
+            set.rules.erase(set.rules.begin() + toRemove);
+            modified = true;
+        }
+
+        if (ImGui::Button("Ignore current VFO range##auto_rx_ignvfo", ImVec2(width, 0))) {
+            auto* vfo = sigpath::vfoManager.getVFO(gui::waterfall.selectedVFO);
+            if (vfo != NULL) {
+                double center = gui::waterfall.getCenterFrequency() + vfo->getOffset();
+                double half = vfo->getBandwidth() / 2.0;
+                set.addForSignal(center - half, center + half, "Ignored from " +
+                                                                   gui::waterfall.selectedVFO,
+                                 ignorePaddingKHz * 1e3);
+                modified = true;
+            }
+        }
+
+        ImGui::SetNextItemWidth(width / 2);
+        if (ImGui::SliderFloat("Ignore padding (kHz)##auto_rx_ignpad", &ignorePaddingKHz, 0.0f,
+                               200.0f, "%.1f")) {
+            save();
+        }
+
+        if (modified) {
+            sigpath::autoReceiverManager.setIgnoreRules(set);
+            saveIgnoreRules();
         }
     }
 
@@ -132,32 +520,35 @@ namespace automatic_reception_menu {
         ImGui::TextDisabled("Never changes the SDR center frequency.");
 
         ImGui::Separator();
-        ImGui::TextUnformatted("Calibration");
-
-        drawCalibrationState();
-
         if (!enabled) { style::beginDisabled(); }
-        if (ImGui::Button("Recalibrate##auto_rx_recal", ImVec2(width, 0))) {
-            sigpath::autoReceiverManager.invalidateCalibration(CalibrationInvalidationReason::MANUAL);
-        }
 
-        ImGui::SetNextItemWidth(width / 2);
-        if (ImGui::SliderFloat("Duration (s)##auto_rx_caldur", &calibrationSeconds, 2.0f, 60.0f, "%.0f")) {
-            apply(true);
-        }
-
-        ImGui::SetNextItemWidth(width / 2);
-        if (ImGui::SliderFloat("Min SNR (dB)##auto_rx_minsnr", &minSnrDb, 3.0f, 40.0f, "%.0f")) {
-            apply(true);
-        }
-
-        ImGui::SetNextItemWidth(width / 2);
-        if (ImGui::SliderFloat("Deviations##auto_rx_devmul", &deviationMultiplier, 1.0f, 10.0f, "%.1f")) {
-            apply(true);
-        }
+        drawFloorSection(width);
 
         ImGui::Separator();
         ImGui::TextUnformatted("Detection");
+
+        ImGui::SetNextItemWidth(width / 2);
+        if (ImGui::SliderInt("Averaging##auto_rx_avg", &averagingFrames, 1, 32, "%d frames")) {
+            apply(true);
+        }
+        ImGui::TextDisabled("Raise for wideband modes; a single frame of FM is notched.");
+
+        ImGui::SetNextItemWidth(width / 2);
+        if (ImGui::SliderFloat("Min BW (kHz)##auto_rx_minbw", &minBandwidthKHz, 0.0f, 500.0f, "%.1f")) {
+            apply(true);
+        }
+        ImGui::SetNextItemWidth(width / 2);
+        if (ImGui::SliderFloat("Max BW (kHz)##auto_rx_maxbw", &maxBandwidthKHz, 0.0f, 1000.0f,
+                               "%.1f")) {
+            apply(true);
+        }
+        ImGui::TextDisabled("Max 0 means no upper limit.");
+
+        ImGui::SetNextItemWidth(width / 2);
+        if (ImGui::SliderFloat("Merge gap (kHz)##auto_rx_gap", &mergeGapKHz, 0.0f, 200.0f, "%.1f")) {
+            apply(true);
+        }
+        ImGui::TextDisabled("Bridges dropouts inside one transmission.");
 
         ImGui::SetNextItemWidth(width / 2);
         if (ImGui::SliderInt("Activation (ms)##auto_rx_act", &activationMs, 0, 3000)) { apply(true); }
@@ -165,45 +556,81 @@ namespace automatic_reception_menu {
         ImGui::SetNextItemWidth(width / 2);
         if (ImGui::SliderInt("Release (ms)##auto_rx_rel", &releaseMs, 0, 10000)) { apply(true); }
 
-        ImGui::SetNextItemWidth(width / 2);
-        if (ImGui::SliderInt("Min bins##auto_rx_bins", &minDetectionBins, 1, 32)) { apply(true); }
+        ImGui::Checkbox("Show detections##auto_rx_overlay", &gui::waterfall.showDetections);
 
-        ImGui::Checkbox("Show on waterfall##auto_rx_overlay", &gui::waterfall.showDetections);
+        ImGui::Separator();
+        drawProfiles(width);
+
+        ImGui::Separator();
+        drawIgnoreRules(width);
 
         if (!enabled) { style::endDisabled(); }
 
         ImGui::Separator();
-        auto tracked = sigpath::autoReceiverManager.getTrackedSignals();
-        ImGui::Text("Detected signals (%d)", (int)tracked.size());
+        auto signals = sigpath::autoReceiverManager.getClassifiedSignals();
+        ImGui::Text("Detected signals (%d)", (int)signals.size());
 
-        if (ImGui::BeginTable("Detected Signals Table", 4,
+        // Sorted by frequency so rows don't jump around as tracks are created and pruned.
+        std::sort(signals.begin(), signals.end(),
+                  [](const AutoReceiverManager::ClassifiedSignal& a,
+                     const AutoReceiverManager::ClassifiedSignal& b) {
+                      return a.tracked.signal.centerFrequency < b.tracked.signal.centerFrequency;
+                  });
+
+        if (ImGui::BeginTable("Detected Signals Table", 6,
                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY,
-                              ImVec2(0, 140.0f * style::uiScale))) {
+                              ImVec2(0, 160.0f * style::uiScale))) {
             ImGui::TableSetupColumn("Frequency");
             ImGui::TableSetupColumn("BW");
             ImGui::TableSetupColumn("SNR");
+            ImGui::TableSetupColumn("Profile");
             ImGui::TableSetupColumn("State");
-            ImGui::TableSetupScrollFreeze(4, 1);
+            ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 50.0f * style::uiScale);
+            ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableHeadersRow();
 
-            // Sorted by frequency so rows don't jump around as tracks are created and pruned.
-            std::sort(tracked.begin(), tracked.end(),
-                      [](const dsp::detector::TrackedSignal& a, const dsp::detector::TrackedSignal& b) {
-                          return a.signal.centerFrequency < b.signal.centerFrequency;
-                      });
-
-            for (const auto& track : tracked) {
+            uint64_t toIgnore = 0;
+            for (const auto& cs : signals) {
+                const auto& sig = cs.tracked.signal;
                 ImGui::TableNextRow();
+
                 ImGui::TableSetColumnIndex(0);
-                ImGui::Text("%.6f MHz", track.signal.centerFrequency / 1e6);
+                ImGui::Text("%.6f MHz", sig.centerFrequency / 1e6);
                 ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%.1f kHz", track.signal.bandwidth / 1e3);
+                ImGui::Text("%.1f kHz", sig.bandwidth / 1e3);
                 ImGui::TableSetColumnIndex(2);
-                ImGui::Text("%.1f dB", track.signal.snrDb);
+                ImGui::Text("%.1f dB", sig.snrDb);
+
                 ImGui::TableSetColumnIndex(3);
-                ImGui::TextUnformatted(dsp::detector::toString(track.state));
+                if (cs.hasProfile) {
+                    ImGui::Text("%s (%s)", cs.profileName.c_str(), toString(cs.demod));
+                }
+                else {
+                    ImGui::TextDisabled("-");
+                }
+
+                ImGui::TableSetColumnIndex(4);
+                if (cs.ignored) {
+                    ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "Ignored");
+                }
+                else {
+                    ImGui::TextUnformatted(dsp::detector::toString(cs.tracked.state));
+                }
+
+                ImGui::TableSetColumnIndex(5);
+                if (!cs.ignored) {
+                    if (ImGui::SmallButton(("Ignore##sig_" + std::to_string(sig.id)).c_str())) {
+                        toIgnore = sig.id;
+                    }
+                }
             }
             ImGui::EndTable();
+
+            if (toIgnore != 0) {
+                sigpath::autoReceiverManager.ignoreSignal(toIgnore, "Ignored from detections",
+                                                          ignorePaddingKHz * 1e3);
+                saveIgnoreRules();
+            }
         }
     }
 }

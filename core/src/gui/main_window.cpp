@@ -271,14 +271,33 @@ void MainWindow::releaseFFTBuffer(void* ctx) {
 }
 
 void MainWindow::rawFFTHandler(ImGui::WaterFall::RawFFTFrame frame, void* ctx) {
+    auto* _this = (MainWindow*)ctx;
+
     if (!sigpath::autoReceiverManager.isEnabled()) {
         gui::waterfall.clearDetectionMarkers();
+        gui::waterfall.clearNoiseFloorOverlay();
+        _this->lastFloorVersion = 0;
         return;
     }
 
     sigpath::autoReceiverManager.onFFTFrame(frame.data, frame.binCount, frame.centerFrequency,
                                             frame.spanHz, frame.usableSpectrumRatio,
                                             sigpath::iqFrontEnd.getFFTRate(), currentTimeMillis());
+
+    // The floor curve only changes when the model does, so rebuild it on demand rather than
+    // every frame.
+    uint64_t floorVersion = sigpath::autoReceiverManager.getFloorVersion();
+    if (floorVersion != _this->lastFloorVersion) {
+        _this->lastFloorVersion = floorVersion;
+        auto curve = sigpath::autoReceiverManager.getFloorCurve();
+        ImGui::WaterFall::NoiseFloorOverlay overlay;
+        overlay.visible = curve.usable;
+        overlay.lowFrequency = curve.lowFrequency;
+        overlay.highFrequency = curve.highFrequency;
+        overlay.floorDb = curve.floorDb;
+        overlay.thresholdDb = curve.thresholdDb;
+        gui::waterfall.setNoiseFloorOverlay(overlay);
+    }
 
     std::vector<ImGui::DetectionMarker> markers;
     for (const auto& track : sigpath::autoReceiverManager.getTrackedSignals()) {
