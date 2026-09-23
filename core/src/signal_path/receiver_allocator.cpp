@@ -216,9 +216,9 @@ void ReceiverAllocator::startRecording(AutoReceiverSlot& slot, uint64_t nowMs) {
     core::modComManager.callInterface(slot.recorderName, RECORDER_IFACE_CMD_SET_PATH,
                                       (void*)folder.c_str(), NULL);
 
-    // date_time_frequency_mode_receiver, with the receiver name literal because this recorder is
+    // date_frequency_mode_time_receiver, with the receiver name literal because this recorder is
     // dedicated to one slot.
-    std::string templ = "$y$M$d_$h$m$s_$f_$r_" + slot.name;
+    std::string templ = "$y$M$d_$f_$r_$h$m$s_" + slot.name;
     core::modComManager.callInterface(slot.recorderName, RECORDER_IFACE_CMD_SET_NAME_TEMPLATE,
                                       (void*)templ.c_str(), NULL);
     core::modComManager.callInterface(slot.recorderName, RECORDER_IFACE_CMD_START, NULL, NULL);

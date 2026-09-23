@@ -57,6 +57,16 @@ struct ReceptionProfile {
      */
     double frequencyStep = 0.0;
 
+    /**
+     * Dropouts narrower than this are bridged rather than splitting one transmission in two.
+     * Zero falls back to the global setting.
+     *
+     * This has to be per band. A broadcast FM station has a deeply notched instantaneous spectrum
+     * and needs tens of kHz; the same 20 kHz on airband is 164 FFT bins at 2 MSPS, which welds
+     * the entire capture into a single run that is then discarded for being too wide.
+     */
+    double mergeGapHz = 0.0;
+
     // Highest priority wins when several profiles match.
     int priority = 0;
 

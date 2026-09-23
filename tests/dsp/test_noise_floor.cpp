@@ -9,6 +9,7 @@
 #include <dsp/detector/noise_floor.h>
 
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <vector>
 
@@ -211,4 +212,101 @@ TEST_CASE("a measurement averages frames before estimating", "[detector][floor]"
     REQUIRE(floor.addFrame(hi.data(), BINS));
 
     CHECK(floor.getFloorDb(128) == Catch::Approx(-100.0f).margin(0.5));
+}
+
+// --------------------------------------------------------------------------------------------
+// Percentile to mean-power bias.
+//
+// getFloorDb() is a low percentile, so it sits below the mean noise power. That is harmless for a
+// per-bin comparison, where the offset just folds into the margin, but the integrated detector
+// divides by noise power -- so the offset has to be known rather than absorbed.
+// --------------------------------------------------------------------------------------------
+
+namespace {
+    // Exponentially distributed bin power, which is what a single-look power spectrum has.
+    struct Lcg {
+        uint64_t state;
+        explicit Lcg(uint64_t seed) : state(seed) {}
+        double next() {
+            state = (state * 6364136223846793005ULL) + 1442695040888963407ULL;
+            return (double)((state >> 11) & ((1ULL << 53) - 1)) / (double)(1ULL << 53);
+        }
+        // Exp(1), avoiding log(0).
+        double exponential() { return -std::log(1.0 - next() * 0.9999999); }
+    };
+}
+
+TEST_CASE("the single look bias is the analytic value", "[detector][floor]") {
+    // For Exp(1) power, the p-th quantile of 10*log10 is 10*log10(-ln(1-p)), so the offset from
+    // the mean is -4.3429 * ln(-ln(1-p)). At the 25th percentile that is 5.41 dB.
+    CHECK(NoiseFloorModel::percentileToMeanBiasDb(0.25f, 1) == Catch::Approx(5.4114f).margin(0.01));
+    // The median sits 1.59 dB below mean power.
+    CHECK(NoiseFloorModel::percentileToMeanBiasDb(0.5f, 1) == Catch::Approx(1.5917f).margin(0.01));
+    // A lower percentile is further below the mean.
+    CHECK(NoiseFloorModel::percentileToMeanBiasDb(0.1f, 1) >
+          NoiseFloorModel::percentileToMeanBiasDb(0.25f, 1));
+}
+
+TEST_CASE("averaging frames shrinks the bias but never removes it", "[detector][floor]") {
+    // More frames narrows the distribution, so the percentile creeps toward the mean.
+    float m1 = NoiseFloorModel::percentileToMeanBiasDb(0.25f, 1);
+    float m4 = NoiseFloorModel::percentileToMeanBiasDb(0.25f, 4);
+    float m20 = NoiseFloorModel::percentileToMeanBiasDb(0.25f, 20);
+    CHECK(m1 > m4);
+    CHECK(m4 > m20);
+
+    // It converges on 2.507 dB rather than zero, and that floor is not about the percentile at
+    // all: the measurement averages *dB* values, which estimates the geometric mean of the power,
+    // and for exponential noise that sits 10*log10(e^gamma) = 2.507 dB below the arithmetic mean
+    // however many frames are averaged. This is precisely why the detector cannot divide by
+    // getFloorDb() and why the frame accumulator had to move to linear power.
+    CHECK(m20 > 2.5f);
+    CHECK(NoiseFloorModel::percentileToMeanBiasDb(0.5f, 10000) ==
+          Catch::Approx(2.507f).margin(0.05));
+}
+
+TEST_CASE("the bias recovers mean noise power from a percentile", "[detector][floor]") {
+    // Monte-Carlo against synthetic exponential noise: take the percentile of an M-frame dB
+    // average, add the bias, and the result must be the true mean power.
+    const int BINS = 20000;
+    const double TRUE_MEAN_DB = -90.0;
+    const double trueMeanLin = std::pow(10.0, TRUE_MEAN_DB / 10.0);
+
+    for (int frames : { 1, 4, 20 }) {
+        for (float pct : { 0.1f, 0.25f, 0.5f }) {
+            Lcg rng(0x5EED1234u + frames * 100 + (int)(pct * 1000));
+
+            std::vector<float> avgDb(BINS, 0.0f);
+            for (int f = 0; f < frames; f++) {
+                for (int b = 0; b < BINS; b++) {
+                    double lin = trueMeanLin * rng.exponential();
+                    avgDb[b] += (float)(10.0 * std::log10(lin));
+                }
+            }
+            for (int b = 0; b < BINS; b++) { avgDb[b] /= (float)frames; }
+
+            float percentileDb = NoiseFloorModel::estimateFlatFloorDb(avgDb.data(), BINS, pct);
+            float recovered = percentileDb + NoiseFloorModel::percentileToMeanBiasDb(pct, frames);
+
+            INFO("frames=" << frames << " pct=" << pct << " percentile=" << percentileDb
+                           << " recovered=" << recovered);
+            CHECK(recovered == Catch::Approx(TRUE_MEAN_DB).margin(0.35));
+        }
+    }
+}
+
+TEST_CASE("getNoisePowerDb sits above the drawn floor", "[detector][floor]") {
+    NoiseFloorModel floor;
+    floor.configure(64, 1000.0);
+    floor.setMode(NoiseFloorMode::MANUAL);
+    floor.setManualFloorDb(-100.0f);
+    floor.setSpectralPercentile(0.25f);
+
+    // The line the user placed stays exactly where they put it...
+    CHECK(floor.getFloorDb(0) == Catch::Approx(-100.0f));
+    // ...while the detector normalises by mean noise power, which is above it.
+    CHECK(floor.getNoisePowerDb(0) == Catch::Approx(-100.0f + 5.4114f).margin(0.01));
+    // The threshold is still floor + margin, untouched by any of this.
+    floor.setMarginDb(10.0f);
+    CHECK(floor.getThresholdDb(0) == Catch::Approx(-90.0f));
 }

@@ -3,6 +3,7 @@
 #include "../dsp/detector/noise_floor.h"
 #include "../dsp/detector/signal_tracker.h"
 #include "../dsp/detector/spectrum_detector.h"
+#include "../dsp/detector/spectrum_integrator.h"
 #include "source.h"
 #include "reception_profile.h"
 #include "ignore_rules.h"
@@ -54,6 +55,17 @@ public:
         double maxBandwidthHz = 0.0;
         double mergeGapHz = 0.0;
         int minDetectionBins = 2;
+
+        /**
+         * Width of the notch around the capture centre, in Hz. LO leakage there is a guaranteed
+         * false detection, and because the detector integrates over a kernel a 40-60 dB spike
+         * would otherwise pull in hundreds of bins either side.
+         */
+        double dcNotchHz = 1e3;
+
+        // Per-evaluation false alarm probability, bounding the threshold from below for wide
+        // kernels where marginDb alone would be looser than the statistics justify.
+        double falseAlarmRate = 1e-7;
 
         /**
          * Drop detections that no enabled profile covers.
@@ -167,9 +179,23 @@ private:
 
     mutable std::recursive_mutex mtx;
 
-    // Drop detections that no enabled profile accepts, and those covered by an ignore rule.
+    // Drop detections covered by an ignore rule.
     std::vector<dsp::detector::DetectedSignal> filterLocked(
         const std::vector<dsp::detector::DetectedSignal>& detections) const;
+
+    /**
+     * One detection pass per enabled profile over its overlap with the frame, highest priority
+     * first, plus one fallback pass over bins no profile covers.
+     *
+     * Each profile supplies its own integration kernels, channel raster, merge gap and bandwidth
+     * limits, because those are properties of the band: broadcast FM fills a 150 kHz channel on a
+     * 100 kHz raster, airband is a narrow carrier inside a 25 kHz one, and a single set of global
+     * numbers cannot serve both. A candidate is kept only if findFor() agrees it belongs to the
+     * profile that produced it, so overlapping profiles cannot report the same signal twice.
+     */
+    std::vector<dsp::detector::DetectedSignal> detectAllLocked(double centerFrequency,
+                                                               double spanHz,
+                                                               double usableSpectrumRatio);
 
     Config config;
     ReceptionProfileSet profiles;
@@ -184,9 +210,22 @@ private:
     double lastFrameRate = 0.0;
     std::vector<float> lastFrame;
 
-    // Running sum for detection averaging.
-    std::vector<double> averageAccumulator;
+    /**
+     * Running sum for detection averaging, in *linear power*.
+     *
+     * Averaging dB values estimates the log-mean, which sits below the mean power by up to
+     * 2.5 dB. That was harmless while the floor was also a dB average and the two cancelled, but
+     * the integrator divides by noise power, so both sides have to live in the linear domain.
+     */
+    std::vector<double> powerAccumulator;
     int averageCount = 0;
+
+    // Reused across frames so a 64k-bin capture does not allocate twice per frame.
+    std::vector<float> framePower;
+    dsp::detector::SpectrumIntegrator integrator;
+    std::vector<uint8_t> coverageScratch;
+    // Frames behind the current integrator, for the CFAR look count.
+    int lastFramesAveraged = 1;
 
     uint64_t floorVersion = 1;
 };

@@ -18,7 +18,7 @@ void AutoReceiverManager::setConfig(const Config& newConfig) {
 
     if (!config.enabled && wasEnabled) {
         tracker.clear();
-        averageAccumulator.clear();
+        powerAccumulator.clear();
         averageCount = 0;
     }
     bumpFloorVersionLocked();
@@ -113,7 +113,7 @@ void AutoReceiverManager::resetFloor() {
     std::lock_guard<std::recursive_mutex> lck(mtx);
     floor.resetMeasurement();
     tracker.clear();
-    averageAccumulator.clear();
+    powerAccumulator.clear();
     averageCount = 0;
     bumpFloorVersionLocked();
 }
@@ -131,7 +131,7 @@ void AutoReceiverManager::updateSourceState(const SourceManager::State& newState
         bumpFloorVersionLocked();
     }
     tracker.clear();
-    averageAccumulator.clear();
+    powerAccumulator.clear();
     averageCount = 0;
 }
 
@@ -156,7 +156,7 @@ void AutoReceiverManager::onFFTFrame(const float* fft, int binCount, double cent
 
         floor.configure(binCount, spanHz / (double)binCount);
         if (shapeChanged) {
-            averageAccumulator.clear();
+            powerAccumulator.clear();
             averageCount = 0;
             bumpFloorVersionLocked();
         }
@@ -169,32 +169,40 @@ void AutoReceiverManager::onFFTFrame(const float* fft, int binCount, double cent
 
         if (!floor.isUsable()) { return; }
 
-        // Average before thresholding.
+        // Accumulate in linear power, not dB: the detector integrates energy, and a dB average
+        // estimates the log-mean instead of the mean.
         int avgFrames = std::max<int>(config.detectionAveragingFrames, 1);
-        if ((int)averageAccumulator.size() != binCount) {
-            averageAccumulator.assign(binCount, 0.0);
+        if ((int)powerAccumulator.size() != binCount) {
+            powerAccumulator.assign(binCount, 0.0);
             averageCount = 0;
         }
-        for (int b = 0; b < binCount; b++) { averageAccumulator[b] += fft[b]; }
+        for (int b = 0; b < binCount; b++) {
+            powerAccumulator[b] += std::pow(10.0, (double)fft[b] / 10.0);
+        }
         averageCount++;
         if (averageCount < avgFrames) { return; }
 
-        std::vector<float> averaged(binCount);
+        framePower.resize(binCount);
         for (int b = 0; b < binCount; b++) {
-            averaged[b] = (float)(averageAccumulator[b] / (double)averageCount);
+            framePower[b] = (float)(powerAccumulator[b] / (double)averageCount);
         }
-        averageAccumulator.assign(binCount, 0.0);
+        int framesAveraged = averageCount;
+        std::fill(powerAccumulator.begin(), powerAccumulator.end(), 0.0);
         averageCount = 0;
 
-        DetectionParams params;
-        params.minBins = config.minDetectionBins;
-        params.minBandwidthHz = config.minBandwidthHz;
-        params.maxBandwidthHz = config.maxBandwidthHz;
-        params.mergeGapHz = config.mergeGapHz;
-        params.usableSpectrumRatio = usableSpectrumRatio;
+        // Replace the LO spike at the capture centre with the local noise level before the prefix
+        // sums are built, so it cannot dominate the integral of every kernel that overlaps it.
+        std::vector<SpectrumIntegrator::Excision> excisions;
+        if (config.dcNotchHz > 0.0) {
+            double binWidth = spanHz / (double)binCount;
+            int half = std::max<int>(1, (int)std::lround((config.dcNotchHz / 2.0) / binWidth));
+            int center = binCount / 2;
+            excisions.push_back({ center - half, center + half });
+        }
+        integrator.build(framePower.data(), binCount, floor, excisions);
 
-        auto detections = detectSignals(averaged.data(), binCount, floor, centerFrequency, spanHz,
-                                        params);
+        lastFramesAveraged = framesAveraged;
+        auto detections = detectAllLocked(centerFrequency, spanHz, usableSpectrumRatio);
         tracker.update(filterLocked(detections), nowMs);
 
         activeSignals = tracker.getActiveSignals();
@@ -250,25 +258,108 @@ AutoReceiverManager::FloorCurve AutoReceiverManager::getFloorCurve(int maxSample
     return curve;
 }
 
-// Combine two detections known to belong to the same channel.
-static DetectedSignal mergeSignals(const DetectedSignal& a, const DetectedSignal& b) {
-    DetectedSignal out;
-    out.lowerFrequency = std::min(a.lowerFrequency, b.lowerFrequency);
-    out.upperFrequency = std::max(a.upperFrequency, b.upperFrequency);
-    out.centerFrequency = (out.lowerFrequency + out.upperFrequency) / 2.0;
-    out.bandwidth = out.upperFrequency - out.lowerFrequency;
-    out.peakDb = std::max(a.peakDb, b.peakDb);
-    out.noiseFloorDb = std::min(a.noiseFloorDb, b.noiseFloorDb);
-    out.snrDb = out.peakDb - out.noiseFloorDb;
+std::vector<DetectedSignal> AutoReceiverManager::detectAllLocked(double centerFrequency,
+                                                                 double spanHz,
+                                                                 double usableSpectrumRatio) {
+    std::vector<DetectedSignal> out;
+    int binCount = integrator.binCount();
+    if (binCount <= 0 || spanHz <= 0.0) { return out; }
 
-    // Weight each fragment's centroid by its linear power above the floor, so the combined
-    // centroid follows the dominant part of the transmission.
-    double wa = std::pow(10.0, a.snrDb / 10.0);
-    double wb = std::pow(10.0, b.snrDb / 10.0);
-    double total = wa + wb;
-    out.centroidFrequency = (total > 0.0)
-                                ? ((a.centroidFrequency * wa) + (b.centroidFrequency * wb)) / total
-                                : out.centerFrequency;
+    const double binWidth = spanHz / (double)binCount;
+    const double specLow = centerFrequency - (spanHz / 2.0);
+
+    // The edges of a capture are shaped by the analog anti-alias filter and produce nothing but
+    // artefacts.
+    double ratio = std::clamp(usableSpectrumRatio, 0.0, 1.0);
+    int usableBins = (int)std::floor(binCount * ratio);
+    if (usableBins < 1) { return out; }
+    int usableLo = (binCount - usableBins) / 2;
+    int usableHi = usableLo + usableBins; // exclusive
+
+    // Nuttall's equivalent noise bandwidth: a kernel of K bins holds K/2.02 independent samples.
+    const double NUTTALL_ENBW = 2.02;
+    const double looksPerBin = (double)std::max(lastFramesAveraged, 1) / NUTTALL_ENBW;
+
+    coverageScratch.assign(binCount, 0);
+
+    // Profiles in descending priority, so that findFor() and the pass that produced a candidate
+    // always agree about who owns a frequency.
+    std::vector<const ReceptionProfile*> ordered;
+    for (const auto& p : profiles.profiles) {
+        if (p.enabled) { ordered.push_back(&p); }
+    }
+    std::stable_sort(ordered.begin(), ordered.end(),
+                     [](const ReceptionProfile* a, const ReceptionProfile* b) {
+                         return a->priority > b->priority;
+                     });
+
+    auto runPass = [&](PassParams& params, const ReceptionProfile* owner) {
+        if (params.hiBin <= params.loBin) { return; }
+        params.marginDb = config.marginDb;
+        params.falseAlarmRate = config.falseAlarmRate;
+        params.looksPerBin = looksPerBin;
+
+        auto found = detectPass(integrator, centerFrequency, spanHz, params);
+        for (auto& sig : found) {
+            // Overlapping profiles would otherwise each report the same signal.
+            if (profiles.findFor(sig.centroidFrequency) != owner) { continue; }
+            out.push_back(sig);
+        }
+    };
+
+    for (const ReceptionProfile* p : ordered) {
+        // Where this profile's range meets the captured span.
+        double lo = (p->minFrequency == 0.0 && p->maxFrequency == 0.0) ? specLow : p->minFrequency;
+        double hi = (p->minFrequency == 0.0 && p->maxFrequency == 0.0) ? (specLow + spanHz)
+                                                                       : p->maxFrequency;
+        int loBin = std::max<int>(usableLo, (int)std::floor((lo - specLow) / binWidth));
+        int hiBin = std::min<int>(usableHi, (int)std::ceil((hi - specLow) / binWidth));
+        if (hiBin <= loBin) { continue; }
+
+        for (int b = loBin; b < hiBin; b++) { coverageScratch[b] = 1; }
+
+        PassParams params;
+        params.loBin = loBin;
+        params.hiBin = hiBin;
+        params.kernelBins = kernelSetFor(p->bandwidth, binWidth, hiBin - loBin);
+        params.channelStepHz = p->frequencyStep;
+        params.channelBandwidthHz = p->bandwidth;
+        params.minBandwidthHz = p->minDetectionBandwidth;
+        params.maxBandwidthHz = p->maxDetectionBandwidth;
+        params.mergeGapHz = (p->mergeGapHz > 0.0) ? p->mergeGapHz : config.mergeGapHz;
+        params.minBins = config.minDetectionBins;
+        runPass(params, p);
+    }
+
+    // Anything no profile claims, using the global settings, unless the user asked for profiles
+    // only. Run one pass per contiguous uncovered stretch rather than re-querying per bin.
+    if (!config.restrictToProfiles) {
+        int b = usableLo;
+        while (b < usableHi) {
+            if (coverageScratch[b]) {
+                b++;
+                continue;
+            }
+            int start = b;
+            while (b < usableHi && !coverageScratch[b]) { b++; }
+
+            PassParams params;
+            params.loBin = start;
+            params.hiBin = b;
+            // No profile means no expected channel width, so sweep a wide span of kernels.
+            params.kernelBins = { 4, 16, 64, 256 };
+            params.kernelBins.erase(
+                std::remove_if(params.kernelBins.begin(), params.kernelBins.end(),
+                               [&](int k) { return k > (b - start); }),
+                params.kernelBins.end());
+            params.minBandwidthHz = config.minBandwidthHz;
+            params.maxBandwidthHz = config.maxBandwidthHz;
+            params.mergeGapHz = config.mergeGapHz;
+            params.minBins = config.minDetectionBins;
+            runPass(params, nullptr);
+        }
+    }
+
     return out;
 }
 
@@ -277,77 +368,15 @@ std::vector<DetectedSignal> AutoReceiverManager::filterLocked(
     std::vector<DetectedSignal> kept;
     kept.reserve(detections.size());
 
+    // Profile gating, channel assignment and bandwidth limits all happen inside the per-profile
+    // passes now, so the only thing left to apply here is the user's ignore list. Ignored ranges
+    // never reach the tracker, so they never allocate a receiver or start a recording; they stay
+    // visible in the spectrum itself.
     for (const auto& sig : detections) {
-        // Ignored ranges never reach the tracker, so they never allocate a receiver or start a
-        // recording. They stay visible in the spectrum itself and in the history later.
         if (ignoreRules.isIgnored(sig.lowerFrequency, sig.upperFrequency)) { continue; }
-        // A detection nowhere near an enabled profile is only dropped if the user asked for that.
-        if (config.restrictToProfiles && !profiles.covers(sig.centroidFrequency)) { continue; }
         kept.push_back(sig);
     }
-
-    // Collapse fragments onto their channel. A modulated carrier breaks into several
-    // above-threshold runs within one channel; on a rastered band those all snap to the same
-    // frequency and are one signal, not several.
-    //
-    // This runs whenever a matching profile defines a raster, regardless of restrictToProfiles.
-    {
-        std::vector<std::pair<double, size_t>> channelOf; // snapped frequency -> index in merged
-        std::vector<DetectedSignal> merged;
-
-        for (const auto& sig : kept) {
-            const ReceptionProfile* profile = profiles.findFor(sig.centroidFrequency);
-            double step = (profile != nullptr) ? profile->frequencyStep : 0.0;
-            if (step <= 0.0) {
-                merged.push_back(sig);
-                continue;
-            }
-
-            double channel = snapToStep(sig.centroidFrequency, step);
-            bool combined = false;
-            for (auto& [existing, idx] : channelOf) {
-                if (existing == channel) {
-                    double keep = merged[idx].channelFrequency;
-                    merged[idx] = mergeSignals(merged[idx], sig);
-                    merged[idx].channelFrequency = keep;
-                    combined = true;
-                    break;
-                }
-            }
-            if (!combined) {
-                DetectedSignal tagged = sig;
-                tagged.channelFrequency = channel;
-                channelOf.emplace_back(channel, merged.size());
-                merged.push_back(tagged);
-            }
-        }
-        kept.swap(merged);
-    }
-
-    // Bandwidth limits are judged after merging, so that a channel assembled from fragments is
-    // measured at its true width rather than each fragment being rejected on its own.
-    std::vector<DetectedSignal> result;
-    result.reserve(kept.size());
-    for (const auto& sig : kept) {
-        double minBw = config.minBandwidthHz;
-        double maxBw = config.maxBandwidthHz;
-
-        // A matching profile's limits are more specific than the global ones, so they win.
-        double pMin = 0.0;
-        double pMax = 0.0;
-        if (profiles.detectionLimitsAt(sig.centroidFrequency, pMin, pMax)) {
-            minBw = pMin;
-            maxBw = pMax;
-        }
-        else if (config.restrictToProfiles) {
-            continue;
-        }
-
-        if (minBw > 0.0 && sig.bandwidth < minBw) { continue; }
-        if (maxBw > 0.0 && sig.bandwidth > maxBw) { continue; }
-        result.push_back(sig);
-    }
-    return result;
+    return kept;
 }
 
 double AutoReceiverManager::getTuneFrequency(const DetectedSignal& signal) const {

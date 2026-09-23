@@ -95,6 +95,27 @@ namespace dsp::detector {
         float getFloorDb(int bin) const;
         float getThresholdDb(int bin) const;
 
+        /**
+         * Mean linear noise power for a bin, in dB.
+         *
+         * This is getFloorDb() plus the estimator's percentile-to-mean bias, and it is what an
+         * energy-integrating detector must normalise by. getFloorDb() is a low percentile, so it
+         * sits *below* the mean noise power by 0.8-5.4 dB depending on how many frames were
+         * averaged. Folding that offset into marginDb is harmless for a per-bin comparison, but
+         * once the floor becomes the denominator of an integrated ratio it turns into a silent
+         * bias that moves whenever an unrelated setting does.
+         */
+        float getNoisePowerDb(int bin) const;
+
+        /**
+         * dB to add to a `percentile` of a `framesAveraged`-frame dB average of exponentially
+         * distributed bin power to recover 10*log10(mean power).
+         *
+         * Exact for framesAveraged == 1; a Cornish-Fisher expansion above that, which is why the
+         * unit test pins it against Monte-Carlo rather than against an analytic value.
+         */
+        static float percentileToMeanBiasDb(float percentile, int framesAveraged);
+
         // The measured per-bin floor, empty unless a measurement completed.
         const std::vector<float>& getMeasuredFloor() const { return measuredFloor; }
 
@@ -132,5 +153,7 @@ namespace dsp::detector {
         std::vector<double> accumulator;
 
         std::vector<float> measuredFloor;
+        // Offset from the stored floor to mean noise power, for getNoisePowerDb().
+        float noiseBiasDb = 0.0f;
     };
 }

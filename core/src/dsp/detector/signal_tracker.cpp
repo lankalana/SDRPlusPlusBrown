@@ -4,7 +4,9 @@
 namespace dsp::detector {
 
     bool SignalTracker::sameChannel(const DetectedSignal& a, const DetectedSignal& b) {
-        return a.channelFrequency != 0.0 && a.channelFrequency == b.channelFrequency;
+        // Integer channel index, not the frequency: a one-ulp difference between two ways of
+        // computing the same channel would otherwise split one station into a new track per frame.
+        return a.channelIndex != 0 && a.channelIndex == b.channelIndex;
     }
 
     double SignalTracker::overlapRatio(const DetectedSignal& a, const DetectedSignal& b) {
@@ -29,31 +31,50 @@ namespace dsp::detector {
         std::vector<bool> detectionUsed(detections.size(), false);
         std::vector<bool> trackMatched(tracked.size(), false);
 
-        // Greedy association: every track claims its best unused detection. Tracks are few and
-        // detections are few, so the quadratic scan is not worth optimizing.
-        for (size_t t = 0; t < tracked.size(); t++) {
-            auto& track = tracked[t];
-            int bestIdx = -1;
-            double bestRatio = params.minOverlapRatio;
+        // Association runs in two passes. Every track that can claim a detection on its own
+        // channel does so first, across all tracks, before anything is matched by overlap.
+        //
+        // The order matters: on a rastered band the reported extent is the channel slot, so two
+        // adjacent channels always overlap by the same amount whether they hold two stations or
+        // one station straddling a boundary. What separates the two cases is that a real
+        // neighbour produces its own detection every frame -- which this pass consumes, leaving
+        // only genuine boundary flips for the overlap pass below.
+        std::vector<int> matchIdx(tracked.size(), -1);
 
-            // A matching channel is decisive: two fragments of one station need not overlap.
+        for (size_t t = 0; t < tracked.size(); t++) {
             for (size_t d = 0; d < detections.size(); d++) {
                 if (detectionUsed[d]) { continue; }
-                if (sameChannel(track.signal, detections[d])) {
-                    bestIdx = (int)d;
-                    break;
-                }
+                if (!sameChannel(tracked[t].signal, detections[d])) { continue; }
+                matchIdx[t] = (int)d;
+                detectionUsed[d] = true;
+                break;
             }
+        }
+
+        // Greedy association for whatever is left. Tracks are few and detections are few, so the
+        // quadratic scan is not worth optimizing.
+        for (size_t t = 0; t < tracked.size(); t++) {
+            auto& track = tracked[t];
+            int bestIdx = matchIdx[t];
+            double bestRatio = params.minOverlapRatio;
 
             if (bestIdx < 0) {
                 for (size_t d = 0; d < detections.size(); d++) {
                     if (detectionUsed[d]) { continue; }
-                    // Never steal a detection that belongs to some other channel.
-                    if (detections[d].channelFrequency != 0.0 &&
-                        track.signal.channelFrequency != 0.0) {
-                        continue;
+
+                    // Two differently-tagged channels are normally separate stations. The one
+                    // exception is the *immediately* neighbouring slot, which is where a station
+                    // whose centroid wanders across a raster boundary shows up. Anything further
+                    // away is a different signal.
+                    int64_t di = detections[d].channelIndex;
+                    int64_t ti = track.signal.channelIndex;
+                    if (di != 0 && ti != 0 && di != ti) {
+                        if (std::abs(di - ti) != 1) { continue; }
                     }
+
                     double ratio = overlapRatio(track.signal, detections[d]);
+                    if (di != ti && ratio < params.channelStickinessOverlap) { continue; }
+
                     if (ratio >= bestRatio) {
                         bestRatio = ratio;
                         bestIdx = (int)d;
@@ -67,9 +88,18 @@ namespace dsp::detector {
 
             uint64_t id = track.signal.id;
             uint64_t firstSeen = track.signal.firstSeen;
+            // Once a track is on a channel it stays there. Adopting whichever neighbouring slot
+            // this frame's centroid happened to land in is what made tuned frequencies jump.
+            int64_t channelIndex = track.signal.channelIndex;
+            double channelFrequency = track.signal.channelFrequency;
+
             track.signal = detections[bestIdx];
             track.signal.id = id;
             track.signal.firstSeen = firstSeen;
+            if (channelIndex != 0) {
+                track.signal.channelIndex = channelIndex;
+                track.signal.channelFrequency = channelFrequency;
+            }
             track.signal.lastSeen = nowMs;
             track.lastDetectedMs = nowMs;
 

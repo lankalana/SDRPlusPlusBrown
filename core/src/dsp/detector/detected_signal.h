@@ -37,8 +37,27 @@ namespace dsp::detector {
          */
         double channelFrequency = 0.0;
 
+        /**
+         * Index of that channel on the raster, or 0 when no raster applies.
+         *
+         * This, not channelFrequency, is the identity comparison. Two code paths that compute the
+         * same channel -- round(f/step)*step in one place, chLow + k*step in a loop in another --
+         * can differ in the last bit, and comparing the doubles would then start a fresh track
+         * every frame.
+         */
+        int64_t channelIndex = 0;
+
+        /**
+         * Width the signal actually occupies, as opposed to `bandwidth`, which on a rastered band
+         * is the channel width the receiver will use. Air traffic is a good example of the two
+         * being very different: a narrow carrier inside a 25 kHz channel.
+         */
+        double occupiedBandwidth = 0.0;
+
         float peakDb = 0.0f;
         float noiseFloorDb = 0.0f;
+        // Integrated channel SNR: power over the signal's width against the noise in that same
+        // width. Peak-minus-floor reads ~20 dB high for a carrier and does not predict audio.
         float snrDb = 0.0f;
 
         uint64_t firstSeen = 0;

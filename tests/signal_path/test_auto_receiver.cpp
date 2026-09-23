@@ -32,6 +32,10 @@ namespace {
         c.releaseMs = 2000;
         c.detectionAveragingFrames = 1;
         c.minDetectionBins = 2;
+        // These fixtures put their signal at the centre of the frame, which is exactly where the
+        // LO notch is. Detection behaviour is what is under test here; the notch has its own
+        // cases below.
+        c.dcNotchHz = 0.0;
         return c;
     }
 
@@ -88,7 +92,11 @@ TEST_CASE("a manual floor confirms a signal after the activation delay", "[auto_
 
     feed(mgr, frameWithSignal(), 8, 0);
     CHECK(mgr.getActiveSignalCount() == 1);
-    CHECK(mgr.getTrackedSignals()[0].signal.snrDb == Catch::Approx(60.0f));
+
+    // Integrated channel SNR, not peak minus floor. Six bins at -40 dB against a -100 dB floor:
+    // the floor is a 25th percentile, so mean noise power is 5.41 dB above it, and integrating
+    // six bins of signal against six of noise gives 10*log10(1 + 1e-4/10^-9.459) = 54.6 dB.
+    CHECK(mgr.getTrackedSignals()[0].signal.snrDb == Catch::Approx(54.59f).margin(0.1));
 }
 
 TEST_CASE("raising the manual floor above a signal hides it", "[auto_receiver]") {
@@ -569,7 +577,181 @@ TEST_CASE("onDetectionUpdate reports the active signals", "[auto_receiver]") {
     feed(mgr, frameWithSignal(), 10, 0);
     CHECK(updateCount == 10);
     REQUIRE(lastUpdate.size() == 1);
-    CHECK(lastUpdate[0].snrDb == Catch::Approx(60.0f));
+    CHECK(lastUpdate[0].snrDb == Catch::Approx(54.59f).margin(0.1));
 
     mgr.onDetectionUpdate.unbindHandler(&handler);
+}
+
+// ------------------------------------------------------------------------------------------
+// Regressions for the airband sensitivity work.
+// ------------------------------------------------------------------------------------------
+
+namespace {
+    // A frame with a narrow carrier at `frequency`, as airband AM actually looks: nearly all the
+    // power in a few bins, sidebands buried in the noise.
+    std::vector<float> carrierFrame(double frequency, float snrDb, double center = CENTER) {
+        std::vector<float> f(BINS, -100.0f);
+        double low = center - (SPAN / 2.0);
+        int bin = (int)std::lround(((frequency - low) / (SPAN / BINS)) - 0.5);
+        for (int b = bin - 1; b <= bin + 1; b++) {
+            if (b >= 0 && b < BINS) { f[b] = -100.0f + snrDb; }
+        }
+        return f;
+    }
+
+    ReceptionProfileSet oneProfile(ProfileDemod demod, double bandwidth, double step,
+                                   double minDetect, double mergeGap) {
+        ReceptionProfileSet set;
+        ReceptionProfile p;
+        p.name = "Band";
+        p.minFrequency = CENTER - SPAN;
+        p.maxFrequency = CENTER + SPAN;
+        p.demod = demod;
+        p.bandwidth = bandwidth;
+        p.frequencyStep = step;
+        p.minDetectionBandwidth = minDetect;
+        p.mergeGapHz = mergeGap;
+        set.profiles.push_back(p);
+        return set;
+    }
+}
+
+TEST_CASE("a narrow carrier inside a wide channel is detected", "[auto_receiver]") {
+    // The original bug: a 3-bin carrier was found by the detector and then discarded, because
+    // the profile demanded a measured extent approaching the channel width. Quiet air traffic is
+    // exactly this shape, so it was never reported.
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.activationMs = 0;
+    mgr.setConfig(c);
+    // Airband's shape rather than its numbers: this fixture is 15.6 kHz per bin, so the channel
+    // is scaled up to stay several bins wide while the carrier stays a few bins.
+    mgr.setProfiles(oneProfile(ProfileDemod::AM, 200e3, 250e3, 0.0, 60e3));
+
+    feed(mgr, carrierFrame(CENTER + 250e3, 25.0f), 4, 0);
+
+    REQUIRE(mgr.getTrackedSignals().size() == 1);
+    const auto& sig = mgr.getTrackedSignals()[0].signal;
+    CHECK(sig.channelIndex != 0);
+    CHECK(sig.channelFrequency == Catch::Approx(CENTER + 250e3));
+    // Reported at the channel, receiver width is the channel width...
+    CHECK(sig.bandwidth == Catch::Approx(200e3));
+    // ...but what it actually occupies is a fraction of that, reported separately so the channel
+    // width is never mistaken for the signal's own.
+    CHECK(sig.occupiedBandwidth < sig.bandwidth / 3.0);
+}
+
+TEST_CASE("a per-profile merge gap is used in preference to the global one", "[auto_receiver]") {
+    // A 20 kHz global gap at this resolution bridges straight across a whole band; the profile's
+    // own, narrower gap has to win.
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.activationMs = 0;
+    c.mergeGapHz = 500e3; // absurd on purpose
+    mgr.setConfig(c);
+
+    auto set = oneProfile(ProfileDemod::AM, 10e3, 0.0, 0.0, 1e3);
+    mgr.setProfiles(set);
+
+    // Two well-separated carriers. With the global gap they would fuse into one run.
+    auto frame = quietFrame();
+    for (int b = 12; b <= 14; b++) { frame[b] = -40.0f; }
+    for (int b = 48; b <= 50; b++) { frame[b] = -40.0f; }
+    feed(mgr, frame, 4, 0);
+
+    CHECK(mgr.getTrackedSignals().size() == 2);
+}
+
+TEST_CASE("the LO notch suppresses the spike at the capture centre", "[auto_receiver]") {
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.activationMs = 0;
+    c.dcNotchHz = 4.0 * (SPAN / BINS); // a few bins
+    mgr.setConfig(c);
+
+    // A huge spike exactly at the tuned frequency, as LO leakage produces.
+    auto frame = quietFrame();
+    frame[BINS / 2] = -10.0f;
+    feed(mgr, frame, 4, 0);
+
+    CHECK(mgr.getTrackedSignals().empty());
+}
+
+TEST_CASE("the LO notch does not blank the neighbourhood", "[auto_receiver]") {
+    // Excision replaces the spike with noise rather than deleting the region, so a real signal a
+    // little way off centre is still found.
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.activationMs = 0;
+    c.dcNotchHz = 4.0 * (SPAN / BINS);
+    mgr.setConfig(c);
+
+    auto frame = quietFrame();
+    frame[BINS / 2] = -10.0f;
+    for (int b = 44; b <= 48; b++) { frame[b] = -45.0f; }
+    feed(mgr, frame, 4, 0);
+
+    REQUIRE(mgr.getTrackedSignals().size() == 1);
+    CHECK(mgr.getTrackedSignals()[0].signal.centroidFrequency > CENTER);
+}
+
+TEST_CASE("overlapping profiles do not report a signal twice", "[auto_receiver]") {
+    // findFor() picks the highest priority profile, and only the pass belonging to that profile
+    // is allowed to keep a candidate.
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.activationMs = 0;
+    mgr.setConfig(c);
+
+    ReceptionProfileSet set;
+    ReceptionProfile low;
+    low.name = "Low priority";
+    low.minFrequency = CENTER - SPAN;
+    low.maxFrequency = CENTER + SPAN;
+    low.demod = ProfileDemod::NFM;
+    low.bandwidth = 12.5e3;
+    low.priority = 0;
+    set.profiles.push_back(low);
+
+    ReceptionProfile high = low;
+    high.name = "High priority";
+    high.demod = ProfileDemod::AM;
+    high.priority = 5;
+    set.profiles.push_back(high);
+    mgr.setProfiles(set);
+
+    feed(mgr, frameWithSignal(), 4, 0);
+
+    REQUIRE(mgr.getTrackedSignals().size() == 1);
+    auto classified = mgr.getClassifiedSignals();
+    REQUIRE(classified.size() == 1);
+    CHECK(classified[0].profileName == "High priority");
+}
+
+TEST_CASE("a channel keeps a stable tune frequency while its extent varies",
+          "[auto_receiver]") {
+    // What the user sees as "detections jumping around": the reported frequency must not move
+    // just because the signal's measured extent changed between frames.
+    AutoReceiverManager mgr;
+    auto c = manualConfig();
+    c.activationMs = 0;
+    mgr.setConfig(c);
+    mgr.setProfiles(oneProfile(ProfileDemod::WFM, 150e3, 100e3, 0.0, 20e3));
+
+    uint64_t t = 0;
+    double firstTune = 0.0;
+    for (int k = 0; k < 20; k++) {
+        // A wide signal whose edges move every frame.
+        auto frame = quietFrame();
+        int lo = 28 - (k % 3);
+        int hi = 36 + (k % 4);
+        for (int b = lo; b <= hi; b++) { frame[b] = -45.0f; }
+        mgr.onFFTFrame(frame.data(), BINS, CENTER, SPAN, USABLE, FRAME_RATE, t);
+        t += 50;
+
+        auto classified = mgr.getClassifiedSignals();
+        REQUIRE(classified.size() == 1);
+        if (k == 0) { firstTune = classified[0].tuneFrequency; }
+        else { CHECK(classified[0].tuneFrequency == Catch::Approx(firstTune)); }
+    }
 }

@@ -229,3 +229,50 @@ TEST_CASE("find reports which rule matched", "[ignore]") {
     CHECK(rule->reason == "local noise");
     CHECK(set.find(200e6, 200.01e6) == nullptr);
 }
+
+TEST_CASE("the shipped Airband raster is exact 25 kHz", "[profiles]") {
+    auto set = ReceptionProfileSet::defaults();
+    const ReceptionProfile* air = set.findFor(119.1e6);
+    REQUIRE(air != nullptr);
+    CHECK(air->name == "Airband");
+    CHECK(air->frequencyStep == Catch::Approx(25e3));
+
+    // 8330 Hz, which used to ship, is neither the 25 kHz grid nor the real 8.33 kHz one
+    // (25/3 kHz), so it drifted by a third of a channel across the band. These are exact now.
+    CHECK(air->snapFrequency(119.1e6) == Catch::Approx(119.1e6));
+    CHECK(air->snapFrequency(121.5e6) == Catch::Approx(121.5e6));
+    CHECK(air->snapFrequency(118.0e6) == Catch::Approx(118.0e6));
+    CHECK(snapToStep(118.0e6, 8330.0) != Catch::Approx(118.0e6));
+}
+
+TEST_CASE("Airband sets no minimum detection bandwidth", "[profiles]") {
+    // Real air traffic is a narrow carrier with weak sidebands. A minimum measured against the
+    // above-threshold extent rejects exactly the quiet transmissions worth catching.
+    auto set = ReceptionProfileSet::defaults();
+    const ReceptionProfile* air = set.findFor(119.1e6);
+    REQUIRE(air != nullptr);
+    CHECK(air->minDetectionBandwidth == 0.0);
+}
+
+TEST_CASE("Broadcast FM keeps its raster and widths", "[profiles]") {
+    // The FM band was tuned earlier and must not move.
+    auto set = ReceptionProfileSet::defaults();
+    const ReceptionProfile* fm = set.findFor(97.2e6);
+    REQUIRE(fm != nullptr);
+    CHECK(fm->name == "Broadcast FM");
+    CHECK(fm->frequencyStep == Catch::Approx(100e3));
+    CHECK(fm->bandwidth == Catch::Approx(150e3));
+    CHECK(fm->demod == ProfileDemod::WFM);
+}
+
+TEST_CASE("every shipped profile sets its own merge gap", "[profiles]") {
+    // A single global gap cannot serve both bands: 20 kHz is a broadcast FM figure, and at
+    // 2 MSPS it is 164 FFT bins, which on airband welds the whole capture into one run.
+    auto set = ReceptionProfileSet::defaults();
+    for (const auto& p : set.profiles) {
+        INFO("profile " << p.name);
+        CHECK(p.mergeGapHz > 0.0);
+        // A gap wider than the channel spacing would bridge straight across a neighbour.
+        if (p.frequencyStep > 0.0) { CHECK(p.mergeGapHz < p.frequencyStep); }
+    }
+}

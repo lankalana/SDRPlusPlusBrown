@@ -34,6 +34,7 @@ namespace automatic_reception_menu {
     float minBandwidthKHz = 0.0f;
     float maxBandwidthKHz = 0.0f;
     float mergeGapKHz = 20.0f;
+    float dcNotchKHz = 1.0f;
     bool restrictToProfiles = false;
     float ignorePaddingKHz = 5.0f;
     bool allocateReceivers = false;
@@ -60,6 +61,7 @@ namespace automatic_reception_menu {
         c.minBandwidthHz = minBandwidthKHz * 1e3;
         c.maxBandwidthHz = maxBandwidthKHz * 1e3;
         c.mergeGapHz = mergeGapKHz * 1e3;
+        c.dcNotchHz = dcNotchKHz * 1e3;
         c.restrictToProfiles = restrictToProfiles;
         return c;
     }
@@ -77,6 +79,7 @@ namespace automatic_reception_menu {
             j["minDetectionBandwidth"] = p.minDetectionBandwidth;
             j["maxDetectionBandwidth"] = p.maxDetectionBandwidth;
             j["frequencyStep"] = p.frequencyStep;
+            j["mergeGapHz"] = p.mergeGapHz;
             j["priority"] = p.priority;
             arr.push_back(j);
         }
@@ -98,6 +101,7 @@ namespace automatic_reception_menu {
             p.minDetectionBandwidth = j.value("minDetectionBandwidth", 0.0);
             p.maxDetectionBandwidth = j.value("maxDetectionBandwidth", 0.0);
             p.frequencyStep = j.value("frequencyStep", 0.0);
+            p.mergeGapHz = j.value("mergeGapHz", 0.0);
             p.priority = j.value("priority", 0);
             set.profiles.push_back(p);
         }
@@ -157,6 +161,7 @@ namespace automatic_reception_menu {
         config.conf["minBandwidthKHz"] = minBandwidthKHz;
         config.conf["maxBandwidthKHz"] = maxBandwidthKHz;
         config.conf["mergeGapKHz"] = mergeGapKHz;
+        config.conf["dcNotchKHz"] = dcNotchKHz;
         config.conf["restrictToProfiles"] = restrictToProfiles;
         config.conf["ignorePaddingKHz"] = ignorePaddingKHz;
         config.release(true);
@@ -178,7 +183,7 @@ namespace automatic_reception_menu {
         // Bumped when a default changes in a way that a file written by an older build would
         // silently defeat. Detection tuning is reset on a bump; the user's own floor, profiles
         // and ignore rules are never touched.
-        const int CONFIG_VERSION = 2;
+        const int CONFIG_VERSION = 3;
 
         json def;
         def["configVersion"] = CONFIG_VERSION;
@@ -194,6 +199,7 @@ namespace automatic_reception_menu {
         def["minBandwidthKHz"] = 0.0;
         def["maxBandwidthKHz"] = 0.0;
         def["mergeGapKHz"] = 20.0;
+        def["dcNotchKHz"] = 1.0;
         def["restrictToProfiles"] = false;
         def["ignorePaddingKHz"] = 5.0;
         def["allocateReceivers"] = false;
@@ -224,23 +230,45 @@ namespace automatic_reception_menu {
         // A file from before the channel raster existed carries detection settings that make the
         // raster do nothing (no merge gap, profiles used as an all-or-nothing gate). Reset just
         // those to the current defaults rather than leaving the feature quietly disabled.
-        if (config.conf.value("configVersion", 1) < CONFIG_VERSION) {
-            flog::info("Automatic reception: migrating config to version {}", CONFIG_VERSION);
+        int fileVersion = config.conf.value("configVersion", 1);
+        if (fileVersion < CONFIG_VERSION) {
+            flog::info("Automatic reception: migrating config from version {} to {}", fileVersion,
+                       CONFIG_VERSION);
             for (const char* key : { "mergeGapKHz", "averagingFrames", "minBandwidthKHz",
                                      "maxBandwidthKHz", "restrictToProfiles" }) {
                 config.conf[key] = def[key];
             }
-            // Profiles written before the raster field existed default it to zero, which reads as
-            // "no rounding". Adopt the shipped rasters for any profile that has none.
+
             auto existing = profilesFromJson(config.conf["profiles"]);
             auto shipped = ReceptionProfileSet::defaults();
             for (auto& p : existing.profiles) {
-                if (p.frequencyStep > 0.0) { continue; }
-                for (const auto& s : shipped.profiles) {
-                    if (s.name == p.name) {
-                        p.frequencyStep = s.frequencyStep;
+                const ReceptionProfile* s = nullptr;
+                for (const auto& cand : shipped.profiles) {
+                    if (cand.name == p.name) {
+                        s = &cand;
                         break;
                     }
+                }
+
+                // Profiles written before the raster field existed default it to zero, which
+                // reads as "no rounding". Adopt the shipped rasters for any profile that has none.
+                if (p.frequencyStep <= 0.0 && s != nullptr) { p.frequencyStep = s->frequencyStep; }
+
+                if (fileVersion < 3) {
+                    // 8330 Hz was never a real airband raster: the 8.33 kHz grid is 25/3 kHz, so
+                    // snapping drifted by a third of a channel across the band. Ship 25 kHz.
+                    if (std::fabs(p.frequencyStep - 8330.0) < 10.0) { p.frequencyStep = 25e3; }
+
+                    // A minimum detection bandwidth measured against the above-threshold extent
+                    // rejects exactly the signals worth catching: real air traffic is a narrow
+                    // carrier, not a channel-wide emission. Clear it where we shipped it.
+                    if (s != nullptr && p.minDetectionBandwidth > 0.0 &&
+                        s->minDetectionBandwidth <= 0.0) {
+                        p.minDetectionBandwidth = 0.0;
+                    }
+                    // Per-profile merge gaps are new; a single global 20 kHz is a broadcast FM
+                    // number and is nonsense on every narrower band.
+                    if (p.mergeGapHz <= 0.0 && s != nullptr) { p.mergeGapHz = s->mergeGapHz; }
                 }
             }
             config.conf["profiles"] = profilesToJson(existing);
@@ -260,6 +288,7 @@ namespace automatic_reception_menu {
         minBandwidthKHz = config.conf.value("minBandwidthKHz", 0.0f);
         maxBandwidthKHz = config.conf.value("maxBandwidthKHz", 0.0f);
         mergeGapKHz = config.conf.value("mergeGapKHz", 20.0f);
+        dcNotchKHz = config.conf.value("dcNotchKHz", 1.0f);
         restrictToProfiles = config.conf.value("restrictToProfiles", false);
         ignorePaddingKHz = config.conf.value("ignorePaddingKHz", 5.0f);
         allocateReceivers = config.conf.value("allocateReceivers", false);
@@ -490,7 +519,7 @@ namespace automatic_reception_menu {
         bool modified = false;
         int toRemove = -1;
 
-        if (ImGui::BeginTable("Reception Profiles Table", 7,
+        if (ImGui::BeginTable("Reception Profiles Table", 8,
                               ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
                                   ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX,
                               ImVec2(0, 170.0f * style::uiScale))) {
@@ -503,6 +532,8 @@ namespace automatic_reception_menu {
                                     220.0f * style::uiScale);
             ImGui::TableSetupColumn("Step (kHz)", ImGuiTableColumnFlags_WidthFixed,
                                     80.0f * style::uiScale);
+            ImGui::TableSetupColumn("Gap (kHz)", ImGuiTableColumnFlags_WidthFixed,
+                                    70.0f * style::uiScale);
             ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 26.0f * style::uiScale);
             ImGui::TableSetupScrollFreeze(0, 1);
             ImGui::TableHeadersRow();
@@ -582,6 +613,19 @@ namespace automatic_reception_menu {
                 }
 
                 ImGui::TableSetColumnIndex(6);
+                double gapK = p.mergeGapHz / 1e3;
+                ImGui::SetNextItemWidth(-1);
+                if (ImGui::InputDouble(("##gap" + id).c_str(), &gapK, 0.0, 0.0, "%.1f")) {
+                    p.mergeGapHz = std::max<double>(gapK, 0.0) * 1e3;
+                    modified = true;
+                }
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("Bridges dropouts inside one transmission on this band.\n"
+                                      "0 falls back to the global merge gap, which is a broadcast\n"
+                                      "FM figure and far too wide for narrow channels.");
+                }
+
+                ImGui::TableSetColumnIndex(7);
                 if (ImGui::SmallButton(("x" + id).c_str())) { toRemove = (int)i; }
             }
             ImGui::EndTable();
@@ -732,7 +776,15 @@ namespace automatic_reception_menu {
         if (ImGui::SliderFloat("Merge gap (kHz)##auto_rx_gap", &mergeGapKHz, 0.0f, 200.0f, "%.1f")) {
             apply(true);
         }
-        ImGui::TextDisabled("Bridges dropouts inside one transmission.");
+        ImGui::TextDisabled("Bridges dropouts inside one transmission.\n"
+                            "Only used where no profile sets its own.");
+
+        ImGui::SetNextItemWidth(width / 2);
+        if (ImGui::SliderFloat("LO notch (kHz)##auto_rx_dcnotch", &dcNotchKHz, 0.0f, 20.0f,
+                               "%.1f")) {
+            apply(true);
+        }
+        ImGui::TextDisabled("Ignores the spike at the tuned centre frequency.");
 
         ImGui::SetNextItemWidth(width / 2);
         if (ImGui::SliderInt("Activation (ms)##auto_rx_act", &activationMs, 0, 3000)) { apply(true); }
@@ -783,6 +835,12 @@ namespace automatic_reception_menu {
                 ImGui::Text("%.4f MHz", cs.tuneFrequency / 1e6);
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%.1f kHz", sig.bandwidth / 1e3);
+                if (ImGui::IsItemHovered() && sig.occupiedBandwidth > 0.0) {
+                    // On a rastered band the channel is what the receiver uses, but what the
+                    // signal actually occupies is often far narrower -- a carrier in a 25 kHz slot.
+                    ImGui::SetTooltip("Channel width %.1f kHz, signal occupies %.2f kHz",
+                                      sig.bandwidth / 1e3, sig.occupiedBandwidth / 1e3);
+                }
                 ImGui::TableSetColumnIndex(2);
                 ImGui::Text("%.1f dB", sig.snrDb);
 

@@ -10,11 +10,14 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <support/baseband_harness.h>
+
 #include <dsp/detector/noise_floor.h>
 #include <signal_path/auto_receiver.h>
 #include <dsp/detector/signal_tracker.h>
 #include <dsp/detector/spectrum_detector.h>
 #include <utils/arrays.h>
+#include <utils/event.h>
 
 #include <algorithm>
 #include <cmath>
@@ -29,95 +32,8 @@ using namespace dsp::detector;
 
 namespace {
 
-    struct BasebandFile {
-        std::ifstream stream;
-        double sampleRate = 0.0;
-        uint64_t dataBytes = 0;
-
-        bool open(const std::string& path) {
-            stream.open(path, std::ios::binary);
-            if (!stream.is_open()) { return false; }
-
-            char riff[12];
-            stream.read(riff, 12);
-            if (memcmp(riff, "RIFF", 4) != 0 || memcmp(riff + 8, "WAVE", 4) != 0) { return false; }
-
-            // Walk the chunk list rather than assuming a 44 byte header.
-            while (stream.good()) {
-                char id[4];
-                uint32_t size = 0;
-                stream.read(id, 4);
-                stream.read((char*)&size, 4);
-                if (!stream.good()) { return false; }
-
-                if (memcmp(id, "fmt ", 4) == 0) {
-                    std::vector<char> fmt(size);
-                    stream.read(fmt.data(), size);
-                    uint32_t sr = 0;
-                    memcpy(&sr, fmt.data() + 4, 4);
-                    sampleRate = sr;
-                }
-                else if (memcmp(id, "data", 4) == 0) {
-                    dataBytes = size;
-                    return sampleRate > 0.0;
-                }
-                else {
-                    stream.seekg(size, std::ios::cur);
-                }
-            }
-            return false;
-        }
-
-        // Read one frame of `n` complex samples. Returns false at end of file.
-        bool readFrame(std::vector<dsp::complex_t>& out, int n) {
-            out.resize(n);
-            std::vector<int16_t> raw(n * 2);
-            stream.read((char*)raw.data(), raw.size() * sizeof(int16_t));
-            if (stream.gcount() < (std::streamsize)(raw.size() * sizeof(int16_t))) { return false; }
-            for (int i = 0; i < n; i++) {
-                out[i].re = raw[i * 2] / 32768.0f;
-                out[i].im = raw[(i * 2) + 1] / 32768.0f;
-            }
-            return true;
-        }
-    };
-
-    // Reproduces what IQFrontEnd::handler does: windowed FFT, fftshifted, power spectrum in dB.
-    class FrameFFT {
-    public:
-        explicit FrameFFT(int size) : size(size) {
-            plan = dsp::arrays::allocateFFTWPlan(false, size);
-            in = std::make_shared<std::vector<dsp::complex_t>>(size);
-            window.resize(size);
-            for (int i = 0; i < size; i++) {
-                // Nuttall, matching the default front end window.
-                double x = 2.0 * M_PI * i / (size - 1);
-                window[i] = (float)(0.355768 - 0.487396 * cos(x) + 0.144232 * cos(2 * x) -
-                                    0.012604 * cos(3 * x));
-            }
-        }
-
-        void compute(const std::vector<dsp::complex_t>& samples, std::vector<float>& outDb) {
-            auto& iv = *in;
-            for (int i = 0; i < size; i++) {
-                iv[i].re = samples[i].re * window[i];
-                iv[i].im = samples[i].im * window[i];
-            }
-            dsp::arrays::npfftfft(in, plan);
-            dsp::arrays::swapfft(plan->getOutput());
-            auto mag = dsp::arrays::npabsolute(plan->getOutput());
-            outDb.resize(size);
-            for (int i = 0; i < size; i++) {
-                outDb[i] = 20.0f * log10f((mag->at(i) / size) + 1e-12f);
-            }
-        }
-
-    private:
-        int size;
-        dsp::arrays::Arg<dsp::arrays::FFTPlan> plan;
-        dsp::arrays::ComplexArray in;
-        std::vector<float> window;
-    };
+    using baseband::BasebandFile;
+    using baseband::FrameFFT;
 
     struct Summary {
         int detectionCount = 0;
@@ -354,6 +270,68 @@ TEST_CASE("baseband recording detection survey", "[.][fmdiag]") {
                    cs.tuneFrequency / 1e6, toString(cs.demod), cs.receiverBandwidth / 1e3,
                    cs.tracked.signal.centroidFrequency / 1e6, cs.tracked.signal.bandwidth / 1e3,
                    cs.tracked.signal.snrDb, toString(cs.tracked.state));
+        }
+    }
+
+    // Is the channel assignment stable frame to frame? A station whose centroid sits near a
+    // raster boundary would otherwise be tracked as two adjacent channels.
+    if (CENTER > 0.0 && RASTER > 0.0) {
+        printf("\n--- channel assignment stability (per frame, strongest few channels) ---\n");
+        AutoReceiverManager mgr;
+        AutoReceiverManager::Config cfg;
+        cfg.enabled = true;
+        cfg.floorMode = NoiseFloorMode::MANUAL;
+        cfg.manualFloorDb = flatFloorDb;
+        cfg.marginDb = 10.0f;
+        cfg.detectionAveragingFrames = 4;
+        cfg.restrictToProfiles = true;
+        cfg.activationMs = 0;
+        cfg.releaseMs = 2000;
+        mgr.setConfig(cfg);
+        mgr.setProfiles(ReceptionProfileSet::defaults());
+
+        // channel index -> how many detection frames reported it, and the centroid spread.
+        std::vector<std::tuple<int64_t, int, double, double>> seen; // idx, count, minC, maxC
+
+        EventHandler<std::vector<DetectedSignal>> handler(
+            [](std::vector<DetectedSignal> sigs, void* ctx) {
+                auto* s = (std::vector<std::tuple<int64_t, int, double, double>>*)ctx;
+                for (const auto& sig : sigs) {
+                    if (sig.channelIndex == 0) { continue; }
+                    bool found = false;
+                    for (auto& [idx, count, minC, maxC] : *s) {
+                        if (idx != sig.channelIndex) { continue; }
+                        count++;
+                        minC = std::min(minC, sig.centroidFrequency);
+                        maxC = std::max(maxC, sig.centroidFrequency);
+                        found = true;
+                        break;
+                    }
+                    if (!found) {
+                        s->emplace_back(sig.channelIndex, 1, sig.centroidFrequency,
+                                        sig.centroidFrequency);
+                    }
+                }
+            },
+            &seen);
+        mgr.onDetectionUpdate.bindHandler(&handler);
+
+        uint64_t t = 0;
+        for (size_t f = 0; f < frames.size(); f++) {
+            mgr.onFFTFrame(frames[f].data(), FFT_SIZE, CENTER, SPAN, 1.0, 20.0, t);
+            t += 50;
+        }
+        mgr.onDetectionUpdate.unbindHandler(&handler);
+
+        std::sort(seen.begin(), seen.end(), [](const auto& a, const auto& b) {
+            return std::get<0>(a) < std::get<0>(b);
+        });
+        for (const auto& [idx, count, minC, maxC] : seen) {
+            double chan = (double)idx * RASTER;
+            printf("    channel %10.4f MHz : %3d frames, centroid %10.4f .. %10.4f "
+                   "(spread %6.1f kHz, offset %+7.1f kHz)\n",
+                   chan / 1e6, count, minC / 1e6, maxC / 1e6, (maxC - minC) / 1e3,
+                   (((minC + maxC) / 2.0) - chan) / 1e3);
         }
     }
 

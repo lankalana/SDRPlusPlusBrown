@@ -26,6 +26,19 @@ namespace dsp::detector {
              * still associates with itself.
              */
             double minOverlapRatio = 0.25;
+
+            /**
+             * Overlap needed to treat a detection on a *different* channel as the same signal,
+             * keeping the channel the track already has.
+             *
+             * A wide station whose centroid sits near a raster boundary snaps to one slot in most
+             * frames and the neighbouring slot in a few, because its measured centroid wanders by
+             * tens of kHz as its spectrum changes. Without this it is tracked as two stations, two
+             * receivers are allocated and both jump about. Detections that match a track's own
+             * channel are associated first, so two genuinely adjacent stations each keep their own
+             * track and never reach this path.
+             */
+            double channelStickinessOverlap = 0.25;
         };
 
         Params params;
