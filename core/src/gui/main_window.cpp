@@ -390,6 +390,13 @@ void MainWindow::preDraw(ImGui::WaterfallVFO** vfo) {
 
     sigpath::vfoManager.updateFromWaterfall(&gui::waterfall);
 
+    // Automatic receiver allocation runs here, on the GUI thread: creating a radio instance
+    // touches the module manager, the VFO manager and the waterfall.
+    if (sigpath::autoReceiverManager.isEnabled()) {
+        sigpath::receiverAllocator.update(sigpath::autoReceiverManager.getClassifiedSignals(),
+                                          currentTimeMillis());
+    }
+
     lockWaterfallControls = false;
     // Handle selection of another VFO
     if (gui::waterfall.selectedVFOChanged) {

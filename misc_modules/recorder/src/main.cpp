@@ -174,10 +174,23 @@ public:
         std::string vfoName = (recMode == RECORDER_MODE_AUDIO) ? selectedStreamName : "";
         std::string extension = ".wav";
         std::string expandedPath = expandString(folderSelect.path + "/" + genFileName(nameTemplate, recMode, vfoName) + extension);
+        // Make sure the folder exists; an automatic recorder may be pointed at a dated
+        // subdirectory that was never created by hand.
+        try {
+            std::filesystem::path parent = std::filesystem::path(expandedPath).parent_path();
+            if (!parent.empty() && !std::filesystem::exists(parent)) {
+                std::filesystem::create_directories(parent);
+            }
+        }
+        catch (const std::exception& e) {
+            flog::error("Could not create recording directory for {0}: {1}", expandedPath, e.what());
+        }
+
         if (!writer.open(expandedPath)) {
             flog::error("Failed to open file for recording: {0}", expandedPath);
             return;
         }
+        currentFilePath = expandedPath;
 
         // Open audio stream or baseband
         if (recMode == RECORDER_MODE_AUDIO) {
@@ -223,6 +236,7 @@ public:
 
         // Close file
         writer.close();
+        currentFilePath.clear();
         
         recording = false;
     }
@@ -591,6 +605,34 @@ private:
         else if (code == RECORDER_IFACE_CMD_STOP) {
             if (_this->recording) { _this->stop(); }
         }
+        else if (code == RECORDER_IFACE_CMD_SET_STREAM && in) {
+            // Changing the source mid-file would splice two different signals into one recording.
+            if (_this->recording) { return; }
+            _this->selectStream(std::string((const char*)in));
+        }
+        else if (code == RECORDER_IFACE_CMD_SET_PATH && in) {
+            if (_this->recording) { return; }
+            _this->folderSelect.setPath(std::string((const char*)in));
+        }
+        else if (code == RECORDER_IFACE_CMD_SET_NAME_TEMPLATE && in) {
+            if (_this->recording) { return; }
+            std::string templ((const char*)in);
+            if (templ.length() > sizeof(_this->nameTemplate) - 1) {
+                templ = templ.substr(0, sizeof(_this->nameTemplate) - 1);
+            }
+            strcpy(_this->nameTemplate, templ.c_str());
+        }
+        else if (code == RECORDER_IFACE_CMD_IS_RECORDING && out) {
+            *(bool*)out = _this->recording;
+        }
+        else if (code == RECORDER_IFACE_CMD_GET_FILENAME && out && in) {
+            int cap = *(int*)in;
+            if (cap > 0) {
+                std::string path = _this->recording ? _this->currentFilePath : std::string();
+                strncpy((char*)out, path.c_str(), cap - 1);
+                ((char*)out)[cap - 1] = 0;
+            }
+        }
     }
 
     std::string name;
@@ -612,6 +654,7 @@ private:
     dsp::stereo_t audioLvl = { -100.0f, -100.0f };
 
     bool recording = false;
+    std::string currentFilePath;
     bool ignoringSilence = false;
     wav::Writer writer;
     std::recursive_mutex recMtx;

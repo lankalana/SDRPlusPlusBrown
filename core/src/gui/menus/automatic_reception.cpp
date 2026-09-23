@@ -36,7 +36,15 @@ namespace automatic_reception_menu {
     float mergeGapKHz = 20.0f;
     bool restrictToProfiles = false;
     float ignorePaddingKHz = 5.0f;
+    bool allocateReceivers = false;
+    bool recordAudio = false;
+    int maxReceivers = 4;
+    std::string recordingPath = "%ROOT%/recordings/automatic";
+    bool dateSubfolders = true;
+    int idleTimeoutSec = 60;
+    int minRecordingMs = 1000;
 
+    static void applyAllocator(bool persist);
     static AutoReceiverManager::Config toManagerConfig() {
         AutoReceiverManager::Config c = sigpath::autoReceiverManager.getConfig();
         c.enabled = enabled;
@@ -137,7 +145,6 @@ namespace automatic_reception_menu {
 
     static void save() {
         config.acquire();
-        config.conf["enabled"] = enabled;
         config.conf["floorMode"] = (floorModeIdx == 1) ? "measured" : "manual";
         config.conf["manualFloorDb"] = manualFloorDb;
         config.conf["marginDb"] = marginDb;
@@ -175,7 +182,6 @@ namespace automatic_reception_menu {
 
         json def;
         def["configVersion"] = CONFIG_VERSION;
-        def["enabled"] = false;
         def["floorMode"] = "manual";
         def["manualFloorDb"] = -85.0;
         def["marginDb"] = 10.0;
@@ -190,7 +196,13 @@ namespace automatic_reception_menu {
         def["mergeGapKHz"] = 20.0;
         def["restrictToProfiles"] = false;
         def["ignorePaddingKHz"] = 5.0;
-        def["recordingPath"] = "recordings/automatic";
+        def["allocateReceivers"] = false;
+        def["recordAudio"] = false;
+        def["maxReceivers"] = 4;
+        def["recordingPath"] = "%ROOT%/recordings/automatic";
+        def["dateSubfolders"] = true;
+        def["idleTimeoutSec"] = 60;
+        def["minRecordingMs"] = 1000;
         def["profiles"] = profilesToJson(ReceptionProfileSet::defaults());
         def["ignoreRules"] = json::array();
 
@@ -236,7 +248,6 @@ namespace automatic_reception_menu {
             repaired = true;
         }
 
-        enabled = config.conf.value("enabled", false);
         floorModeIdx = (config.conf.value("floorMode", std::string("manual")) == "measured") ? 1 : 0;
         manualFloorDb = config.conf.value("manualFloorDb", -85.0f);
         marginDb = config.conf.value("marginDb", 10.0f);
@@ -251,6 +262,13 @@ namespace automatic_reception_menu {
         mergeGapKHz = config.conf.value("mergeGapKHz", 20.0f);
         restrictToProfiles = config.conf.value("restrictToProfiles", false);
         ignorePaddingKHz = config.conf.value("ignorePaddingKHz", 5.0f);
+        allocateReceivers = config.conf.value("allocateReceivers", false);
+        recordAudio = config.conf.value("recordAudio", false);
+        maxReceivers = config.conf.value("maxReceivers", 4);
+        recordingPath = config.conf.value("recordingPath", std::string("%ROOT%/recordings/automatic"));
+        dateSubfolders = config.conf.value("dateSubfolders", true);
+        idleTimeoutSec = config.conf.value("idleTimeoutSec", 60);
+        minRecordingMs = config.conf.value("minRecordingMs", 1000);
 
         auto loadedProfiles = profilesFromJson(config.conf["profiles"]);
         // An existing file from before profiles existed has an empty list; seed it rather than
@@ -266,6 +284,7 @@ namespace automatic_reception_menu {
         sigpath::autoReceiverManager.setProfiles(loadedProfiles);
         sigpath::autoReceiverManager.setIgnoreRules(loadedIgnores);
         apply(false);
+        applyAllocator(false);
     }
 
     static void drawFloorSection(float width) {
@@ -342,6 +361,121 @@ namespace automatic_reception_menu {
         ImGui::TextDisabled("Detection threshold = floor + margin.");
 
         ImGui::Checkbox("Show floor on waterfall##auto_rx_floorshow", &gui::waterfall.showNoiseFloor);
+    }
+
+    static void applyAllocator(bool persist) {
+        ReceiverAllocator::Config c = sigpath::receiverAllocator.getConfig();
+        c.allocateReceivers = allocateReceivers;
+        c.recordAudio = recordAudio;
+        c.maxReceivers = maxReceivers;
+        c.recordingPath = recordingPath;
+        c.dateSubfolders = dateSubfolders;
+        c.idleTimeoutMs = (uint64_t)std::max<int>(idleTimeoutSec, 0) * 1000;
+        c.minRecordingMs = (uint64_t)std::max<int>(minRecordingMs, 0);
+        sigpath::receiverAllocator.setConfig(c);
+
+        if (persist) {
+            config.acquire();
+            config.conf["allocateReceivers"] = allocateReceivers;
+            config.conf["recordAudio"] = recordAudio;
+            config.conf["maxReceivers"] = maxReceivers;
+            config.conf["recordingPath"] = recordingPath;
+            config.conf["dateSubfolders"] = dateSubfolders;
+            config.conf["idleTimeoutSec"] = idleTimeoutSec;
+            config.conf["minRecordingMs"] = minRecordingMs;
+            config.release(true);
+        }
+    }
+
+    static void drawReceivers(float width) {
+        ImGui::TextUnformatted("Automatic receivers");
+
+        if (ImGui::Checkbox("Allocate receivers##auto_rx_alloc", &allocateReceivers)) {
+            applyAllocator(true);
+        }
+        ImGui::TextDisabled("Creates AUTO1, AUTO2... for confirmed signals.");
+
+        if (!allocateReceivers) { style::beginDisabled(); }
+
+        if (ImGui::Checkbox("Record audio##auto_rx_rec", &recordAudio)) { applyAllocator(true); }
+
+        ImGui::SetNextItemWidth(width / 2);
+        if (ImGui::SliderInt("Max receivers##auto_rx_max", &maxReceivers, 1, 16)) {
+            applyAllocator(true);
+        }
+
+        char pathBuf[512];
+        snprintf(pathBuf, sizeof pathBuf, "%s", recordingPath.c_str());
+        ImGui::SetNextItemWidth(-1);
+        if (ImGui::InputText("##auto_rx_path", pathBuf, sizeof pathBuf)) {
+            recordingPath = pathBuf;
+            applyAllocator(true);
+        }
+        if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Recording folder. %%ROOT%% is expanded."); }
+
+        if (ImGui::Checkbox("Date subfolders##auto_rx_datedir", &dateSubfolders)) {
+            applyAllocator(true);
+        }
+
+        ImGui::SetNextItemWidth(width / 2);
+        if (ImGui::SliderInt("Idle timeout (s)##auto_rx_idle", &idleTimeoutSec, 0, 600)) {
+            applyAllocator(true);
+        }
+        ImGui::TextDisabled("0 keeps idle receivers forever.");
+
+        if (!allocateReceivers) { style::endDisabled(); }
+
+        const auto& status = sigpath::receiverAllocator.getStatusMessage();
+        if (!status.empty()) {
+            ImGui::TextColored(ImVec4(1.0f, 0.7f, 0.3f, 1.0f), "%s", status.c_str());
+        }
+
+        const auto& slots = sigpath::receiverAllocator.getSlots();
+        if (ImGui::BeginTable("Auto Receivers Table", 4,
+                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                  ImGuiTableFlags_ScrollY,
+                              ImVec2(0, 110.0f * style::uiScale))) {
+            ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthFixed, 70.0f * style::uiScale);
+            ImGui::TableSetupColumn("Frequency");
+            ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, 50.0f * style::uiScale);
+            ImGui::TableSetupColumn("State", ImGuiTableColumnFlags_WidthFixed, 70.0f * style::uiScale);
+            ImGui::TableSetupScrollFreeze(0, 1);
+            ImGui::TableHeadersRow();
+
+            for (const auto& slot : slots) {
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                if (ImGui::Selectable((slot.name + "##autoslot_" + slot.name).c_str(),
+                                      slot.name == gui::waterfall.selectedVFO,
+                                      ImGuiSelectableFlags_SpanAllColumns)) {
+                    gui::waterfall.selectVFO(slot.name);
+                }
+
+                ImGui::TableSetColumnIndex(1);
+                if (slot.state == AutoReceiverSlot::ACTIVE) {
+                    ImGui::Text("%.4f MHz", slot.tuneFrequency / 1e6);
+                }
+                else {
+                    ImGui::TextDisabled("---");
+                }
+
+                ImGui::TableSetColumnIndex(2);
+                ImGui::TextUnformatted(slot.state == AutoReceiverSlot::ACTIVE ? toString(slot.demod)
+                                                                              : "-");
+
+                ImGui::TableSetColumnIndex(3);
+                if (slot.recording) {
+                    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "REC");
+                }
+                else if (slot.state == AutoReceiverSlot::ACTIVE) {
+                    ImGui::TextUnformatted("Active");
+                }
+                else {
+                    ImGui::TextDisabled("Idle");
+                }
+            }
+            ImGui::EndTable();
+        }
     }
 
     static void drawProfiles(float width) {
@@ -571,7 +705,6 @@ namespace automatic_reception_menu {
         ImGui::TextDisabled("Never changes the SDR center frequency.");
 
         ImGui::Separator();
-        if (!enabled) { style::beginDisabled(); }
 
         drawFloorSection(width);
 
@@ -610,12 +743,13 @@ namespace automatic_reception_menu {
         ImGui::Checkbox("Show detections##auto_rx_overlay", &gui::waterfall.showDetections);
 
         ImGui::Separator();
+        drawReceivers(width);
+
+        ImGui::Separator();
         drawProfiles(width);
 
         ImGui::Separator();
         drawIgnoreRules(width);
-
-        if (!enabled) { style::endDisabled(); }
 
         ImGui::Separator();
         auto signals = sigpath::autoReceiverManager.getClassifiedSignals();

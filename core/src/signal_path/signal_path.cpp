@@ -8,6 +8,7 @@ namespace sigpath {
     SourceManager sourceManager;
     SinkManager sinkManager;
     AutoReceiverManager autoReceiverManager;
+    ReceiverAllocator receiverAllocator;
     Transmitter *transmitter;
 
 };

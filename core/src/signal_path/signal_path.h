@@ -5,6 +5,7 @@
 #include "sink.h"
 #include "trx.h"
 #include "auto_receiver.h"
+#include "receiver_allocator.h"
 #include <sdrpp_export.h>
 #include <utils/event.h>
 
@@ -16,6 +17,7 @@ namespace sigpath {
     SDRPP_EXPORT SourceManager sourceManager;
     SDRPP_EXPORT SinkManager sinkManager;
     SDRPP_EXPORT AutoReceiverManager autoReceiverManager;
+    SDRPP_EXPORT ReceiverAllocator receiverAllocator;
     SDRPP_EXPORT Transmitter *transmitter;
 
 };
