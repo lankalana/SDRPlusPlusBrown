@@ -682,6 +682,8 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["moduleInstances"]["TETRA Demodulator"]["enabled"] = false;
     defConfig["moduleInstances"]["ABD-S Decoder"]["module"] = "adsb_decoder";
     defConfig["moduleInstances"]["ABD-S Decoder"]["enabled"] = true;
+    defConfig["moduleInstances"]["APRS Decoder"]["module"] = "aprs_decoder";
+    defConfig["moduleInstances"]["APRS Decoder"]["enabled"] = true;
     // defConfig["moduleInstances"]["Rigctl Client"] = "rigctl_client";
     // TODO: Enable rigctl_client when ready
     // defConfig["moduleInstances"]["Scanner"] = "scanner";
@@ -796,6 +798,7 @@ int sdrpp_main(int argc, char* argv[]) {
     core::configManager.conf["modules"][modCount++] = "websdr_view.so";
     core::configManager.conf["modules"][modCount++] = "noise_reduction_logmmse.so";
     core::configManager.conf["modules"][modCount++] = "ft8_decoder.so";
+    core::configManager.conf["modules"][modCount++] = "aprs_decoder.so";
     core::configManager.conf["modules"][modCount++] = "ch_extravhf_decoder.so";
     core::configManager.conf["modules"][modCount++] = "ch_tetra_demodulator.so";
     core::configManager.conf["modules"][modCount++] = "reports_monitor.so";
