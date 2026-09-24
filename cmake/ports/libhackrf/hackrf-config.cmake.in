@@ -1,0 +1,11 @@
+if(NOT TARGET hackrf::hackrf)
+  add_library(hackrf::hackrf SHARED IMPORTED)
+  get_filename_component(_hackrf_prefix "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+  set_target_properties(hackrf::hackrf PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${_hackrf_prefix}/include"
+    IMPORTED_IMPLIB "${_hackrf_prefix}/lib/hackrf.lib"
+    IMPORTED_LOCATION "${_hackrf_prefix}/bin/hackrf.dll"
+    IMPORTED_IMPLIB_DEBUG "${_hackrf_prefix}/debug/lib/hackrf.lib"
+    IMPORTED_LOCATION_DEBUG "${_hackrf_prefix}/debug/bin/hackrf.dll")
+  unset(_hackrf_prefix)
+endif()
