@@ -31,7 +31,6 @@
         "OPT_BUILD_NOISE_REDUCTION_LOGMMSE": "ON",
         "USE_BUNDLE_DEFAULTS": "OFF",
         "COPY_MSVC_REDISTRIBUTABLES": "OFF",
-        "SDRPP_USE_BUNDLED_VOLK": "OFF",
         "BUILD_TESTS": "ON"
       }
     },

@@ -26,8 +26,6 @@ option(USE_BUNDLE_DEFAULTS "Set the default resource and module directories to t
 option(COPY_MSVC_REDISTRIBUTABLES "Copy over the Visual C++ Redistributable" OFF)
 option(BUILD_TESTS "Build test suite" OFF)
 
-option(SDRPP_USE_BUNDLED_VOLK "Build the pinned VOLK dependency from source instead of using an installed package" OFF)
-
 if (WIN32)
     set(SDRPLAY_ROOT "C:/Program Files/SDRplay/API" CACHE PATH "SDRplay API installation directory")
 

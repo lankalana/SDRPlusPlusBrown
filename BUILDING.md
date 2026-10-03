@@ -95,7 +95,6 @@ ctest --test-dir out/build/windows-vs2022 -C RelWithDebInfo --output-on-failure
 
 `SDRPP_PYTHON_VENV` can override the build-tools virtual environment path when the default
 `.venv` belongs to a different Python installation. This only applies to the optional
-`SDRPP_USE_BUNDLED_VOLK=ON` source fallback; the Windows preset does not need an application venv.
 
 Catch2 is isolated in the manifest's `tests` feature. The development preset selects it;
 manual vcpkg configurations with `BUILD_TESTS=ON` must also set `VCPKG_MANIFEST_FEATURES=tests`.
