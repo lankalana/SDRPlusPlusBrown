@@ -166,7 +166,7 @@ namespace net {
             // Wait for data or error if 
             if (blocking) {
 
-#if defined(__ANDROID__) || defined(__linux__)
+#if defined(__linux__)
 
                 struct pollfd fd;
                 fd.fd = sock;

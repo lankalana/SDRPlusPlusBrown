@@ -135,9 +135,3 @@ protected:
 
     void ShowLogWindow();
 };
-
-#ifdef __ANDROID__
-
-#include <android_backend.h>
-
-#endif

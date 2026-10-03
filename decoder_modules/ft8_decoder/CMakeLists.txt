@@ -6,13 +6,9 @@ file(GLOB_RECURSE SRC CONFIGURE_DEPENDS "src/*.cpp" "src/*.c")
 
 include(${SDRPP_MODULE_CMAKE})
 
-if (ANDROID)
-    target_link_libraries(ft8_decoder PRIVATE log)
-endif()
-
 target_include_directories(ft8_decoder PRIVATE "src/")
 
-if(BUILD_TESTS AND NOT ANDROID)
+if(BUILD_TESTS)
     if(NOT TARGET Catch2::Catch2)
         find_package(Catch2 3 REQUIRED CONFIG)
     endif()

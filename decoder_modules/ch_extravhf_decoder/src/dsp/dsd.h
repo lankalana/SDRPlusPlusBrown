@@ -2,7 +2,7 @@
 
 #include "../../../../core/src/config.h"
 
-#if defined(__MACH__) || defined(__ANDROID__)
+#if defined(__MACH__)
 #define register
 #endif
 

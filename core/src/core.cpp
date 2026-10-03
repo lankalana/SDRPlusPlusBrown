@@ -600,11 +600,7 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["menuElements"][7]["name"] = "Display";
     defConfig["menuElements"][7]["open"] = true;
 
-#ifdef __ANDROID__
-    defConfig["menuWidth"] = 700;
-#else
     defConfig["menuWidth"] = 300;
-#endif
     defConfig["min"] = -120.0;
 
     // Module instances
@@ -641,11 +637,7 @@ int sdrpp_main(int argc, char* argv[]) {
 
 
     // Themes
-#ifdef __ANDROID__
-    defConfig["uiScale"] = displaymenu::displayDensity;
-#else
     defConfig["uiScale"] = 1.0f;
-#endif
 
     defConfig["modules"] = json::array();
     defConfig["moduleBlacklist"] = json::array();
@@ -681,13 +673,8 @@ int sdrpp_main(int argc, char* argv[]) {
 
     defConfig["vfoColors"]["Radio"] = "#FFFFFF";
 
-#ifdef __ANDROID__
-    defConfig["lockMenuOrder"] = true;
-    defConfig["smallScreen"] = true;
-#else
     defConfig["lockMenuOrder"] = false;
     defConfig["smallScreen"] = false;
-#endif
     defConfig["transcieverLayout"] = 0;
 
 #if defined(_WIN32)
@@ -696,9 +683,6 @@ int sdrpp_main(int argc, char* argv[]) {
 #elif defined(IS_MACOS_BUNDLE)
     defConfig["modulesDirectory"] = "../Plugins";
     defConfig["resourcesDirectory"] = "../Resources";
-#elif defined(__ANDROID__)
-    defConfig["modulesDirectory"] = root + "/modules";
-    defConfig["resourcesDirectory"] = root + "/res";
 #else
     defConfig["modulesDirectory"] = INSTALL_PREFIX "/lib/sdrpp/plugins";
     defConfig["resourcesDirectory"] = INSTALL_PREFIX "/share/sdrpp";
@@ -714,28 +698,6 @@ int sdrpp_main(int argc, char* argv[]) {
     core::configManager.enableAutoSave();
     core::configManager.acquire();
 
-    // Android can't load just any .so file. This means we have to hardcode the name of the modules
-#ifdef __ANDROID__
-    int modCount = 0;
-    core::configManager.conf["modules"] = json::array();
-
-    core::configManager.conf["modules"][modCount++] = "hackrf_source.so";
-
-    core::configManager.conf["modules"][modCount++] = "audio_sink.so";
-
-    core::configManager.conf["modules"][modCount++] = "meteor_demodulator.so";
-    core::configManager.conf["modules"][modCount++] = "radio.so";
-
-    core::configManager.conf["modules"][modCount++] = "frequency_manager.so";
-    core::configManager.conf["modules"][modCount++] = "recorder.so";
-    core::configManager.conf["modules"][modCount++] = "scanner.so";
-    core::configManager.conf["modules"][modCount++] = "noise_reduction_logmmse.so";
-    core::configManager.conf["modules"][modCount++] = "ft8_decoder.so";
-    core::configManager.conf["modules"][modCount++] = "aprs_decoder.so";
-    core::configManager.conf["modules"][modCount++] = "ch_extravhf_decoder.so";
-    core::configManager.conf["modules"][modCount++] = "ch_tetra_demodulator.so";
-    core::configManager.conf["modules"][modCount++] = "reports_monitor.so";
-#endif
 
     // Fix missing elements in config
     for (auto const& item : defConfig.items()) {
@@ -835,8 +797,6 @@ int sdrpp_main(int argc, char* argv[]) {
     httpdebug::stopHttpServer();
     gui::mainWindow.end();
 
-    // On android, none of this shutdown should happen due to the way the UI works
-#ifndef __ANDROID__
     // Shut down all modules
     for (auto& [name, mod] : core::moduleManager.modules) {
         mod.api->end();
@@ -850,7 +810,6 @@ int sdrpp_main(int argc, char* argv[]) {
     std::cout << "Save freq: " << core::configManager.conf["frequency"] << std::endl;
     core::configManager.disableAutoSave();
     core::configManager.save();
-#endif
 
     flog::info("Exiting successfully");
 

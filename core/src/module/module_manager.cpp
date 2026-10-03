@@ -39,7 +39,6 @@ ModuleManager::Module_t ModuleManager::loadModule(std::string path) {
     }
 #endif
 
-#ifndef __ANDROID__
     if (!std::filesystem::exists(path)) {
         flog::error("{0} does not exist", path);
         return mod;
@@ -48,7 +47,6 @@ ModuleManager::Module_t ModuleManager::loadModule(std::string path) {
         flog::error("{0} isn't a loadable module", path);
         return mod;
     }
-#endif
 
 #ifdef _WIN32
     auto wide = wstr::str2wstr(path);

@@ -1,5 +1,4 @@
-# GNU Radio VOLK. Unix and Android builds keep using their existing system/SDK
-# dependency unless bundled VOLK is explicitly requested.
+# GNU Radio VOLK: installed dependency by default, with an optional source fallback.
 if (SDRPP_USE_BUNDLED_VOLK)
     include(FetchContent)
 

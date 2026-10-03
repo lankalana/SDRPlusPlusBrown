@@ -37,10 +37,6 @@ macro(sdrpp_add_modules)
     message(STATUS "Enabled SDR++ modules: ${SDRPP_ENABLED_MODULES}")
 endmacro()
 
-set(SDRPP_DESKTOP ON)
-if (ANDROID)
-    set(SDRPP_DESKTOP OFF)
-endif()
 # Sources
 sdrpp_register_module(OPT_BUILD_AUDIO_SOURCE source_modules/audio_source "Build Audio Source Module (Dependencies: rtaudio)" ${SDRPP_DEFAULT_MODULE})
 sdrpp_register_module(OPT_BUILD_FILE_SOURCE source_modules/file_source "Wav file source" ${SDRPP_DEFAULT_MODULE})
@@ -50,7 +46,7 @@ sdrpp_register_module(OPT_BUILD_SDRPLAY_SOURCE source_modules/sdrplay_source "Bu
 # Sinks
 sdrpp_register_module(OPT_BUILD_AUDIO_SINK sink_modules/audio_sink "Build Audio Sink Module (Dependencies: rtaudio)" ${SDRPP_DEFAULT_MODULE})
 sdrpp_register_module(OPT_BUILD_BROWN_AUDIO_SINK sink_modules/brown_audio_sink "Build Brown Audio Sink with microphone support (Dependencies: rtaudio)" ${OPT_BUILD_AUDIO_SINK})
-sdrpp_register_module(OPT_BUILD_NEW_PORTAUDIO_SINK sink_modules/new_portaudio_sink "Build the new PortAudio Sink Module (Dependencies: portaudio)" ${SDRPP_DEFAULT_MODULE} AVAILABLE "${SDRPP_DESKTOP}")
+sdrpp_register_module(OPT_BUILD_NEW_PORTAUDIO_SINK sink_modules/new_portaudio_sink "Build the new PortAudio Sink Module (Dependencies: portaudio)" ${SDRPP_DEFAULT_MODULE})
 
 # Decoders
 sdrpp_register_module(OPT_BUILD_ATV_DECODER decoder_modules/atv_decoder "Build ATV decoder (no dependencies required)" ${SDRPP_DEFAULT_MODULE})

@@ -25,15 +25,6 @@ if (MSVC)
         COMMENT "Deploying hackrf runtime dependencies"
         VERBATIM
     )
-elseif (ANDROID)
-    target_include_directories(hackrf_source PUBLIC
-            ${SDR_KIT_ROOT}/${ANDROID_ABI}/include/libhackrf
-    )
-
-    target_link_libraries(hackrf_source PUBLIC
-            ${SDR_KIT_ROOT}/${ANDROID_ABI}/lib/libusb1.0.so
-            ${SDR_KIT_ROOT}/${ANDROID_ABI}/lib/libhackrf.so
-    )
 else (MSVC)
     find_package(PkgConfig REQUIRED)
 

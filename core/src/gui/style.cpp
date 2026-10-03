@@ -19,11 +19,7 @@ namespace style {
     ImVector<ImWchar> bigRanges;
     ImVector<ImWchar> hugeRanges;
 
-#ifndef __ANDROID__
     float uiScale = 1.0f;
-#else
-    float uiScale = 3.0f;
-#endif
 
     bool loadFonts(std::string resDir) {
         ImFontAtlas* fonts = ImGui::GetIO().Fonts;

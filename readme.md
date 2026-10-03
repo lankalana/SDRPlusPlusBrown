@@ -42,18 +42,6 @@ Found an issue? Fork is worse than original? File an [issue](https://github.com/
 * preset builds stage required runtime DLLs next to the executable automatically.
 * use system monitor to debug missing dlls while they fail to load.
 
-## Local Android build:
+## Supported platforms
 
-* put into your ~/.gradle/gradle.properties this line: sdrKitRoot=/home/user/SDRPlusPlus/android-sdr-kit/sdr-kit
-  * it can obtained + built from: https://github.com/AlexandreRouma/android-sdr-kit 
-  * docker build --platform linux/amd64 -t android-sdr-kit  .
-  * docker start android-sdr-kit    # it will exit
-  * docker cp be03210da56a:/sdr-kit .    # will create directory with built binary libs, replace be03210da56a with id obtained from 'docker ps -a'
-* use jdk11 for gradle in android studio. Android Studio -> Settings -> ... -> Gradle -> Gradle JDK . This is needed if you have various errors with java.io unaccessible fields.
-* in case of invalid keystore error (should not happen with jdk11): 
-  * you may create new keystore with current jdk version:
-    ~/soft/jdk8/bin/keytool -genkey -v -keystore debug2.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000
-  * use this filename (debug2.keystore) in app/build.gradle along with passwords in the signingConfigs -> debug section.
-
-Good luck.
-
+Windows, Linux, and macOS desktop builds use GLFW. Android builds have been removed.

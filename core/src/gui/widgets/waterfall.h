@@ -314,7 +314,7 @@ namespace ImGui {
         int WATERFALL_NUMBER_OF_SECTIONS = 64;
 
         bool containsFrequency(double d);
-        void updateWaterfallFb(const std::string &where = ""); // called from android, from outside
+        void updateWaterfallFb(const std::string &where = "");
         ImVec2 widgetPos;
         ImVec2 widgetEndPos;
 

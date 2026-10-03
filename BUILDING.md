@@ -3,6 +3,9 @@
 The repository provides a Windows development preset that installs common native dependencies
 from `vcpkg.json` and produces a directly runnable output directory.
 
+Supported targets are Windows, Linux, macOS, and other GLFW desktop platforms. Android's
+application, backend, and SDK integration have been removed.
+
 ## Windows development build
 
 Prerequisites:

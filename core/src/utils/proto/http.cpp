@@ -8,9 +8,6 @@
 #include "http.h"
 
 
-#ifdef __ANDROID__
-#include "../../backends/android/android_backend.h"
-#endif
 
 #ifdef __APPLE__
 
@@ -166,12 +163,7 @@ namespace net::http {
 
     }
 
-#ifdef __ANDROID__
-
-    std::string Client::get_https(const std::string &url) {
-        return ::backend::httpGet(url);
-    }
-#elif defined(__linux__)
+#if defined(__linux__)
     std::string Client::get_https(const std::string &url) {
 
         FILE *stuff = popen(("curl -k '"+url+"'").c_str(), "r");
@@ -249,9 +241,7 @@ namespace net::http {
     }
 
     std::expected<std::vector<uint8_t>, std::string> https_transact(const std::string& host, std::span<const uint8_t> send) {
-#ifdef __ANDROID__
-        return std::unexpected("not yet implemented");
-#elif defined(__linux__)
+#if defined(__linux__)
         return std::unexpected("not yet implemented");
 #elif defined(__APPLE__)
         return darwin_https_transact(host, send);

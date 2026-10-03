@@ -147,14 +147,10 @@ void MainWindow::init() {
 
     // Load additional modules specified through config
     for (auto const& path : modules) {
-#ifndef __ANDROID__
         std::string apath = std::filesystem::absolute(path).string();
         flog::info("Loading {0}", apath);
         LoadingScreen::show("Loading " + std::filesystem::path(path).filename().string());
         core::moduleManager.loadModule(apath);
-#else
-        core::moduleManager.loadModule(path);
-#endif
     }
 
     // Create module instances
@@ -896,12 +892,6 @@ void MainWindow::draw() {
 
     ImGui::NextColumn();
     ImGui::BeginChild("WaterfallControls");
-#ifdef __ANDROID__
-    if (displaymenu::showBattery) {
-        displaymenu::currentBatteryLevel = backend::getBatteryLevel();
-        ImGui::Text("B%s%%", displaymenu::currentBatteryLevel.c_str());
-    }
-#endif
 
     static int sliderDynamicAdjustmentY = 0;
 
@@ -1379,11 +1369,6 @@ void MainWindow::drawDebugMenu() {
                 ImGui::Text("Hello world3");
             });
         }
-#ifdef __ANDROID__
-        if (ImGui::Button("Perm.Request")) {
-            backend::doPermissionsDialogs();
-        }
-#endif
 
         ImGui::Checkbox("WF Single Click", &gui::waterfall.VFOMoveSingleClick);
         onDebugDraw.emit(GImGui);

@@ -8,16 +8,11 @@ file(GLOB_RECURSE SRC CONFIGURE_DEPENDS
 )
 list(FILTER SRC EXCLUDE REGEX "sdrpp_ft8_mshv_main.cpp")
 
-if (OPT_BACKEND_GLFW)
-    file(GLOB_RECURSE BACKEND_SRC CONFIGURE_DEPENDS "backends/glfw/*.cpp" "backends/glfw/*.c")
-elseif (OPT_BACKEND_ANDROID)
-    file(GLOB_RECURSE BACKEND_SRC CONFIGURE_DEPENDS "backends/android/*.cpp" "backends/android/*.c")
-    list(APPEND BACKEND_SRC "${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c")
-endif()
+file(GLOB_RECURSE BACKEND_SRC CONFIGURE_DEPENDS "backends/glfw/*.cpp" "backends/glfw/*.c")
 
 add_library(sdrpp_core SHARED ${SRC} ${BACKEND_SRC})
 sdrpp_set_compile_options(sdrpp_core)
-target_compile_definitions(sdrpp_core PRIVATE SDRPP_IS_CORE FLOG_ANDROID_TAG="SDR++")
+target_compile_definitions(sdrpp_core PRIVATE SDRPP_IS_CORE)
 target_compile_definitions(sdrpp_core PUBLIC INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
 target_include_directories(sdrpp_core PUBLIC src src/imgui)
 
@@ -41,19 +36,14 @@ if (APPLE)
     )
 endif()
 
-if (OPT_BACKEND_GLFW)
-    target_include_directories(sdrpp_core PUBLIC backends/glfw backends/glfw/imgui)
-    if (MSVC)
-        find_package(glfw3 CONFIG REQUIRED)
-        target_link_libraries(sdrpp_core PUBLIC glfw)
-    else()
-        find_package(PkgConfig REQUIRED)
-        pkg_check_modules(GLFW3 REQUIRED IMPORTED_TARGET glfw3)
-        target_link_libraries(sdrpp_core PUBLIC PkgConfig::GLFW3)
-    endif()
-elseif (OPT_BACKEND_ANDROID)
-    target_include_directories(sdrpp_core PUBLIC backends/android backends/android/imgui)
-    target_link_options(sdrpp_core PRIVATE "-Wl,-u,ANativeActivity_onCreate")
+target_include_directories(sdrpp_core PUBLIC backends/glfw backends/glfw/imgui)
+if (MSVC)
+    find_package(glfw3 CONFIG REQUIRED)
+    target_link_libraries(sdrpp_core PUBLIC glfw)
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GLFW3 REQUIRED IMPORTED_TARGET glfw3)
+    target_link_libraries(sdrpp_core PUBLIC PkgConfig::GLFW3)
 endif()
 
 if (OPT_OVERRIDE_STD_FILESYSTEM)
@@ -68,17 +58,6 @@ if (MSVC)
     target_link_libraries(sdrpp_core PUBLIC
         ${SDRPP_VOLK_TARGET} OpenGL::GL FFTW3::fftw3f
         wsock32 ws2_32 iphlpapi zstd::libzstd_shared
-    )
-elseif (ANDROID)
-    target_include_directories(sdrpp_core PUBLIC
-        "${SDR_KIT_ROOT}/${ANDROID_ABI}/include"
-        "${ANDROID_NDK}/sources/android/native_app_glue"
-    )
-    target_link_libraries(sdrpp_core PUBLIC
-        "${SDR_KIT_ROOT}/${ANDROID_ABI}/lib/libvolk.so"
-        "${SDR_KIT_ROOT}/${ANDROID_ABI}/lib/libfftw3f.so"
-        "${SDR_KIT_ROOT}/${ANDROID_ABI}/lib/libzstd.so"
-        android EGL GLESv3 log
     )
 else()
     find_package(PkgConfig REQUIRED)

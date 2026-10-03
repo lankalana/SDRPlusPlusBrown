@@ -9,9 +9,12 @@ else()
 endif()
 
 
-# Backends
-option(OPT_BACKEND_GLFW "Use the GLFW backend" ON)
-option(OPT_BACKEND_ANDROID "Use the Android backend" OFF)
+# GLFW is the desktop backend. Reject old Android configurations explicitly.
+if (ANDROID OR OPT_BACKEND_ANDROID)
+    message(FATAL_ERROR "Android builds are no longer supported; use a desktop toolchain")
+endif()
+unset(OPT_BACKEND_ANDROID CACHE)
+unset(OPT_BACKEND_GLFW CACHE)
 
 # Compatibility Options
 option(OPT_OVERRIDE_STD_FILESYSTEM "Use a local version of std::filesystem on systems that don't have it yet" OFF)
@@ -35,13 +38,4 @@ else()
     set(SDRPP_RUNTIME_INSTALL_DIR "${CMAKE_INSTALL_BINDIR}")
     set(SDRPP_MODULE_INSTALL_DIR "${CMAKE_INSTALL_LIBDIR}/sdrpp/plugins")
     set(SDRPP_RESOURCE_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/sdrpp")
-endif()
-
-
-if (OPT_BACKEND_GLFW AND OPT_BACKEND_ANDROID)
-    message(FATAL_ERROR "Select exactly one backend: OPT_BACKEND_GLFW or OPT_BACKEND_ANDROID")
-elseif (NOT OPT_BACKEND_GLFW AND NOT OPT_BACKEND_ANDROID)
-    message(FATAL_ERROR "Select a backend: OPT_BACKEND_GLFW or OPT_BACKEND_ANDROID")
-elseif (OPT_BACKEND_ANDROID AND NOT ANDROID)
-    message(FATAL_ERROR "OPT_BACKEND_ANDROID requires the Android toolchain")
 endif()

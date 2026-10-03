@@ -668,40 +668,10 @@ struct CWPanel {
         auto avail = ImGui::GetContentRegionAvail();
         //        auto window = ImGui::GetCurrentWindow();
 
-#ifndef __ANDROID__
         auto mouseCoord = ImVec2(ImGui::GetMousePos().x - widgetPos.x, ImGui::GetMousePos().y - widgetPos.y);
         bool inside = withinRect(avail, mouseCoord);
         bool newLeftPressed = inside && ImGui::IsMouseDown(1); // inverted: mouse faces the palm with eyes, two fingers (big and pointer) lay on the mouse like on paddle.
         bool newRightPressed = inside && ImGui::IsMouseDown(0);
-#else
-        static int fingers[10]; // 0 = nothing, 1 = left, 2 = right
-        bool newLeftPressed = false;
-        bool newRightPressed = false;
-        for (int i = 0; i < 10; i++) {
-            if (ImGui::IsFingerDown(i) && fingers[i] == 0) {
-                auto coord = ImVec2(ImGui::GetFingerPos(i).x - widgetPos.x, ImGui::GetFingerPos(i).y - widgetPos.y);
-                bool inside = withinRect(avail, coord);
-                if (inside) {
-                    auto halfSize = avail;
-                    halfSize.x /= 2;
-                    bool left = withinRect(halfSize, coord);
-                    if (left) {
-                        fingers[i] = 1;
-                    }
-                    else {
-                        fingers[i] = 2;
-                    }
-                }
-                // just pressed
-            }
-            if (!ImGui::IsFingerDown(i) && fingers[i] != 0) {
-                fingers[i] = 0;
-                // just released
-            }
-            if (fingers[i] == 1) newLeftPressed = true;
-            if (fingers[i] == 2) newRightPressed = true;
-        }
-#endif
         if (newLeftPressed != leftPressed) {
             leftPressed = newLeftPressed;
             if (newLeftPressed) {
@@ -1750,12 +1720,6 @@ void MobileMainWindow::draw() {
     ImGui::PushFont(style::mediumFont);
     static char statusBuf[1024];
     statusBuf[0] = 0;
-#ifdef __ANDROID__
-    if (displaymenu::showBattery) {
-        displaymenu::currentBatteryLevel = backend::getBatteryLevel();
-        snprintf(statusBuf + strlen(statusBuf), sizeof(statusBuf) - strlen(statusBuf), "BATT %s %% |", displaymenu::currentBatteryLevel.c_str());
-    }
-#endif
     snprintf(statusBuf + strlen(statusBuf), sizeof(statusBuf) - strlen(statusBuf), "%s | REC: %03d sec", this->submodeToggle.upperText.c_str(), (int) (this->pvt->audioRecorder.qsoAudioRecordingBuffer.size() / trxAudioSampleRate));
     for (auto st: statusSeporters) {
         auto s = st->reportStatus();
@@ -1920,13 +1884,8 @@ void MobileMainWindow::draw() {
 
     MobileButton *buttonsDefault[] = {&this->qsoButton, &this->modeToggle, /*&this->autoWaterfall,*/ &this->audioConfigToggle, &this->smallWheelFunction /*&this->bandUp, &this->bandDown, &this->submodeToggle,*/ };
     MobileButton *buttonsQso[] = {&this->endQsoButton,
-#ifndef __ANDROID__
-                                  &this->txButton, // on android, volume button works as PTT
-#endif
+                                  &this->txButton,
                                   &this->softTune, &this->smallWheelFunction, &this->lockFrequency,
-#ifdef __ANDROID__
-            &this->dummy,    // spacer
-#endif
                                   &this->callCQ,
     };
     MobileButton *buttonsConfig[] = {&this->exitConfig};
@@ -2594,16 +2553,8 @@ void MobileMainWindow::end() {
     configPanel.reset();
 }
 
-#ifdef __ANDROID__
-namespace backend {
-    extern void androidHapticFeedback();
-}
-#endif
 
 void hapticFeedback() {
-#ifdef __ANDROID__
-    backend::androidHapticFeedback();
-#endif
 }
 
 static bool doKeyboardButton(const std::string &title) {

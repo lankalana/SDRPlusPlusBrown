@@ -13,9 +13,6 @@ namespace displaymenu {
     void checkKeybinds();
     void draw(void* ctx);
     extern bool phoneLayout;
-#ifdef __ANDROID__
-    extern float displayDensity;
-#endif
     extern Event<ImGuiContext *> onDisplayDraw;
     extern bool showBattery;
     extern bool showClock;

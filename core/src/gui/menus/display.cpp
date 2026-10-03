@@ -45,9 +45,6 @@ namespace displaymenu {
 
     TranscieverLayout transcieverLayout = TRAL_NONE;
 
-#ifdef __ANDROID__
-    float displayDensity = 1.0;  // 1.0 = 160 dpi. 3.5 = kinda high dpi etc. Coincides with good default scale
-#endif
     bool snrSmoothing = false;
     int snrSmoothingSpeed = 20;
 
@@ -180,17 +177,6 @@ namespace displaymenu {
 
         std::vector<float> scales = {0.25f, 0.5f, 0.66f, 0.75f, 0.9f, 1.0f, 1.25f, 1.5f, 1.75f, 2.0f, 2.5f, 3.0f, 4.0f};
         bool hasNativeScale = false;
-#ifdef __ANDROID__
-        for (int i = 0; i < scales.size(); i++) {
-            float scale = scales[i];
-            if (scale == displayDensity) {
-                hasNativeScale = true;
-            }
-        }
-        if (!hasNativeScale) {
-            uiScales.define(displayDensity, std::to_string((int)(displayDensity * 100)) + "% (native)", displayDensity);
-        }
-#endif
         for (int i = 0; i < scales.size(); i++) {
             float scale = scales[i];
             uiScales.define(scale, std::to_string((int)(scale * 100)) + "%", scale);
@@ -258,14 +244,6 @@ namespace displaymenu {
             core::configManager.conf["fullWaterfallUpdate"] = fullWaterfallUpdate;
             core::configManager.release(true);
         }
-#ifdef __ANDROID__
-        if (ImGui::Checkbox("Show Battery##_sdrpp", &showBattery)) {
-            gui::waterfall.setFullWaterfallUpdate(fullWaterfallUpdate);
-            core::configManager.acquire();
-            core::configManager.conf["showBattery"] = showBattery;
-            core::configManager.release(true);
-        }
-#endif
         if (ImGui::Checkbox("Show Clock##_sdrpp", &showClock)) {
             gui::waterfall.setFullWaterfallUpdate(fullWaterfallUpdate);
             core::configManager.acquire();
