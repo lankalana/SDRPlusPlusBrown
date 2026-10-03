@@ -117,8 +117,12 @@ No additional UI dependency is required.
 The header contains reception, source, frequency, receiver, and audio controls. The receiver
 toolbar provides direct mode and bandwidth selection. Radio, Modules, and Settings tabs group
 the control panels; search filters panel names within the selected tab. Drag the divider to
-resize the panel or use Panels to give the spectrum the full window width. Output displays
-appear in tabs below the waterfall. The spectrum toolbar provides zoom, automatic level fitting,
+resize the panel or use Panels to give the spectrum the full window width. Module panels,
+including tools such as Frequency Manager and Recorder, live under Modules. The header's
+Module manager button opens a separate, resizable window for finding, enabling/disabling,
+adding, and removing instances, including when the control panel is hidden. Its instance
+table fills the window while the add form stays below it. The former About button is removed.
+Output displays appear in tabs below the waterfall. The spectrum toolbar provides zoom, automatic level fitting,
 and floor/ceiling sliders (under Levels in compact windows). Ctrl-click a slider to enter an
 exact dB value; the controls keep at least 10 dB between floor and ceiling. Existing transceiver
 controls remain available in Settings > Display.

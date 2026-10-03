@@ -31,13 +31,14 @@ def wait_for(predicate, message, timeout=4):
     raise AssertionError(message)
 
 
-def widget(ctx, window_title, label):
+def widget(ctx, window_title, label, scope=None):
     def locate():
         elements = request(ctx, "/layout")["elements"]
         windows = [item for item in elements if item["type"] == "window"
                    and (f"/{window_title}_" in item["name"] or item["name"] == window_title)]
         for window in windows:
-            widget_id = zlib.crc32(label.encode(), window["id"])
+            seed = zlib.crc32(scope.encode(), window["id"]) if scope else window["id"]
+            widget_id = zlib.crc32(label.encode(), seed)
             for item in elements:
                 if item["type"] == "widget" and item["id"] == widget_id:
                     return item
@@ -45,8 +46,8 @@ def widget(ctx, window_title, label):
     return wait_for(locate, f"Cannot find {label} in {window_title}")
 
 
-def click(ctx, window_title, label):
-    item = widget(ctx, window_title, label)
+def click(ctx, window_title, label, scope=None):
+    item = widget(ctx, window_title, label, scope)
     request(ctx, f'/click?x={item["x"] + item["w"] / 2}&y={item["y"] + item["h"] / 2}')
     time.sleep(0.15)
 
@@ -155,6 +156,11 @@ def test_compact_and_scaled():
             assert widget(ctx, "Radio Header", "##frequency_display")["x"] >= 0
             assert widget(ctx, "Receiver Controls", "LSB##workspace_mode")["w"] > 0
             assert any("/Output Dock_" in item["name"] for item in request(ctx, "/layout")["elements"])
+            click(ctx, "Radio Header", "Module manager##workspace_modules")
+            close = widget(ctx, "Module manager", "Close##module_manager_close")
+            assert close["y"] + close["h"] < height, "Manager footer is clipped at this scale"
+            screenshot(ctx, "module-manager-" + name, width, height)
+            click(ctx, "Module manager", "Close##module_manager_close")
             if scale == 1.0:
                 click(ctx, "Spectrum Workspace", "Levels##workspace_levels")
                 wait_for(lambda: any(item["type"] == "window" and item["name"].startswith("##Popup_")

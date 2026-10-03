@@ -86,6 +86,7 @@ void MainWindow::init() {
         }
         Menu::MenuOption_t opt;
         opt.name = elem["name"];
+        if (opt.name == "Module Manager") { continue; }
         opt.open = elem["open"];
         gui::menu.order.push_back(opt);
     }
@@ -98,7 +99,6 @@ void MainWindow::init() {
     gui::menu.registerEntry("VFO Color", vfo_color_menu::draw, NULL);
     gui::menu.registerEntry("Receivers", receiver_manager_menu::draw, NULL);
     gui::menu.registerEntry("Automatic Reception", automatic_reception_menu::draw, NULL);
-    gui::menu.registerEntry("Module Manager", module_manager_menu::draw, NULL);
 
     gui::freqSelect.init();
 
@@ -764,6 +764,8 @@ void MainWindow::draw() {
 
 
     ImGui::End();
+
+    module_manager_menu::drawWindow();
 
     if (showCredits) {
         credits::show();

@@ -5,6 +5,7 @@
 #include <gui/menus/display.h>
 #include <gui/menus/source.h>
 #include <gui/menus/receiver_manager.h>
+#include <gui/menus/module_manager.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
 #include <utils/hrfreq.h>
@@ -39,8 +40,8 @@ void MainWindow::drawDesktopHeader(ImGui::WaterfallVFO* vfo) {
     }
     tooltip("Show or hide the control panel");
     ImGui::SameLine();
-    if (ImGui::Button("SDR++ BROWN##workspace_about")) { showCredits = true; }
-    tooltip("About SDR++ Brown (Esc to close)");
+    if (ImGui::Button("Module manager##workspace_modules")) { module_manager_menu::open(); }
+    tooltip("Manage module instances in a separate window");
     ImGui::SameLine();
 
     const bool canStart = !playButtonLocked && !sigpath::sourceManager.getSelectedName().empty();

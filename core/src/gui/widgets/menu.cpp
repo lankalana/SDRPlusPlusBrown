@@ -54,11 +54,13 @@ bool Menu::draw(bool updateStates, int section, const std::string& search) {
             continue;
         }
         const auto& entry = items.at(opt.name);
+        const auto instance = core::moduleManager.instances.find(opt.name);
+        const bool modulePanel = instance != core::moduleManager.instances.end() || entry.inst;
         const bool radioPanel = opt.name == "Source" || opt.name == "Sinks" ||
                                 opt.name == "Receivers" || opt.name == "Automatic Reception" ||
-                                (entry.inst && core::moduleManager.instances.contains(opt.name) &&
-                                 std::string(core::moduleManager.instances.at(opt.name).module.info->name) == "radio");
-        const int entrySection = radioPanel ? 1 : (entry.inst ? 2 : 3);
+                                (instance != core::moduleManager.instances.end() &&
+                                 std::string(instance->second.module.info->name) == "radio");
+        const int entrySection = radioPanel ? 1 : (modulePanel ? 2 : 3);
         if (section && section != entrySection) { continue; }
         if (!search.empty()) {
             const auto matches = std::search(opt.name.begin(), opt.name.end(), search.begin(), search.end(),
