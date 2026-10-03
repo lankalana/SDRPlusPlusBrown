@@ -45,14 +45,56 @@ Machine-specific overrides belong in an untracked `CMakeUserPresets.json`. For e
 
 `SDRPP_MODULE_DEFAULTS` controls the defaults for modules that normally ship enabled:
 
-- `DEFAULT` preserves the traditional project defaults.
+- `DEFAULT` enables the retained modules listed below, subject to platform availability.
 - `MINIMAL` disables default modules so a preset can explicitly enable only what it needs.
 
 Individual `OPT_BUILD_*` values always override the selected profile. The committed Windows
 preset uses `MINIMAL`, which prevents newly added modules from silently entering that build.
 
+The enabled entries in `CMakePresets.json` define the supported module set. Brown Audio and
+Reports Monitor are now explicit preset entries; the null audio sink remains unconditional.
+
+| Group | Retained modules |
+| --- | --- |
+| Sources | Audio, WAV file, HackRF, SDRplay |
+| Sinks | RtAudio, Brown Audio with microphone support, new PortAudio, null audio |
+| Decoders | ADS-B, APRS, ATV, Extra VHF, TETRA, FT8/FT4, Meteor, pager, Radio, VOR |
+| Utilities | Frequency Manager, IQ Exporter, noise reduction, Recorder, Reports Monitor, Scanner |
+
+Other source, sink, decoder, and utility modules have been removed from this checkout.
+Reconfiguring an existing build clears obsolete `OPT_BUILD_*` cache entries. Existing user
+configs may still contain instances of removed modules; remove those instances through the
+Module Manager or edit the config. New configs contain only retained modules.
+
+CMake writes `enabled-modules.txt` in the build directory. The macOS bundle script reads this
+manifest, and the Windows development build removes obsolete plugin DLLs after staging the
+selected modules. Install into a fresh prefix when replacing an older packaged build.
+
+## CMake structure
+
+The root `CMakeLists.txt` coordinates the build. Shared logic lives in `cmake/`:
+
+- `SDRPPModules.cmake`: one module catalog for both options and subdirectories
+- `SDRPPOptions.cmake`: backend selection, profiles, SDK paths, and install layout
+- `SDRPPCompiler.cmake`: compiler settings scoped to project targets
+- `SDRPPVolk.cmake`: the pinned or system VOLK dependency
+- `SDRPPRuntime.cmake` and `SDRPPInstall.cmake`: development staging and packaging
+
+Project source globs use `CONFIGURE_DEPENDS`, so adding or removing a source file updates the
+build automatically. Vendored dependencies keep their own build settings.
+
+To run the existing tests after a Windows preset build:
+
+```powershell
+ctest --test-dir out/build/windows-vs2022 -C RelWithDebInfo --output-on-failure
+```
+
+`SDRPP_PYTHON_VENV` can override the build-tools virtual environment path when the default
+`.venv` belongs to a different Python installation.
+
 ## Other platforms and full CI builds
 
 Linux and macOS continue to use their system package managers and system VOLK by default.
-Platform-specific recipes are documented in `AGENTS.md`; the full Windows CI provisioning and
-vendor-SDK workflow is documented in `AGENTS-windows.md`.
+The retained modules use their existing platform-specific dependencies. SDRplay requires its
+vendor API when enabled. `AGENTS.md` and `AGENTS-windows.md` contain historical provisioning
+recipes for a larger module set; the module catalog above describes this checkout.

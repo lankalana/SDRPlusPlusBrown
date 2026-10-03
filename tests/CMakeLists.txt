@@ -30,7 +30,7 @@ target_link_libraries(sdrpp_core_tests PRIVATE
     Catch2::Catch2
 )
 
-target_compile_options(sdrpp_core_tests PRIVATE ${SDRPP_COMPILER_FLAGS})
+sdrpp_set_compile_options(sdrpp_core_tests)
 
 # Tests write scratch files (config, wav, riff) into this directory.
 target_compile_definitions(sdrpp_core_tests PRIVATE

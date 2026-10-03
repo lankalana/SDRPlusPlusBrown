@@ -60,7 +60,7 @@ FILE(REMOVE ${DLROOT}/mbelib/config.h)
 add_subdirectory(${DLROOT}/mbelib ${DLROOT}/mbelib-build)
 set_property(DIRECTORY "${DLROOT}/mbelib" PROPERTY EXCLUDE_FROM_ALL TRUE)
 
-file(GLOB_RECURSE SRC "src/*.cpp" "src/*.h" "src/*.hpp" "src/*.c")
+file(GLOB_RECURSE SRC CONFIGURE_DEPENDS "src/*.cpp" "src/*.h" "src/*.hpp" "src/*.c")
 
 include(${SDRPP_MODULE_CMAKE})
 

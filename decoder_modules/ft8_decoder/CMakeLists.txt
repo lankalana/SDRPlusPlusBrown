@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.21)
 project(ft8_decoder)
 
 
-file(GLOB_RECURSE SRC "src/*.cpp" "src/*.c")
+file(GLOB_RECURSE SRC CONFIGURE_DEPENDS "src/*.cpp" "src/*.c")
 
 include(${SDRPP_MODULE_CMAKE})
 
@@ -34,7 +34,7 @@ if(BUILD_TESTS AND NOT ANDROID)
         sdrpp_core
         Catch2::Catch2
     )
-    target_compile_options(ft8_decoder_tests PRIVATE ${SDRPP_COMPILER_FLAGS})
+    sdrpp_set_compile_options(ft8_decoder_tests)
     target_compile_definitions(ft8_decoder_tests PRIVATE
         SDRPP_TEST_TMP_DIR="${CMAKE_CURRENT_BINARY_DIR}/test-tmp"
         FT8_TEST_WAV_PATH="${CMAKE_CURRENT_SOURCE_DIR}/test_files/ft8.wav"

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(adsb_decoder)
 
-file(GLOB_RECURSE SRC "src/*.cpp")
+file(GLOB_RECURSE SRC CONFIGURE_DEPENDS "src/*.cpp")
 
 include(${SDRPP_MODULE_CMAKE})
 

@@ -1,0 +1,86 @@
+# Each module is declared once: option, directory, description, and default.
+# Platform checks also apply to explicit options from an existing CMake cache.
+macro(sdrpp_register_module option_name directory description default_value)
+    cmake_parse_arguments(_module "" "AVAILABLE" "" ${ARGN})
+    if (DEFINED _module_AVAILABLE)
+        set(SDRPP_MODULE_AVAILABLE_${option_name} "${_module_AVAILABLE}")
+    else()
+        set(SDRPP_MODULE_AVAILABLE_${option_name} ON)
+    endif()
+    if (SDRPP_MODULE_AVAILABLE_${option_name})
+        option(${option_name} "${description}" ${default_value})
+    else()
+        option(${option_name} "${description}" OFF)
+    endif()
+    set(SDRPP_MODULE_DIRECTORY_${option_name} "${directory}")
+    list(APPEND SDRPP_MODULE_OPTIONS ${option_name})
+endmacro()
+
+macro(sdrpp_add_modules)
+    set(SDRPP_ENABLED_MODULES)
+    foreach(_option IN LISTS SDRPP_MODULE_OPTIONS)
+        if (${_option})
+            if (SDRPP_MODULE_AVAILABLE_${_option})
+                set(_directory "${SDRPP_MODULE_DIRECTORY_${_option}}")
+                add_subdirectory("${_directory}")
+                list(APPEND SDRPP_ENABLED_MODULES "${_directory}")
+            else()
+                message(WARNING "${_option} is not supported on this platform; skipping")
+            endif()
+        endif()
+    endforeach()
+    # This dependency-free sink is required by headless and E2E workflows.
+    add_subdirectory(sink_modules/null_audio_sink)
+    list(APPEND SDRPP_ENABLED_MODULES sink_modules/null_audio_sink)
+    string(REPLACE ";" "\n" _module_manifest "${SDRPP_ENABLED_MODULES}")
+    file(WRITE "${CMAKE_BINARY_DIR}/enabled-modules.txt" "${_module_manifest}\n")
+    message(STATUS "Enabled SDR++ modules: ${SDRPP_ENABLED_MODULES}")
+endmacro()
+
+set(SDRPP_DESKTOP ON)
+if (ANDROID)
+    set(SDRPP_DESKTOP OFF)
+endif()
+# Sources
+sdrpp_register_module(OPT_BUILD_AUDIO_SOURCE source_modules/audio_source "Build Audio Source Module (Dependencies: rtaudio)" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_FILE_SOURCE source_modules/file_source "Wav file source" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_HACKRF_SOURCE source_modules/hackrf_source "Build HackRF Source Module (Dependencies: libhackrf)" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_SDRPLAY_SOURCE source_modules/sdrplay_source "Build SDRplay Source Module (Dependencies: libsdrplay)" ${SDRPP_DEFAULT_MODULE})
+
+# Sinks
+sdrpp_register_module(OPT_BUILD_AUDIO_SINK sink_modules/audio_sink "Build Audio Sink Module (Dependencies: rtaudio)" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_BROWN_AUDIO_SINK sink_modules/brown_audio_sink "Build Brown Audio Sink with microphone support (Dependencies: rtaudio)" ${OPT_BUILD_AUDIO_SINK})
+sdrpp_register_module(OPT_BUILD_NEW_PORTAUDIO_SINK sink_modules/new_portaudio_sink "Build the new PortAudio Sink Module (Dependencies: portaudio)" ${SDRPP_DEFAULT_MODULE} AVAILABLE "${SDRPP_DESKTOP}")
+
+# Decoders
+sdrpp_register_module(OPT_BUILD_ATV_DECODER decoder_modules/atv_decoder "Build ATV decoder (no dependencies required)" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_CH_EXTRAVHF_DECODER decoder_modules/ch_extravhf_decoder "Build the extra VHF decoder module" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_CH_TETRA_DEMODULATOR decoder_modules/ch_tetra_demodulator "Build the tetra demodulator" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_FT8_DECODER decoder_modules/ft8_decoder "Build the FT8 decoder module" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_ADSB_DECODER decoder_modules/adsb_decoder "Build the ADS-B 1090ES decoder module" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_APRS_DECODER decoder_modules/aprs_decoder "Build the APRS decoder module" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_METEOR_DEMODULATOR decoder_modules/meteor_demodulator "Build the meteor demodulator module (no dependencies required)" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_PAGER_DECODER decoder_modules/pager_decoder "Build the pager decoder module (no dependencies required)" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_RADIO decoder_modules/radio "Main audio modulation decoder (AM, FM, SSB, etc...)" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_VOR_RECEIVER decoder_modules/vor_receiver "VOR beacon receiver" ${SDRPP_DEFAULT_MODULE})
+
+# Misc
+sdrpp_register_module(OPT_BUILD_FREQUENCY_MANAGER misc_modules/frequency_manager "Build the Frequency Manager module" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_IQ_EXPORTER misc_modules/iq_exporter "Build the IQ Exporter module" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_RECORDER misc_modules/recorder "Audio and baseband recorder" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_SCANNER misc_modules/scanner "Frequency scanner" ${SDRPP_DEFAULT_MODULE})
+sdrpp_register_module(OPT_BUILD_NOISE_REDUCTION_LOGMMSE misc_modules/noise_reduction_logmmse "Build LOGMMSE noise reduction" ${SDRPP_DEFAULT_MODULE})
+
+sdrpp_register_module(OPT_BUILD_REPORTS_MONITOR misc_modules/reports_monitor "Build Reports Monitor" ${SDRPP_DEFAULT_MODULE})
+
+# Old caches and external build scripts may still contain removed module options.
+# Remove them so the cache describes only the modules this checkout can build.
+get_cmake_property(_cache_variables CACHE_VARIABLES)
+foreach(_variable IN LISTS _cache_variables)
+    if (_variable MATCHES "^OPT_BUILD_" AND NOT _variable IN_LIST SDRPP_MODULE_OPTIONS)
+        if (${_variable})
+            message(WARNING "${_variable} refers to a removed module; removing the stale option")
+        endif()
+        unset(${_variable} CACHE)
+    endif()
+endforeach()

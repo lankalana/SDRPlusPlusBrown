@@ -6,9 +6,6 @@ message(STATUS "[CH_TETRA_DEMODULATOR] ===== Configuring ch_tetra_demodulator mo
 # User agent for downloads
 set(DOWNLOAD_USER_AGENT "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
 
-set(CMAKE_INSTALL_PREFIX "/usr/")
-include(GNUInstallDirs)
-
 set(ETSI_CODEC_URL "https://www.etsi.org/deliver/etsi_en/300300_300399/30039502/01.03.01_60/en_30039502v010301p0.zip")
 set(ETSI_CODEC_MD5 "a8115fe68ef8f8cc466f4192572a1e3e")
 set(ETSI_CODEC_DIR "${CMAKE_CURRENT_BINARY_DIR}/etsi_codec")
@@ -181,7 +178,7 @@ if (NOT EXISTS "${ETSI_CODEC_MARKER}")
     file(WRITE "${ETSI_CODEC_MARKER}" "ok\n")
 endif ()
 
-file(GLOB SRC LIST_DIRECTORIES false 
+file(GLOB SRC CONFIGURE_DEPENDS LIST_DIRECTORIES false
     "src/*.cpp"
     "src/*.c"
     "src/dsp/*.cpp"
@@ -254,7 +251,7 @@ target_include_directories(ch_tetra_demodulator PRIVATE BEFORE "src/" "src/decod
 
 target_link_libraries(ch_tetra_demodulator PRIVATE etsi_codec)
 
-if (NOT ANDROID)
+if (NOT ANDROID AND NOT MSVC)
     if (CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
         target_compile_options(etsi_codec PRIVATE -march=x86-64)
         target_compile_options(ch_tetra_demodulator PRIVATE -march=x86-64)

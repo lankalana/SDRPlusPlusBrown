@@ -1,12 +1,12 @@
 cmake_minimum_required(VERSION 3.21)
 project(hackrf_source)
 
-file(GLOB SRC "src/*.cpp")
+file(GLOB SRC CONFIGURE_DEPENDS "src/*.cpp")
 
 include(${SDRPP_MODULE_CMAKE})
 
 if (MSVC)
-    find_package(hackrf CONFIG QUIET)
+    find_package(hackrf CONFIG REQUIRED)
 
     target_link_libraries(hackrf_source PRIVATE hackrf::hackrf)
 
@@ -35,11 +35,10 @@ elseif (ANDROID)
             ${SDR_KIT_ROOT}/${ANDROID_ABI}/lib/libhackrf.so
     )
 else (MSVC)
-    find_package(PkgConfig)
+    find_package(PkgConfig REQUIRED)
 
-    pkg_check_modules(LIBHACKRF REQUIRED libhackrf)
+    pkg_check_modules(LIBHACKRF REQUIRED IMPORTED_TARGET libhackrf)
 
-    target_include_directories(hackrf_source PRIVATE ${LIBHACKRF_INCLUDE_DIRS})
-    target_link_directories(hackrf_source PRIVATE ${LIBHACKRF_LIBRARY_DIRS})
-    target_link_libraries(hackrf_source PRIVATE ${LIBHACKRF_LIBRARIES})
+
+    target_link_libraries(hackrf_source PRIVATE PkgConfig::LIBHACKRF)
 endif ()

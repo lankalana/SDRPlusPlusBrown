@@ -10,9 +10,9 @@ echo 'deb [signed-by=/usr/share/keyrings/kitware-archive-keyring.gpg] https://ap
 apt update
 
 # Install dependencies and tools
-apt install -y unzip build-essential cmake git libfftw3-dev libglfw3-dev libvolk1-dev libzstd-dev libairspy-dev \
-            libiio-dev libad9361-dev librtaudio-dev libhackrf-dev librtlsdr-dev libbladerf-dev liblimesuite-dev p7zip-full wget portaudio19-dev \
-            libcodec2-dev libudev-dev autoconf libtool xxd libspdlog-dev liborc-0.4-dev
+apt install -y unzip build-essential cmake git libfftw3-dev libglfw3-dev libvolk1-dev libzstd-dev \
+            librtaudio-dev libhackrf-dev p7zip-full wget portaudio19-dev \
+            libudev-dev autoconf libtool xxd libspdlog-dev liborc-0.4-dev
 
 # Install SDRPlay libraries
 SDRPLAY_ARCH=$(dpkg --print-architecture)
@@ -31,73 +31,11 @@ make -j2
 make install
 cd ..
 
-# Install a more recent libairspyhf version
-git clone https://github.com/airspy/airspyhf
-cd airspyhf
-mkdir build
-cd build
-cmake .. -DINSTALL_UDEV_RULES=ON
-make -j2
-make install
-ldconfig
-cd ../../
-
-# Install libperseus
-git clone https://github.com/Microtelecom/libperseus-sdr
-cd libperseus-sdr
-autoreconf -i
-./configure
-make
-make install
-ldconfig
-cd ..
-
-# Install librfnm
-git clone https://github.com/AlexandreRouma/librfnm
-cd librfnm
-mkdir build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-make -j2
-make install
-cd ../../
-
-# Install libfobos
-git clone https://github.com/AlexandreRouma/libfobos
-cd libfobos
-mkdir build
-cd build
-cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr
-make -j2
-make install
-cd ../../
-
-# Fix missing .pc file for codec2
-echo 'prefix=/usr/' >> /usr/share/pkgconfig/codec2.pc
-echo 'libdir=/usr/include/x86_64-linux-gnu/' >> /usr/share/pkgconfig/codec2.pc
-echo 'includedir=/usr/include/codec2' >> /usr/share/pkgconfig/codec2.pc
-echo 'Name: codec2' >> /usr/share/pkgconfig/codec2.pc
-echo 'Description: A speech codec for 2400 bit/s and below' >> /usr/share/pkgconfig/codec2.pc
-echo 'Requires:' >> /usr/share/pkgconfig/codec2.pc
-echo 'Version: 0.7' >> /usr/share/pkgconfig/codec2.pc
-echo 'Libs: -L/usr/include/x86_64-linux-gnu/ -lcodec2' >> /usr/share/pkgconfig/codec2.pc
-echo 'Cflags: -I/usr/include/codec2' >> /usr/share/pkgconfig/codec2.pc
-
-# Install libhydrasdr
-git clone https://github.com/hydrasdr/rfone_host
-cd rfone_host
-mkdir build
-cd build
-cmake ..
-make -j2
-make install
-cd ../../
-
 # Build SDR++ Itself
 cd SDRPlusPlus
 mkdir build
 cd build
-cmake .. -DOPT_BUILD_SDRPLAY_SOURCE=ON -DOPT_BUILD_BLADERF_SOURCE=OFF -DOPT_BUILD_LIMESDR_SOURCE=ON -DOPT_BUILD_NEW_PORTAUDIO_SINK=ON -DOPT_OVERRIDE_STD_FILESYSTEM=ON -DOPT_BUILD_M17_DECODER=ON -DOPT_BUILD_PERSEUS_SOURCE=ON -DOPT_BUILD_RFNM_SOURCE=ON -DOPT_BUILD_FOBOSSDR_SOURCE=ON -DOPT_BUILD_HYDRASDR_SOURCE=ON -DOPT_BUILD_CH_EXTRAVHF_DECODER=ON -DOPT_BUILD_CH_TETRA_DEMODULATOR=ON
+cmake .. -DOPT_BUILD_SDRPLAY_SOURCE=ON -DOPT_BUILD_NEW_PORTAUDIO_SINK=ON -DOPT_OVERRIDE_STD_FILESYSTEM=ON -DOPT_BUILD_CH_EXTRAVHF_DECODER=ON -DOPT_BUILD_CH_TETRA_DEMODULATOR=ON
 make VERBOSE=1 -j2
 
 # Generate package

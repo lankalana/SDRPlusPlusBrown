@@ -2,17 +2,19 @@
 if (NOT SDRPP_CORE_ROOT)
     set(SDRPP_CORE_ROOT "@SDRPP_CORE_ROOT@")
 endif ()
-if (NOT SDRPP_MODULE_COMPILER_FLAGS)
+if (NOT DEFINED SDRPP_MODULE_COMPILER_FLAGS)
     set(SDRPP_MODULE_COMPILER_FLAGS @SDRPP_MODULE_COMPILER_FLAGS@)
 endif ()
 
 # Created shared lib and link to core
 add_library(${PROJECT_NAME} SHARED ${SRC})
+set_property(GLOBAL APPEND PROPERTY SDRPP_MODULE_TARGETS ${PROJECT_NAME})
 target_link_libraries(${PROJECT_NAME} PRIVATE sdrpp_core)
 target_include_directories(${PROJECT_NAME} PRIVATE "${SDRPP_CORE_ROOT}/src/")
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "")
 if(MSVC)
-    add_compile_options(/wd4996)
+    target_compile_options(${PROJECT_NAME} PRIVATE /wd4996)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE _USE_MATH_DEFINES WINVER=0x0601 _WIN32_WINNT=0x0601)
     set_target_properties(${PROJECT_NAME} PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIG>/modules"
     )
@@ -29,14 +31,14 @@ if(MSVC)
         VERBATIM
     )
 else()
-    add_compile_options(-Wno-deprecated-declarations)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wno-deprecated-declarations)
 endif()
 # Set compile arguments; avoid applying C++-only flags to C sources.
 set(_sdrpp_module_c_flags ${SDRPP_MODULE_COMPILER_FLAGS})
 list(REMOVE_ITEM _sdrpp_module_c_flags -std=c++17 /std:c++17 /EHsc)
 target_compile_options(${PROJECT_NAME} PRIVATE
-    $<$<COMPILE_LANGUAGE:CXX>:${SDRPP_MODULE_COMPILER_FLAGS}>
-    $<$<COMPILE_LANGUAGE:C>:${_sdrpp_module_c_flags}>
+    "$<$<COMPILE_LANGUAGE:CXX>:${SDRPP_MODULE_COMPILER_FLAGS}>"
+    "$<$<COMPILE_LANGUAGE:C>:${_sdrpp_module_c_flags}>"
 )
 
 # Install directives

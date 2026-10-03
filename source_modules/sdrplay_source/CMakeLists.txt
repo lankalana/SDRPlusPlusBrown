@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 project(sdrplay_source)
 
-file(GLOB SRC "src/*.cpp")
+file(GLOB SRC CONFIGURE_DEPENDS "src/*.cpp")
 
 include(${SDRPP_MODULE_CMAKE})
 
