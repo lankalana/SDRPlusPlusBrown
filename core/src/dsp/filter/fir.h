@@ -79,8 +79,7 @@ namespace dsp::filter {
                 } else  if constexpr ((std::is_same_v<D, complex_t> || std::is_same_v<D, stereo_t>) && (std::is_same_v<T, complex_t>)) {
                     volk_32fc_x2_dot_prod_32fc((lv_32fc_t*)&out[i], (lv_32fc_t*)&buffer[i], (lv_32fc_t*)_taps.taps, _taps.size);
                 } else if constexpr (std::is_same_v<D, stereo_t> && std::is_same_v<T, float_t>) {
-                  volk_32f_x2_dot_prod_32f(&out[i].l, &buffer[i].l, _taps.taps, _taps.size);
-                  volk_32f_x2_dot_prod_32f(&out[i].r, &buffer[i].r, _taps.taps, _taps.size);
+                  volk_32fc_32f_dot_prod_32fc((lv_32fc_t*)&out[i], (lv_32fc_t*)&buffer[i], _taps.taps, _taps.size);
                 } else {
                   static_assert((D)0, "type error"); // compile-time error
                 }

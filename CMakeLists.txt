@@ -59,8 +59,6 @@ sdrpp_set_compile_options(sdrpp)
 
 if (APPLE)
     target_link_libraries(sdrpp PRIVATE "-framework Foundation" "-framework AVFoundation" "-framework Accelerate")
-elseif (UNIX AND NOT ANDROID)
-    target_link_libraries(sdrpp PRIVATE orc-0.4)
 endif()
 if (CMAKE_SYSTEM_NAME STREQUAL "FreeBSD")
     target_link_libraries(sdrpp PRIVATE pthread)

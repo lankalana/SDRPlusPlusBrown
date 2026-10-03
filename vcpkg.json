@@ -2,8 +2,8 @@
   "name": "sdrpp-brown",
   "version-string": "1.2.0",
   "description": "Common dependencies for the SDR++ Brown development build",
+  "builtin-baseline": "7f3781e19cc7d4e4882a4caec01668c6f7b5c163",
   "dependencies": [
-    "catch2",
     {
       "name": "fftw3",
       "features": [
@@ -13,10 +13,15 @@
     "libhackrf",
     "glfw3",
     "itpp",
-    "libusb",
     "portaudio",
     "rtaudio",
-    "spdlog",
+    "volk-dsp",
     "zstd"
-  ]
+  ],
+  "features": {
+    "tests": {
+      "description": "Dependencies for the core test suite",
+      "dependencies": ["catch2"]
+    }
+  }
 }

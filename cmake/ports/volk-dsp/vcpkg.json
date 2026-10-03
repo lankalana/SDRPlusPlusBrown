@@ -1,0 +1,13 @@
+{
+  "name": "volk-dsp",
+  "version": "3.3.0",
+  "description": "GNU Radio's Vector Optimized Library of Kernels (not the Vulkan loader)",
+  "homepage": "https://www.libvolk.org/",
+  "license": "LGPL-3.0-or-later",
+  "dependencies": [
+    "cpu-features",
+    { "name": "vcpkg-cmake", "host": true },
+    { "name": "vcpkg-cmake-config", "host": true },
+    { "name": "vcpkg-get-python-packages", "host": true }
+  ]
+}

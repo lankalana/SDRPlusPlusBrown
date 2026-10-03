@@ -1,10 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 project(sdrpp_core)
 
-if (USE_INTERNAL_LIBCORRECT)
-    add_subdirectory(libcorrect EXCLUDE_FROM_ALL)
-endif()
-
 file(GLOB_RECURSE SRC CONFIGURE_DEPENDS
     "src/*.cpp" "src/*.c"
     "../misc_modules/noise_reduction_logmmse/src/omlsa_mcra/*.cpp"
@@ -60,10 +56,6 @@ elseif (OPT_BACKEND_ANDROID)
     target_link_options(sdrpp_core PRIVATE "-Wl,-u,ANativeActivity_onCreate")
 endif()
 
-if (USE_INTERNAL_LIBCORRECT)
-    target_include_directories(sdrpp_core PUBLIC libcorrect/include)
-    target_link_libraries(sdrpp_core PUBLIC correct_static)
-endif()
 if (OPT_OVERRIDE_STD_FILESYSTEM)
     target_include_directories(sdrpp_core PUBLIC std_replacement)
 endif()
@@ -71,11 +63,10 @@ endif()
 if (MSVC)
     find_package(OpenGL REQUIRED)
     find_package(FFTW3f CONFIG REQUIRED)
-    find_package(FFTW3 CONFIG REQUIRED)
     find_package(zstd CONFIG REQUIRED)
     target_compile_definitions(sdrpp_core PRIVATE SDRPP_FFTW_THREADS)
     target_link_libraries(sdrpp_core PUBLIC
-        ${SDRPP_VOLK_TARGET} OpenGL::GL FFTW3::fftw3f FFTW3::fftw3
+        ${SDRPP_VOLK_TARGET} OpenGL::GL FFTW3::fftw3f
         wsock32 ws2_32 iphlpapi zstd::libzstd_shared
     )
 elseif (ANDROID)
@@ -93,11 +84,10 @@ else()
     find_package(PkgConfig REQUIRED)
     find_package(OpenGL REQUIRED)
     pkg_check_modules(FFTW3F REQUIRED IMPORTED_TARGET fftw3f)
-    pkg_check_modules(FFTW3 REQUIRED IMPORTED_TARGET fftw3)
     pkg_check_modules(FFTW3F_THREADS QUIET IMPORTED_TARGET fftw3f_threads)
     pkg_check_modules(LIBZSTD REQUIRED IMPORTED_TARGET libzstd)
     target_link_libraries(sdrpp_core PUBLIC
-        OpenGL::GL PkgConfig::FFTW3F PkgConfig::FFTW3 PkgConfig::LIBZSTD
+        OpenGL::GL PkgConfig::FFTW3F PkgConfig::LIBZSTD
     )
     if (FFTW3F_THREADS_FOUND)
         target_compile_definitions(sdrpp_core PRIVATE SDRPP_FFTW_THREADS)
@@ -108,10 +98,6 @@ else()
     else()
         pkg_check_modules(VOLK REQUIRED IMPORTED_TARGET volk)
         target_link_libraries(sdrpp_core PUBLIC PkgConfig::VOLK)
-    endif()
-    if (NOT USE_INTERNAL_LIBCORRECT)
-        pkg_check_modules(CORRECT REQUIRED IMPORTED_TARGET libcorrect)
-        target_link_libraries(sdrpp_core PUBLIC PkgConfig::CORRECT)
     endif()
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND OPT_OVERRIDE_STD_FILESYSTEM)
         target_link_libraries(sdrpp_core PUBLIC stdc++fs)

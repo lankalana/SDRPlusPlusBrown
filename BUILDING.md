@@ -14,8 +14,9 @@ Prerequisites:
 - vcpkg, with `VCPKG_ROOT` pointing to its installation directory
 - the SDRplay API when building the default preset
 
-CMake creates `.venv` in the source tree and installs the host-side build requirements there
-automatically.
+The preset uses the pinned vcpkg manifest, including the `volk-dsp` overlay port for GNU Radio
+VOLK. Its Python/Mako code-generation tools are managed by vcpkg, outside application configure.
+The stock vcpkg package named `volk` is a Vulkan loader and is unrelated to DSP VOLK.
 
 Configure and build:
 
@@ -90,7 +91,11 @@ ctest --test-dir out/build/windows-vs2022 -C RelWithDebInfo --output-on-failure
 ```
 
 `SDRPP_PYTHON_VENV` can override the build-tools virtual environment path when the default
-`.venv` belongs to a different Python installation.
+`.venv` belongs to a different Python installation. This only applies to the optional
+`SDRPP_USE_BUNDLED_VOLK=ON` source fallback; the Windows preset does not need an application venv.
+
+Catch2 is isolated in the manifest's `tests` feature. The development preset selects it;
+manual vcpkg configurations with `BUILD_TESTS=ON` must also set `VCPKG_MANIFEST_FEATURES=tests`.
 
 ## Other platforms and full CI builds
 

@@ -19,17 +19,11 @@ option(OPT_OVERRIDE_STD_FILESYSTEM "Use a local version of std::filesystem on sy
 include("${CMAKE_CURRENT_LIST_DIR}/SDRPPModules.cmake")
 
 # Other options
-option(USE_INTERNAL_LIBCORRECT "Use an internal version of libcorrect" ON)
 option(USE_BUNDLE_DEFAULTS "Set the default resource and module directories to the right ones for a MacOS .app" OFF)
 option(COPY_MSVC_REDISTRIBUTABLES "Copy over the Visual C++ Redistributable" OFF)
 option(BUILD_TESTS "Build test suite" OFF)
 
-if (MSVC)
-    set(_SDRPP_BUNDLED_VOLK_DEFAULT ON)
-else()
-    set(_SDRPP_BUNDLED_VOLK_DEFAULT OFF)
-endif()
-option(SDRPP_USE_BUNDLED_VOLK "Build the pinned VOLK dependency from source" ${_SDRPP_BUNDLED_VOLK_DEFAULT})
+option(SDRPP_USE_BUNDLED_VOLK "Build the pinned VOLK dependency from source instead of using an installed package" OFF)
 
 if (WIN32)
     set(SDRPLAY_ROOT "C:/Program Files/SDRplay/API" CACHE PATH "SDRplay API installation directory")

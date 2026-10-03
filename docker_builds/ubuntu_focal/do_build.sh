@@ -6,7 +6,7 @@ cd /root
 apt update
 apt install -y unzip build-essential cmake git libfftw3-dev libglfw3-dev libvolk2-dev libzstd-dev \
             librtaudio-dev libhackrf-dev p7zip-full wget portaudio19-dev \
-            autoconf libtool xxd libspdlog-dev liborc-0.4-dev
+            autoconf libtool xxd
 
 # Install SDRPlay libraries
 SDRPLAY_ARCH=$(dpkg --print-architecture)
@@ -23,4 +23,4 @@ cmake .. -DOPT_BUILD_SDRPLAY_SOURCE=ON -DOPT_BUILD_NEW_PORTAUDIO_SINK=ON -DOPT_B
 make VERBOSE=1 -j2
 
 cd ..
-sh make_debian_package.sh ./build 'libfftw3-dev, libglfw3-dev, libvolk2-dev, librtaudio-dev, libzstd-dev, liborc-0.4-dev'
+sh make_debian_package.sh ./build 'libfftw3-dev, libglfw3-dev, libvolk2-dev, librtaudio-dev, libzstd-dev,'

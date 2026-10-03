@@ -86,7 +86,7 @@ elseif(MSVC)
     find_package(FFTW3f CONFIG REQUIRED)
     target_link_libraries(ch_extravhf_decoder PUBLIC FFTW3::fftw3f)
 else()
-    target_link_libraries(ch_extravhf_decoder PUBLIC fftw3 )
+    target_link_libraries(ch_extravhf_decoder PUBLIC PkgConfig::FFTW3F)
 endif()
 
 target_link_libraries(ch_extravhf_decoder PUBLIC ${libitpp_target} mbe-static)

@@ -47,6 +47,27 @@ namespace {
     }
 }
 
+TEST_CASE("Stereo FIR filters channels independently across blocks", "[dsp][filter][fir]") {
+    const std::vector<float> tapVals = { 0.2f, 0.5f, 0.3f };
+    ScopedTaps<float> taps(dsp::taps::fromArray<float>((int)tapVals.size(), tapVals.data()));
+    dsp::filter::FIR<dsp::stereo_t, float> fir;
+    fir.init(nullptr, taps.taps);
+    const std::vector<float> left = { 1, 2, -3, 4, 0, -2 };
+    const std::vector<float> right = { 10, -20, 0, 40, 5, 30 };
+    std::vector<dsp::stereo_t> input(left.size()), output(left.size());
+    for (size_t i = 0; i < input.size(); ++i) {
+        input[i] = { left[i], right[i] };
+    }
+    fir.process(2, input.data(), output.data());
+    fir.process(4, input.data() + 2, output.data() + 2);
+    const auto expectedLeft = refConvolve(left, tapVals);
+    const auto expectedRight = refConvolve(right, tapVals);
+    for (size_t i = 0; i < output.size(); ++i) {
+        REQUIRE(output[i].l == Approx(expectedLeft[i]).margin(1e-5));
+        REQUIRE(output[i].r == Approx(expectedRight[i]).margin(1e-5));
+    }
+}
+
 TEST_CASE("FIR convolves against a reference implementation", "[dsp][filter][fir]") {
     const std::vector<float> tapVals = { 0.25f, 0.5f, 0.25f };
     ScopedTaps<float> taps(dsp::taps::fromArray<float>((int)tapVals.size(), tapVals.data()));

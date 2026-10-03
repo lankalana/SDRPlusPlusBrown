@@ -31,10 +31,9 @@
         "OPT_BUILD_SCANNER": "ON",
         "OPT_BUILD_REPORTS_MONITOR": "ON",
         "OPT_BUILD_NOISE_REDUCTION_LOGMMSE": "ON",
-        "USE_INTERNAL_LIBCORRECT": "OFF",
         "USE_BUNDLE_DEFAULTS": "OFF",
         "COPY_MSVC_REDISTRIBUTABLES": "OFF",
-        "SDRPP_USE_BUNDLED_VOLK": "ON",
+        "SDRPP_USE_BUNDLED_VOLK": "OFF",
         "BUILD_TESTS": "ON"
       }
     },
@@ -48,6 +47,7 @@
       "binaryDir": "${sourceDir}/out/build/${presetName}",
       "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
       "cacheVariables": {
+        "VCPKG_MANIFEST_FEATURES": "tests",
         "VCPKG_TARGET_TRIPLET": "x64-windows",
         "VCPKG_APPLOCAL_DEPS": "OFF"
       }
