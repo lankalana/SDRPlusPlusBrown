@@ -25,8 +25,7 @@ namespace thememenu {
         std::ifstream file(path, std::ios::binary);
         if (file) {
             ImGuiStyle style;
-            file.read((char*)&style, sizeof(ImGuiStyle));
-            ImGui::GetStyle() = style;
+            if (file.read((char*)&style, sizeof(ImGuiStyle))) { ImGui::GetStyle() = style; }
         }
     }
 
@@ -53,9 +52,6 @@ namespace thememenu {
         }
         core::configManager.release();
 
-        // Load saved style if exists
-        loadStyle();
-
         // Apply scaling
         ImGui::GetStyle().ScaleAllSizes(style::uiScale);
 
@@ -64,6 +60,8 @@ namespace thememenu {
             themeNamesTxt += name;
             themeNamesTxt += '\0';
         }
+        applyTheme();
+        loadStyle();
     }
 
     void applyTheme() {

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include "utils/wstr.h"
+#include <gui/style.h>
 
 bool ThemeManager::loadThemesFromDir(std::string path) {
     // // TEST JUST TO DUMP THE ORIGINAL THEME
@@ -131,12 +132,18 @@ bool ThemeManager::applyTheme(std::string name) {
 
     auto& style = ImGui::GetStyle();
 
-    style.WindowRounding = 0.0f;
-    style.ChildRounding = 0.0f;
-    style.FrameRounding = 0.0f;
-    style.GrabRounding = 0.0f;
-    style.PopupRounding = 0.0f;
-    style.ScrollbarRounding = 0.0f;
+    const float scale = style::uiScale;
+    style.WindowRounding = 8.0f * scale;
+    style.ChildRounding = 6.0f * scale;
+    style.FrameRounding = 4.0f * scale;
+    style.GrabRounding = 4.0f * scale;
+    style.PopupRounding = 6.0f * scale;
+    style.ScrollbarRounding = 6.0f * scale;
+    style.WindowPadding = ImVec2(12 * scale, 10 * scale);
+    style.FramePadding = ImVec2(8 * scale, 5 * scale);
+    style.ItemSpacing = ImVec2(8 * scale, 6 * scale);
+    style.ItemInnerSpacing = ImVec2(6 * scale, 4 * scale);
+    style.ScrollbarSize = 12 * scale;
 
     ImVec4* colors = style.Colors;
     Theme thm = themes[name];

@@ -101,18 +101,11 @@ void FrequencySelect::moveCursorToDigit(int i) {
 void FrequencySelect::draw() {
     auto window = ImGui::GetCurrentWindow();
     auto io = ImGui::GetIO();
-    widgetPos = ImGui::GetWindowContentRegionMin();
-    ImVec2 cursorPos = ImGui::GetCursorPos();
-    widgetPos.x += window->Pos.x + cursorPos.x;
+    widgetPos = ImGui::GetCursorScreenPos();
     ImGui::PushFont(style::bigFont);
     ImVec2 digitSz = ImGui::CalcTextSize("0");
     ImVec2 commaSz = ImGui::CalcTextSize(".");
-    widgetPos.y = window->Pos.y + cursorPos.y - ((digitSz.y / 2.0f) - ceilf(15 * style::uiScale) - 5);
-
-    if (widgetPos.x != lastWidgetPos.x || widgetPos.y != lastWidgetPos.y) {
-        lastWidgetPos = widgetPos;
-        onPosChange();
-    }
+    onPosChange();
 
     ImU32 disabledColor = ImGui::GetColorU32(ImGuiCol_Text, 0.3f);
     ImU32 textColor = ImGui::GetColorU32(ImGuiCol_Text);
@@ -120,10 +113,11 @@ void FrequencySelect::draw() {
     
     int digitWidth = digitSz.x;
     int commaOffset = 0;
-    float textOffset = 11.0f * style::uiScale;
     bool zeros = true;
 
-    ImGui::ItemSize(ImRect(digitTopMins[0], ImVec2(digitBottomMaxs[getNumberOfDigits()-1].x + 15, digitBottomMaxs[getNumberOfDigits()-1].y)));
+    const ImRect bounds(digitTopMins[0], digitBottomMaxs[getNumberOfDigits()-1]);
+    ImGui::ItemSize(bounds);
+    ImGui::ItemAdd(bounds, ImGui::GetID("##frequency_display"));
 
     for (int i = 0; i < getNumberOfDigits(); i++) {
         if (digits[i] != 0) {
@@ -133,9 +127,9 @@ void FrequencySelect::draw() {
         window->DrawList->AddText(ImVec2(widgetPos.x + (i * digitWidth) + commaOffset, widgetPos.y),
                                   zeros ? disabledColor : textColor, buf);
         if ((i + 1) % 3 == 0 && i < getNumberOfDigits()-1) {
-            commaOffset += commaSz.x;
-            window->DrawList->AddText(ImVec2(widgetPos.x + (i * digitWidth) + commaOffset + textOffset, widgetPos.y),
+            window->DrawList->AddText(ImVec2(widgetPos.x + ((i + 1) * digitWidth) + commaOffset, widgetPos.y),
                                       zeros ? disabledColor : textColor, ".");
+            commaOffset += commaSz.x;
         }
     }
 
@@ -189,7 +183,7 @@ void FrequencySelect::draw() {
 
                 // For each keyboard characters, type it
                 for (int j = 0; j < chars.Size; j++) {
-                    if (chars[j] >= '0' && chars[j] <= '9') {
+                    if (chars[j] >= '0' && chars[j] <= '9' && i + j < getNumberOfDigits()) {
                         digits[i + j] = chars[j] - '0';
                         if ((i + j) < getNumberOfDigits()-1) { moveCursorToDigit(i + j + 1); }
                         frequencyChanged = true;
@@ -206,7 +200,7 @@ void FrequencySelect::draw() {
         }
         digitHovered = hovered;
 
-        if (isInArea(mousePos, digitTopMins[0], digitBottomMaxs[11])) {
+        if (isInArea(mousePos, digitTopMins[0], digitBottomMaxs[getNumberOfDigits()-1])) {
             bool shortcutKey = io.ConfigMacOSXBehaviors ? (io.KeyMods == ImGuiKeyModFlags_Super) : (io.KeyMods == ImGuiKeyModFlags_Ctrl);
             bool ctrlOnly = (io.KeyMods == ImGuiKeyModFlags_Ctrl);
             bool shiftOnly = (io.KeyMods == ImGuiKeyModFlags_Shift);
@@ -250,7 +244,6 @@ void FrequencySelect::draw() {
 
     ImGui::PopFont();
 
-    ImGui::SetCursorPosX(digitBottomMaxs[getNumberOfDigits()-1].x + (17.0f * style::uiScale));
 }
 
 

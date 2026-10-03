@@ -23,7 +23,8 @@ public:
 
     void registerEntry(std::string name, void (*drawHandler)(void* ctx), void* ctx = NULL, ModuleInstance* inst = NULL);
     void removeEntry(std::string name);
-    bool draw(bool updateStates);
+    // section: 0 = all, 1 = radio, 2 = modules, 3 = settings.
+    bool draw(bool updateStates, int section = 0, const std::string& search = "");
 
     std::vector<MenuOption_t> order;
 

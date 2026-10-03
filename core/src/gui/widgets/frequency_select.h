@@ -26,7 +26,6 @@ private:
     void moveCursorToDigit(int i);
 
     ImVec2 widgetPos;
-    ImVec2 lastWidgetPos;
 
     int digits[12];
     ImVec2 digitBottomMins[12];

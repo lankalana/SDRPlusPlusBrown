@@ -106,3 +106,35 @@ Linux and macOS continue to use their system package managers and system VOLK by
 The retained modules use their existing platform-specific dependencies. SDRplay requires its
 vendor API when enabled. `AGENTS.md` and `AGENTS-windows.md` contain historical provisioning
 recipes for a larger module set; the module catalog above describes this checkout.
+
+## Desktop workspace
+
+The default layout uses a spectrum-centered workspace inspired by
+[sdroxide](https://github.com/dividebysandwich/sdroxide). The existing ImGui, GLFW, and OpenGL
+stack remains in use so retained decoder modules can keep their panels and rendering hooks.
+No additional UI dependency is required.
+
+The header contains reception, source, frequency, receiver, and audio controls. The receiver
+toolbar provides direct mode and bandwidth selection. Radio, Modules, and Settings tabs group
+the control panels; search filters panel names within the selected tab. Drag the divider to
+resize the panel or use Panels to give the spectrum the full window width. Output displays
+appear in tabs below the waterfall. The spectrum toolbar provides zoom, automatic level fitting,
+and floor/ceiling controls (under Levels in compact windows). Existing transceiver controls remain available
+in Settings > Display.
+
+The Dark theme now uses a navy palette with a teal accent. Other installed themes remain
+selectable, and the saved theme is applied at startup.
+
+To exercise the rendered UI without radio hardware, set `E2E_BINARY`, `E2E_BUILD_DIR`, and
+`E2E_ROOT_DEV` to the development runtime, then run:
+
+```powershell
+python e2e/test_desktop_workspace.py
+```
+
+The test checks mode switching, panel visibility, compact and scaled windows, and reception
+from a generated IQ WAV file with a null audio sink. Set `E2E_UI_ARTIFACT_DIR` to save BMP
+previews. The debug server's `GET /screenshot` endpoint requests a capture of the application
+framebuffer and returns the last completed BMP; before the first capture it returns HTTP 202.
+Captures occur only when requested. Coordinate input endpoints use ImGui's event queue, including
+button/key releases, and accept query parameters as documented in `AGENTS-debugging.md`.

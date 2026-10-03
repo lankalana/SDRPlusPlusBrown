@@ -17,6 +17,7 @@
 #include <config.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
+#include <http_debug_server.h>
 #include <gui/menus/source.h>
 #include <gui/menus/display.h>
 #include <gui/menus/bandplan.h>
@@ -226,7 +227,6 @@ void MainWindow::init() {
     gui::waterfall.selectFirstVFO();
 
     menuWidth = core::configManager.conf["menuWidth"];
-    newWidth = menuWidth;
 
     fftHeight = core::configManager.conf["fftHeight"];
     gui::waterfall.setFFTHeight(fftHeight);
@@ -654,18 +654,8 @@ void MainWindow::draw() {
     ImGui::WaterfallVFO* vfo;
     this->preDraw(&vfo);
     ImGui::Begin("Main", NULL, WINDOW_FLAGS);
-    ImVec4 textCol = ImGui::GetStyleColorVec4(ImGuiCol_Text);
-    // To Bar
-    // ImGui::BeginChild("TopBarChild", ImVec2(0, 49.0f * style::uiScale), false, ImGuiWindowFlags_HorizontalScrollbar);
-    ImVec2 btnSize(30 * style::uiScale, 30 * style::uiScale);
-    ImGui::PushID(ImGui::GetID("sdrpp_menu_btn"));
-    if (ImGui::ImageButton(icons::MENU, btnSize, ImVec2(0, 0), ImVec2(1, 1), 5, ImVec4(0, 0, 0, 0), textCol) || ImGui::IsKeyPressed(ImGuiKey_Menu, false)) {
-        showMenu = !showMenu;
-        core::configManager.acquire();
-        core::configManager.conf["showMenu"] = showMenu;
-        core::configManager.release(true);
-    }
-    ImGui::PopID();
+    lockWaterfallControls = showCredits;
+    drawDesktopHeader(vfo);
 
     // Handle space key for microphone input
     static bool wasSpacePressed = false;
@@ -762,218 +752,7 @@ void MainWindow::draw() {
         }
     }
 
-    ImGui::SameLine();
-
-    this->drawUpperLine(vfo);
-    // Note: this is what makes the vertical size correct, needs to be fixed
-    ImGui::SameLine();
-
-    // ImGui::EndChild();
-
-    // Logo button
-    ImGui::SetCursorPosX(ImGui::GetWindowSize().x - (48 * style::uiScale));
-    ImGui::SetCursorPosY(10.0f * style::uiScale);
-    if (ImGui::ImageButton(icons::LOGO, ImVec2(32 * style::uiScale, 32 * style::uiScale), ImVec2(0, 0), ImVec2(1, 1), 0)) {
-        showCredits = true;
-    }
-    if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-        if (showCredits) {
-            showCredits = false;
-            lockWaterfallControls = true;
-        }
-    }
-    if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-        showCredits = false;
-    }
-
-    // Reset waterfall lock
-    lockWaterfallControls = showCredits;
-
-    // Handle menu resize
-    ImVec2 winSize = ImGui::GetWindowSize();
-    ImVec2 mousePos = ImGui::GetMousePos();
-    if (!lockWaterfallControls && showMenu && ImGui::GetTopMostPopupModal() == NULL) {
-        float curY = ImGui::GetCursorPosY();
-        bool click = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
-        bool down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-        if (grabbingMenu) {
-            newWidth = mousePos.x;
-            newWidth = std::clamp<float>(newWidth, 250, winSize.x - 250);
-            ImGui::GetForegroundDrawList()->AddLine(ImVec2(newWidth, curY), ImVec2(newWidth, winSize.y - 10), ImGui::GetColorU32(ImGuiCol_SeparatorActive));
-        }
-        if (mousePos.x >= newWidth - (2.0f * style::uiScale) && mousePos.x <= newWidth + (2.0f * style::uiScale) && mousePos.y > curY) {
-            ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-            if (click) {
-                grabbingMenu = true;
-            }
-        }
-        else {
-            ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
-        }
-        if (!down && grabbingMenu) {
-            grabbingMenu = false;
-            menuWidth = newWidth;
-            core::configManager.acquire();
-            core::configManager.conf["menuWidth"] = menuWidth;
-            core::configManager.release(true);
-        }
-    }
-
-    // Process menu keybinds
-    displaymenu::checkKeybinds();
-
-    // Left Column
-    if (showMenu) {
-        ImGui::Columns(3, "WindowColumns", false);
-        ImGui::SetColumnWidth(0, menuWidth);
-        ImGui::SetColumnWidth(1, std::max<int>(winSize.x - menuWidth - (60.0f * style::uiScale), 100.0f * style::uiScale));
-        ImGui::SetColumnWidth(2, 60.0f * style::uiScale);
-
-        ImGui::BeginChild("Left Column");
-
-
-        if (gui::menu.draw(firstMenuRender)) {
-            core::configManager.acquire();
-            json arr = json::array();
-            for (int i = 0; i < gui::menu.order.size(); i++) {
-                arr[i]["name"] = gui::menu.order[i].name;
-                arr[i]["open"] = gui::menu.order[i].open;
-            }
-            core::configManager.conf["menuElements"] = arr;
-
-            // Update enabled and disabled modules
-            for (auto [_name, inst] : core::moduleManager.instances) {
-                if (!core::configManager.conf["moduleInstances"].contains(_name)) { continue; }
-                core::configManager.conf["moduleInstances"][_name]["enabled"] = inst.module.api->isEnabled(inst.instance);
-            }
-
-            core::configManager.release(true);
-        }
-        if (startedWithMenuClosed) {
-            startedWithMenuClosed = false;
-        }
-        else {
-            firstMenuRender = false;
-        }
-
-
-        this->drawDebugMenu();
-
-        ImGui::EndChild();
-    }
-    else {
-        // When hiding the menu bar
-        ImGui::Columns(3, "WindowColumns", false);
-        ImGui::SetColumnWidth(0, 8 * style::uiScale);
-        ImGui::SetColumnWidth(1, winSize.x - ((8 + 60) * style::uiScale));
-        ImGui::SetColumnWidth(2, 60.0f * style::uiScale);
-    }
-
-    // Right Column
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
-    ImGui::NextColumn();
-    ImGui::PopStyleVar();
-
-    this->displayVariousWindows();
-
-
-    ImVec2 wfSize = ImVec2(0, 0);
-    if (!bottomWindows.empty()) {
-        wfSize.y -= bottomWindows[0].size.y;
-    }
-    ImGui::BeginChild("Waterfall", wfSize);
-
-    gui::waterfall.draw();
-    onWaterfallDrawn.emit(GImGui);
-
-    ImGui::EndChild();
-
-    this->handleWaterfallInput(vfo);
-
-    ImGui::NextColumn();
-    ImGui::BeginChild("WaterfallControls");
-
-    static int sliderDynamicAdjustmentY = 0;
-
-    ImVec2 wfSliderSize((displaymenu::phoneLayout ? 40.0 : 20.0) * style::uiScale, (displaymenu::phoneLayout ? 100.0 : 140.0) * style::uiScale - sliderDynamicAdjustmentY);
-    const int MIN_SLIDER_HEIGHT = 10;
-    if (wfSliderSize.y < MIN_SLIDER_HEIGHT) {
-        wfSliderSize.y = MIN_SLIDER_HEIGHT; // Prevents dynamic adjustment too large;
-    }
-    ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - (ImGui::CalcTextSize("Zoom").x / 2.0));
-    ImGui::TextUnformatted("Zoom");
-    ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - wfSliderSize.x / 2);
-
-    if (ImGui::VSliderFloat("##_7_", wfSliderSize, &bw, 1.0, 0.0, "")) {
-        core::configManager.acquire();
-        core::configManager.conf["zoomBw"] = bw;
-        core::configManager.release(true);
-        updateWaterfallZoomBandwidth(bw);
-    }
-
-
-    auto addMaxSlider = [&]() {
-        ImGui::NewLine();
-        ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - (ImGui::CalcTextSize("Max").x / 2.0));
-        ImGui::TextUnformatted("Max");
-        ImGui::SameLine();
-        ImVec2 textSize = ImGui::CalcTextSize("Max");
-        ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - (ImGui::CalcTextSize("Max").x / 2.0));
-        if (ImGui::InvisibleButton("##max_button_auto", textSize)) {
-            const std::pair<int, int>& range = gui::waterfall.autoRange();
-            if (range.first == 0 && range.second == 0) {
-                // bad case
-            }
-            else {
-                fftMin = range.first;
-                fftMax = range.second;
-            }
-        }
-        ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - wfSliderSize.x / 2);
-        if (ImGui::VSliderFloat("##_8_", wfSliderSize, &fftMax, 0.0, -180.0f, "")) {
-            fftMax = std::max<float>(fftMax, fftMin + 10);
-            core::configManager.acquire();
-            core::configManager.conf["max"] = fftMax;
-            core::configManager.release(true);
-            gui::waterfall.setFFTMax(fftMax);
-            gui::waterfall.setWaterfallMax(fftMax);
-        }
-    };
-
-    auto addMinSlider = [&]() {
-        ImGui::NewLine();
-        ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - (ImGui::CalcTextSize("Min").x / 2.0));
-        ImGui::TextUnformatted("Min");
-        ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - wfSliderSize.x / 2);
-        ImGui::SetItemUsingMouseWheel();
-        if (ImGui::VSliderFloat("##_9_", wfSliderSize, &fftMin, 0.0, -200.0f, "")) {
-            fftMin = std::min<float>(fftMax - 10, fftMin);
-            core::configManager.acquire();
-            core::configManager.conf["min"] = fftMin;
-            core::configManager.release(true);
-            gui::waterfall.setFFTMin(fftMin);
-            gui::waterfall.setWaterfallMin(fftMin);
-        }
-    };
-
-    if (displaymenu::phoneLayout) {
-        // min slider is used much more often, if you ask me. So on small screen there should be no need to scroll down to operate it.
-        addMinSlider();
-        addMaxSlider();
-    }
-    else {
-        addMaxSlider();
-        addMinSlider();
-    }
-    const ImVec2 remainder = ImGui::GetContentRegionAvail();
-    if (remainder.y <= 0 && wfSliderSize.y > MIN_SLIDER_HEIGHT) {
-        // this fits the sliders to any height.
-        sliderDynamicAdjustmentY++;
-    }
-
-    ImGui::EndChild();
-
-    this->drawBottomWindows(0);
+    drawDesktopWorkspace(vfo);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 5.f);
     ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(43.f / 255.f, 43.f / 255.f, 43.f / 255.f, 100.f / 255.f));
@@ -1022,6 +801,7 @@ void MainWindow::setPlayState(bool _playing) {
         sigpath::sourceManager.stop();
         sigpath::iqFrontEnd.flushInputBuffer();
     }
+    httpdebug::setSdrPlaying(playing);
 }
 
 bool MainWindow::sdrIsRunning() {

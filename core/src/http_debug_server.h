@@ -38,6 +38,11 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
 
 namespace httpdebug {
 
+    // Capture only this application's framebuffer, on its render thread.
+    inline std::atomic<bool> screenshotRequested{ false };
+    void publishScreenshot(std::vector<unsigned char> bitmap);
+    std::vector<unsigned char> getScreenshot();
+
     inline Server* httpServer = nullptr;
     inline std::jthread ewsThread;
     inline std::atomic<bool> httpServerListening{ false };

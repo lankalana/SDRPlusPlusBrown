@@ -43,6 +43,21 @@ int acceptConnectionsWrapper(Server* server, uint16_t port) {
 // Define httpdebug namespace functions here
 namespace httpdebug {
 
+    namespace {
+        std::mutex screenshotMutex;
+        std::vector<unsigned char> screenshotBitmap;
+    }
+
+    void publishScreenshot(std::vector<unsigned char> bitmap) {
+        std::lock_guard<std::mutex> lock(screenshotMutex);
+        screenshotBitmap = std::move(bitmap);
+    }
+
+    std::vector<unsigned char> getScreenshot() {
+        std::lock_guard<std::mutex> lock(screenshotMutex);
+        return screenshotBitmap;
+    }
+
     std::vector<WidgetInfo> widgetRegistry;
 
     void registerWidget(ImGuiID id, ImGuiItemStatusFlags flags, const ImRect& rect) {
@@ -388,7 +403,8 @@ namespace httpdebug {
 
 // Implement createResponseForRequest here
 struct Response* createResponseForRequest(const struct Request* request, struct Connection* connection) {
-    if (strcmp(request->path, "/log") != 0) {
+    const std::string route = std::string(request->path).substr(0, strcspn(request->path, "?"));
+    if (strcmp(route.c_str(), "/log") != 0) {
         std::string reqLine = std::string(request->method) + " " + request->pathDecoded;
         if (request->body.length > 0 && request->body.contents) {
             reqLine += " body=";
@@ -397,7 +413,7 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
         flog::info("HTTP debug: {}", reqLine);
     }
 
-    if (strcmp(request->path, "/status") == 0 || strcmp(request->path, "/") == 0) {
+    if (strcmp(route.c_str(), "/status") == 0 || strcmp(route.c_str(), "/") == 0) {
         return responseAllocJSONWithFormat(
             "{\"ready\": %s, \"httpListening\": %s, \"mainLoopStarted\": %s}",
             httpdebug::serverReady.load() ? "true" : "false",
@@ -406,11 +422,23 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
     }
 
 #ifdef __cplusplus
-    if (strcmp(request->path, "/windows") == 0) {
+    if (strcmp(route.c_str(), "/windows") == 0) {
         return responseAllocJSON(httpdebug::getAllWindowsJson().c_str());
     }
 
-    if (strcmp(request->path, "/click") == 0) {
+    if (strcmp(route.c_str(), "/screenshot") == 0) {
+        httpdebug::screenshotRequested.store(true);
+        const auto bitmap = httpdebug::getScreenshot();
+        if (bitmap.empty()) {
+            return responseAllocJSONWithStatus(202, "Accepted", "{\"status\":\"capture_pending\"}");
+        }
+        auto* response = responseAlloc(200, "OK", "image/bmp", bitmap.size());
+        memcpy(response->body.contents, bitmap.data(), bitmap.size());
+        response->body.length = bitmap.size();
+        return response;
+    }
+
+    if (strcmp(route.c_str(), "/click") == 0) {
         char* xParam = strdupDecodeGETParam("x=", request, "0");
         char* yParam = strdupDecodeGETParam("y=", request, "0");
         float x = (float)atof(xParam);
@@ -421,7 +449,7 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
         return responseAllocJSON("{\"action\": \"click\"}");
     }
 
-    if (strcmp(request->path, "/mouse") == 0) {
+    if (strcmp(route.c_str(), "/mouse") == 0) {
         char* xParam = strdupDecodeGETParam("x=", request, "0");
         char* yParam = strdupDecodeGETParam("y=", request, "0");
         float x = (float)atof(xParam);
@@ -432,7 +460,7 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
         return responseAllocJSON("{\"action\": \"mouse_move\"}");
     }
 
-    if (strcmp(request->path, "/key") == 0) {
+    if (strcmp(route.c_str(), "/key") == 0) {
         char* keyParam = strdupDecodeGETParam("key=", request, "0");
         int key = atoi(keyParam);
         httpdebug::queueKeyPress(key);
@@ -440,23 +468,23 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
         return responseAllocJSON("{\"action\": \"key_press\"}");
     }
 
-    if (strcmp(request->path, "/type") == 0) {
+    if (strcmp(route.c_str(), "/type") == 0) {
         char* textParam = strdupDecodeGETParam("text=", request, "");
         httpdebug::queueTypeText(std::string(textParam));
         free(textParam);
         return responseAllocJSON("{\"action\": \"type\"}");
     }
 
-    if (strcmp(request->path, "/stop") == 0 || strcmp(request->path, "/exit") == 0) {
+    if (strcmp(route.c_str(), "/stop") == 0 || strcmp(route.c_str(), "/exit") == 0) {
         httpdebug::stopApp();
         return responseAllocJSON("{\"status\": \"exiting\"}");
     }
 
-    if (strcmp(request->path, "/layout") == 0) {
+    if (strcmp(route.c_str(), "/layout") == 0) {
         return responseAllocJSON(httpdebug::getSimpleLayoutJson().c_str());
     }
 
-    if (strcmp(request->path, "/clickid") == 0) {
+    if (strcmp(route.c_str(), "/clickid") == 0) {
         char* idParam = strdupDecodeGETParam("id=", request, "0");
         ImGuiID id = (ImGuiID)atoi(idParam);
         httpdebug::queueClickById(id);
@@ -464,24 +492,24 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
         return responseAllocJSON("{\"action\": \"click_id\"}");
     }
 
-    if (strcmp(request->path, "/sdr/start") == 0) {
+    if (strcmp(route.c_str(), "/sdr/start") == 0) {
         httpdebug::requestSdrStart();
         return responseAllocJSON("{\"action\": \"sdr_start\"}");
     }
 
-    if (strcmp(request->path, "/sdr/stop") == 0) {
+    if (strcmp(route.c_str(), "/sdr/stop") == 0) {
         httpdebug::requestSdrStop();
         return responseAllocJSON("{\"action\": \"sdr_stop\"}");
     }
 
-    if (strcmp(request->path, "/sdr/status") == 0) {
+    if (strcmp(route.c_str(), "/sdr/status") == 0) {
         return responseAllocJSONWithFormat(
             "{\"playing\": %s}",
             httpdebug::isSdrPlaying() ? "true" : "false");
     }
 
     // List available sink providers: GET /sinks
-    if (strcmp(request->path, "/sinks") == 0) {
+    if (strcmp(route.c_str(), "/sinks") == 0) {
         std::string json = "{\"sinks\": [";
         auto names = sigpath::sinkManager.getSinkProviderNames();
         for (size_t i = 0; i < names.size(); i++) {
@@ -493,7 +521,7 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
     }
 
     // List streams and their current sinks: GET /streams
-    if (strcmp(request->path, "/streams") == 0) {
+    if (strcmp(route.c_str(), "/streams") == 0) {
         std::string json = "{\"streams\": [";
         bool first = true;
         for (auto& [name, stream] : sigpath::sinkManager.streams) {
@@ -508,7 +536,7 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
     }
 
     // Set sink for a specific stream: POST /sink/select with body {"stream":"Radio","sink":"NullAudioSink"}
-    if (strcmp(request->path, "/sink/select") == 0) {
+    if (strcmp(route.c_str(), "/sink/select") == 0) {
         std::string streamName = "Radio";
         std::string sinkName = "None";
         if (request->body.length > 0 && request->body.contents) {
@@ -550,7 +578,7 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
             name.c_str(), offset);
     }
 
-    if (strcmp(request->path, "/modules") == 0) {
+    if (strcmp(route.c_str(), "/modules") == 0) {
         std::string json = "{";
         bool first = true;
         for (auto& [name, inst] : core::moduleManager.instances) {
@@ -794,7 +822,7 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
     }
 #endif
 
-    if (strcmp(request->path, "/log") == 0) {
+    if (strcmp(route.c_str(), "/log") == 0) {
         if (!flog::isMemoryLogEnabled()) {
             return responseAllocJSON("{\"error\":\"memory log buffer disabled\"}");
         }

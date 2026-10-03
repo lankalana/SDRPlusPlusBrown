@@ -4,6 +4,7 @@
 #include <gui/style.h>
 #include "gui/menus/display.h"
 #include <core.h>
+#include <cctype>
 
 Menu::Menu() {
 }
@@ -26,7 +27,7 @@ void Menu::removeEntry(std::string name) {
     items.erase(name);
 }
 
-bool Menu::draw(bool updateStates) {
+bool Menu::draw(bool updateStates, int section, const std::string& search) {
 
     static auto CollapsingHeader = [](const char *chname) -> bool {
         auto &style = ImGui::GetStyle();
@@ -51,6 +52,18 @@ bool Menu::draw(bool updateStates) {
         rawId++;
         if (items.find(opt.name) == items.end()) {
             continue;
+        }
+        const auto& entry = items.at(opt.name);
+        const bool radioPanel = opt.name == "Source" || opt.name == "Sinks" ||
+                                opt.name == "Receivers" || opt.name == "Automatic Reception" ||
+                                (entry.inst && core::moduleManager.instances.contains(opt.name) &&
+                                 std::string(core::moduleManager.instances.at(opt.name).module.info->name) == "radio");
+        const int entrySection = radioPanel ? 1 : (entry.inst ? 2 : 3);
+        if (section && section != entrySection) { continue; }
+        if (!search.empty()) {
+            const auto matches = std::search(opt.name.begin(), opt.name.end(), search.begin(), search.end(),
+                [](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); });
+            if (matches == opt.name.end()) { continue; }
         }
         if (opt.name == draggedMenuName) {
             ImGui::BeginTooltip();
@@ -234,6 +247,9 @@ bool Menu::draw(bool updateStates) {
         }
     }
 
+    if (!displayedCount && draggedMenuName.empty()) {
+        ImGui::TextDisabled("%s", search.empty() ? "No panels in this section" : "No matching panels");
+    }
     return changed;
 }
 

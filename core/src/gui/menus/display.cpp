@@ -208,14 +208,14 @@ namespace displaymenu {
             core::configManager.conf["smallScreen"] = phoneLayout;
             core::configManager.release(true);
         }
-        if (ImGui::RadioButton("Layout: default ##_sdrpp", transcieverLayout == TRAL_NONE)) {
+        if (ImGui::RadioButton("Desktop workspace ##_sdrpp", transcieverLayout == TRAL_NONE)) {
             core::configManager.acquire();
             transcieverLayout = TRAL_NONE;
             core::configManager.conf["transcieverLayout"] = transcieverLayout;
             core::configManager.release(true);
         }
         ImGui::SameLine();
-        if (ImGui::RadioButton("SSB trx ##_sdrpp", transcieverLayout == TRAL_SSB_FIRST)) {
+        if (ImGui::RadioButton("Transceiver controls ##_sdrpp", transcieverLayout == TRAL_SSB_FIRST)) {
             core::configManager.acquire();
             transcieverLayout = TRAL_SSB_FIRST;
             core::configManager.conf["transcieverLayout"] = transcieverLayout;

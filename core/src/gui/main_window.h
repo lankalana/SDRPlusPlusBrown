@@ -77,6 +77,13 @@ public:
 
 
 protected:
+    void drawDesktopHeader(ImGui::WaterfallVFO* vfo);
+    void drawDesktopReceiverControls();
+    void drawDesktopWorkspace(ImGui::WaterfallVFO* vfo);
+    int workspaceSection = 0;
+    bool workspaceInitialized = false;
+    char workspaceSearch[96] = {};
+
     void displayVariousWindows();
     static void vfoAddedHandler(VFOManager::VFO* vfo, void* ctx);
 
@@ -102,8 +109,6 @@ protected:
     std::string audioStreamName = "";
     std::string sourceName = "";
     int menuWidth = 300;
-    bool grabbingMenu = false;
-    int newWidth = 300;
     int fftHeight = 300;
     int tuningMode = tuner::TUNER_MODE_NORMAL;
 

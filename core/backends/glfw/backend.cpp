@@ -220,6 +220,42 @@ namespace backend {
         ImGui::NewFrame();
     }
 
+    static void captureFramebuffer(int width, int height) {
+        if (width <= 0 || height <= 0) { return; }
+        const size_t stride = ((size_t)width * 3 + 3) & ~size_t(3);
+        const size_t imageSize = stride * height;
+        std::vector<unsigned char> bitmap(54 + imageSize, 0);
+        const auto put16 = [&](size_t offset, uint16_t value) {
+            for (int i = 0; i < 2; ++i) { bitmap[offset + i] = (unsigned char)(value >> (8 * i)); }
+        };
+        const auto put32 = [&](size_t offset, uint32_t value) {
+            for (int i = 0; i < 4; ++i) { bitmap[offset + i] = (unsigned char)(value >> (8 * i)); }
+        };
+        bitmap[0] = 'B';
+        bitmap[1] = 'M';
+        put32(2, (uint32_t)bitmap.size());
+        put32(10, 54);
+        put32(14, 40);
+        put32(18, width);
+        put32(22, height);
+        put16(26, 1);
+        put16(28, 24);
+        put32(34, (uint32_t)imageSize);
+        GLint oldAlignment;
+        glGetIntegerv(GL_PACK_ALIGNMENT, &oldAlignment);
+        glPixelStorei(GL_PACK_ALIGNMENT, 4);
+        glReadPixels(0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, bitmap.data() + 54);
+        glPixelStorei(GL_PACK_ALIGNMENT, oldAlignment);
+        // OpenGL and BMP both store the bottom row first; BMP needs BGR channels.
+        for (int y = 0; y < height; ++y) {
+            for (int x = 0; x < width; ++x) {
+                const size_t offset = 54 + y * stride + x * 3;
+                std::swap(bitmap[offset], bitmap[offset + 2]);
+            }
+        }
+        httpdebug::publishScreenshot(std::move(bitmap));
+    }
+
     void render(bool vsync) {
         // Rendering
         ImGui::Render();
@@ -230,6 +266,7 @@ namespace backend {
         glClear(GL_COLOR_BUFFER_BIT);
         auto ctm = currentTimeNanos() / 1000;
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        if (httpdebug::screenshotRequested.exchange(false)) { captureFramebuffer(display_w, display_h); }
         ctm = currentTimeNanos() / 1000 - ctm;
         lastDrawTimeBackend = ctm; // only glfw time.
 
@@ -312,11 +349,9 @@ namespace backend {
 
                 if (httpdebug::getSdrStartRequest()) {
                     gui::mainWindow.setPlayState(true);
-                    httpdebug::setSdrPlaying(true);
                 }
                 if (httpdebug::getSdrStopRequest()) {
                     gui::mainWindow.setPlayState(false);
-                    httpdebug::setSdrPlaying(false);
                 }
 
                 std::string srcReq = httpdebug::getSourceChangeRequest();
@@ -330,21 +365,19 @@ namespace backend {
                 while (httpdebug::popAction(action)) {
                     switch (action.type) {
                     case httpdebug::ImGuiAction::Click:
-                        ImGui::GetIO().MousePos.x = action.x;
-                        ImGui::GetIO().MousePos.y = action.y;
-                        ImGui::GetIO().MouseDown[0] = true;
+                        setMouseScreenPos(action.x, action.y);
+                        ImGui::GetIO().AddMouseButtonEvent(0, true);
+                        ImGui::GetIO().AddMouseButtonEvent(0, false);
                         break;
                     case httpdebug::ImGuiAction::MouseMove:
-                        ImGui::GetIO().MousePos.x = action.x;
-                        ImGui::GetIO().MousePos.y = action.y;
+                        setMouseScreenPos(action.x, action.y);
                         break;
                     case httpdebug::ImGuiAction::KeyPress:
-                        ImGui::GetIO().KeysDown[action.key] = true;
+                        ImGui_ImplGlfw_KeyCallback(window, action.key, 0, GLFW_PRESS, 0);
+                        ImGui_ImplGlfw_KeyCallback(window, action.key, 0, GLFW_RELEASE, 0);
                         break;
                     case httpdebug::ImGuiAction::TypeText:
-                        for (char c : action.text) {
-                            ImGui::GetIO().InputQueueCharacters.push_back(c);
-                        }
+                        ImGui::GetIO().AddInputCharactersUTF8(action.text.c_str());
                         break;
                     case httpdebug::ImGuiAction::Focus:
                         ImGui::SetFocusID(action.targetId, ImGui::GetCurrentWindow());

@@ -1063,7 +1063,7 @@ namespace ImGui {
         bool startVis, endVis;
         uint32_t color, colorTrans;
 
-        float height = ImGui::CalcTextSize("0").y * 2.5f;
+        float height = ImGui::CalcTextSize("0").y + 6.0f * style::uiScale;
         float bpBottom;
 
         window->DrawList->PushClipRect(fftAreaMin, fftAreaMax, true);
@@ -1095,6 +1095,8 @@ namespace ImGui {
                 color = IM_COL32(255, 255, 255, 255);
                 colorTrans = IM_COL32(255, 255, 255, 100);
             }
+            colorTrans = (colorTrans & ~IM_COL32_A_MASK) | (40U << IM_COL32_A_SHIFT);
+            color = (color & ~IM_COL32_A_MASK) | (140U << IM_COL32_A_SHIFT);
             if (aPos <= fftAreaMin.x) {
                 aPos = fftAreaMin.x + 1;
             }
