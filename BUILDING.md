@@ -119,8 +119,9 @@ toolbar provides direct mode and bandwidth selection. Radio, Modules, and Settin
 the control panels; search filters panel names within the selected tab. Drag the divider to
 resize the panel or use Panels to give the spectrum the full window width. Output displays
 appear in tabs below the waterfall. The spectrum toolbar provides zoom, automatic level fitting,
-and floor/ceiling controls (under Levels in compact windows). Existing transceiver controls remain available
-in Settings > Display.
+and floor/ceiling sliders (under Levels in compact windows). Ctrl-click a slider to enter an
+exact dB value; the controls keep at least 10 dB between floor and ceiling. Existing transceiver
+controls remain available in Settings > Display.
 
 The Dark theme now uses a navy palette with a teal accent. Other installed themes remain
 selectable, and the saved theme is applied at startup.
@@ -138,3 +139,4 @@ previews. The debug server's `GET /screenshot` endpoint requests a capture of th
 framebuffer and returns the last completed BMP; before the first capture it returns HTTP 202.
 Captures occur only when requested. Coordinate input endpoints use ImGui's event queue, including
 button/key releases, and accept query parameters as documented in `AGENTS-debugging.md`.
+Layout snapshots and framebuffer captures are produced on the render thread when requested.

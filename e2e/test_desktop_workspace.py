@@ -7,6 +7,7 @@ from pathlib import Path
 import random
 import struct
 import time
+import traceback
 import urllib.parse
 import urllib.request
 import wave
@@ -34,7 +35,7 @@ def widget(ctx, window_title, label):
     def locate():
         elements = request(ctx, "/layout")["elements"]
         windows = [item for item in elements if item["type"] == "window"
-                   and f"/{window_title}_" in item["name"]]
+                   and (f"/{window_title}_" in item["name"] or item["name"] == window_title)]
         for window in windows:
             widget_id = zlib.crc32(label.encode(), window["id"])
             for item in elements:
@@ -52,9 +53,14 @@ def click(ctx, window_title, label):
 
 def screenshot(ctx, name, width, height):
     artifact_dir = os.environ.get("E2E_UI_ARTIFACT_DIR")
+    path = "/screenshot"
+    # Request a fresh frame before reading the cached capture.
+    with urllib.request.urlopen(ctx.base_url + path, timeout=5) as response:
+        response.read()
+    time.sleep(0.1)
     deadline = time.monotonic() + 4
     while time.monotonic() < deadline:
-        with urllib.request.urlopen(ctx.base_url + "/screenshot", timeout=5) as response:
+        with urllib.request.urlopen(ctx.base_url + path, timeout=5) as response:
             bitmap = response.read()
         if bitmap[:2] == b"BM":
             actual_width, actual_height = struct.unpack_from("<ii", bitmap, 18)
@@ -75,7 +81,7 @@ def screenshot(ctx, name, width, height):
 def test_workspace():
     main, radio = get_lsb_config()
     main.update({"windowSize": {"w": 1280, "h": 720}, "showMenu": True,
-                 "theme": "Dark", "transcieverLayout": 0})
+                 "theme": "Dark", "transcieverLayout": 0, "min": -120.0, "max": 0.0})
     with SDRPPTestContext() as ctx:
         ctx.write_configs(main, radio)
         assert ctx.start(), "Application failed to start"
@@ -85,6 +91,18 @@ def test_workspace():
         frequency = widget(ctx, "Radio Header", "##frequency_display")
         assert frequency["w"] > 200 and frequency["h"] > 20
         screenshot(ctx, "desktop-workspace", 1280, 720)
+
+        # A single click changes a slider's absolute level; it does not need a drag.
+        def levels():
+            return json.loads((Path(ctx.temp_dir) / "config.json").read_text())
+        floor_before = levels()["min"]
+        click(ctx, "Spectrum Workspace", "Floor##workspace_floor")
+        wait_for(lambda: levels()["min"] != floor_before, "Floor slider did not change its level")
+        ceiling_before = levels()["max"]
+        click(ctx, "Spectrum Workspace", "Ceiling##workspace_ceiling")
+        wait_for(lambda: levels()["max"] != ceiling_before, "Ceiling slider did not change its level")
+        assert -200 <= levels()["min"] <= levels()["max"] - 10
+        assert levels()["max"] <= 0
 
         click(ctx, "Receiver Controls", "USB##workspace_mode")
         wait_for(lambda: ctx.module_cmd("Radio", "get_demod").get("id") == 4,
@@ -113,9 +131,10 @@ def test_workspace():
         spectrum_before = next(element for element in request(ctx, "/layout")["elements"]
                                if element["type"] == "window" and "/Spectrum Workspace_" in element["name"])
         click(ctx, "Radio Header", "Panels##workspace_panels")
-        spectrum_after = next(element for element in request(ctx, "/layout")["elements"]
-                              if element["type"] == "window" and "/Spectrum Workspace_" in element["name"])
-        assert spectrum_after["w"] > spectrum_before["w"] + 150
+        wait_for(lambda: any(element["type"] == "window" and "/Spectrum Workspace_" in element["name"]
+                             and element["w"] > spectrum_before["w"] + 150
+                             for element in request(ctx, "/layout")["elements"]),
+                 "Hiding the panels did not expand the spectrum")
         click(ctx, "Radio Header", "Panels##workspace_panels")
 
 
@@ -175,6 +194,7 @@ def test_live_reception():
         wait_for(lambda: request(ctx, "/sdr/status")["playing"], "Start RX did not start reception")
         time.sleep(1)
         screenshot(ctx, "desktop-live", 1280, 800)
+
         click(ctx, "Receiver Controls", "USB##workspace_mode")
         wait_for(lambda: ctx.module_cmd("Radio", "get_demod").get("id") == 4,
                  "Cannot change mode during reception")
@@ -192,6 +212,7 @@ if __name__ == "__main__":
             stats.test_pass(case.__name__)
             passed += 1
         except Exception as error:
+            traceback.print_exc()
             stats.test_fail(case.__name__, str(error))
     stats.final_summary(len(cases), passed, len(cases) - passed)
     raise SystemExit(0 if passed == len(cases) else 1)

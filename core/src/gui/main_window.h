@@ -80,6 +80,7 @@ protected:
     void drawDesktopHeader(ImGui::WaterfallVFO* vfo);
     void drawDesktopReceiverControls();
     void drawDesktopWorkspace(ImGui::WaterfallVFO* vfo);
+    void drawDesktopSpectrumToolbar(float width);
     int workspaceSection = 0;
     bool workspaceInitialized = false;
     char workspaceSearch[96] = {};

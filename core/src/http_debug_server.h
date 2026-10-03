@@ -40,8 +40,12 @@ namespace httpdebug {
 
     // Capture only this application's framebuffer, on its render thread.
     inline std::atomic<bool> screenshotRequested{ false };
+    inline std::atomic<bool> layoutRequested{ true };
     void publishScreenshot(std::vector<unsigned char> bitmap);
     std::vector<unsigned char> getScreenshot();
+    void publishLayout();
+    std::string getLayout();
+    std::string getWindows();
 
     inline Server* httpServer = nullptr;
     inline std::jthread ewsThread;

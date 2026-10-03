@@ -393,7 +393,7 @@ class SDRPPTestContext:
         if http_port is None and "E2E_HTTP_PORT" not in os.environ:
             SDRPPTestContext._port_counter += 1
         
-        self.base_url = f"http://localhost:{self.http_port}"
+        self.base_url = f"http://127.0.0.1:{self.http_port}"
         self.temp_dir: Optional[str] = None
         self.proc: Optional[subprocess.Popen] = None
         self.log_path: Optional[str] = None

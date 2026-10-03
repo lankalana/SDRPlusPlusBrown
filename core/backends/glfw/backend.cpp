@@ -346,6 +346,7 @@ namespace backend {
                 ImGui::SetNextWindowPos(ImVec2(0, 0));
                 ImGui::SetNextWindowSize(ImVec2(_winWidth, _winHeight));
                 gui::mainWindow.draw();
+                if (httpdebug::layoutRequested.exchange(false)) { httpdebug::publishLayout(); }
 
                 if (httpdebug::getSdrStartRequest()) {
                     gui::mainWindow.setPlayState(true);

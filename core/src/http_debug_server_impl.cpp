@@ -46,6 +46,9 @@ namespace httpdebug {
     namespace {
         std::mutex screenshotMutex;
         std::vector<unsigned char> screenshotBitmap;
+        std::mutex layoutMutex;
+        std::string layoutSnapshot = "{\"elements\":[]}";
+        std::string windowSnapshot = "{\"windows\":[]}";
     }
 
     void publishScreenshot(std::vector<unsigned char> bitmap) {
@@ -56,6 +59,24 @@ namespace httpdebug {
     std::vector<unsigned char> getScreenshot() {
         std::lock_guard<std::mutex> lock(screenshotMutex);
         return screenshotBitmap;
+    }
+
+    void publishLayout() {
+        const auto layout = getSimpleLayoutJson();
+        const auto windows = getAllWindowsJson();
+        std::lock_guard<std::mutex> lock(layoutMutex);
+        layoutSnapshot = layout;
+        windowSnapshot = windows;
+    }
+
+    std::string getLayout() {
+        std::lock_guard<std::mutex> lock(layoutMutex);
+        return layoutSnapshot;
+    }
+
+    std::string getWindows() {
+        std::lock_guard<std::mutex> lock(layoutMutex);
+        return windowSnapshot;
     }
 
     std::vector<WidgetInfo> widgetRegistry;
@@ -423,7 +444,8 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
 
 #ifdef __cplusplus
     if (strcmp(route.c_str(), "/windows") == 0) {
-        return responseAllocJSON(httpdebug::getAllWindowsJson().c_str());
+        httpdebug::layoutRequested.store(true);
+        return responseAllocJSON(httpdebug::getWindows().c_str());
     }
 
     if (strcmp(route.c_str(), "/screenshot") == 0) {
@@ -481,7 +503,8 @@ struct Response* createResponseForRequest(const struct Request* request, struct 
     }
 
     if (strcmp(route.c_str(), "/layout") == 0) {
-        return responseAllocJSON(httpdebug::getSimpleLayoutJson().c_str());
+        httpdebug::layoutRequested.store(true);
+        return responseAllocJSON(httpdebug::getLayout().c_str());
     }
 
     if (strcmp(route.c_str(), "/clickid") == 0) {

@@ -224,57 +224,7 @@ void MainWindow::drawDesktopWorkspace(ImGui::WaterfallVFO* vfo) {
     const float spectrumWidth = (std::max)(80 * scale, available.x - panelWidth - dividerWidth);
     ImGui::BeginChild("Spectrum Workspace", ImVec2(spectrumWidth, contentHeight), true,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled("SPECTRUM / WATERFALL");
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth((std::min)(120 * scale, spectrumWidth / 5));
-    if (ImGui::SliderFloat("##workspace_zoom", &bw, 0.0f, 1.0f, "Zoom")) {
-        persist("zoomBw", bw);
-        updateWaterfallZoomBandwidth(bw);
-    }
-    tooltip("Spectrum zoom; scroll over the spectrum for fine control");
-    ImGui::SameLine();
-    if (ImGui::Button("Fit##workspace_fit")) {
-        const auto range = gui::waterfall.autoRange();
-        if (range.first != 0 || range.second != 0) {
-            fftMin = range.first;
-            fftMax = (std::max)((float)range.second, fftMin + 10.0f);
-            gui::waterfall.setFFTMin(fftMin);
-            gui::waterfall.setWaterfallMin(fftMin);
-            gui::waterfall.setFFTMax(fftMax);
-            gui::waterfall.setWaterfallMax(fftMax);
-            persist("min", fftMin);
-            persist("max", fftMax);
-        }
-    }
-    tooltip("Fit display levels to the visible signals");
-    const auto drawLevels = [&](bool inlineControls) {
-        if (inlineControls) { ImGui::SameLine(); }
-        ImGui::SetNextItemWidth(90 * scale);
-        if (ImGui::DragFloat("Floor##workspace_floor", &fftMin, 1.0f, -200.0f, fftMax - 10, "%.0f dB")) {
-            gui::waterfall.setFFTMin(fftMin);
-            gui::waterfall.setWaterfallMin(fftMin);
-            persist("min", fftMin);
-        }
-        if (inlineControls) { ImGui::SameLine(); }
-        ImGui::SetNextItemWidth(90 * scale);
-        if (ImGui::DragFloat("Ceiling##workspace_ceiling", &fftMax, 1.0f, fftMin + 10, 0.0f, "%.0f dB")) {
-            gui::waterfall.setFFTMax(fftMax);
-            gui::waterfall.setWaterfallMax(fftMax);
-            persist("max", fftMax);
-        }
-    };
-    if (spectrumWidth > 620 * scale) {
-        drawLevels(true);
-    }
-    else {
-        ImGui::SameLine();
-        if (ImGui::Button("Levels##workspace_levels")) { ImGui::OpenPopup("Display levels"); }
-        if (ImGui::BeginPopup("Display levels")) {
-            drawLevels(false);
-            ImGui::EndPopup();
-        }
-    }
+    drawDesktopSpectrumToolbar(spectrumWidth);
     ImGui::Separator();
     const float outputMinimum = 100 * scale + 2 * ImGui::GetStyle().WindowPadding.y + ImGui::GetFrameHeightWithSpacing();
     const float bottomHeight = bottomWindows.empty() ? 0 : (std::min)((std::max)(outputMinimum, ImGui::GetContentRegionAvail().y * 0.3f), ImGui::GetContentRegionAvail().y * 0.5f);
@@ -312,4 +262,61 @@ void MainWindow::drawDesktopWorkspace(ImGui::WaterfallVFO* vfo) {
                             hrfreq::toString(gui::waterfall.getViewBandwidth()).c_str());
     }
     if (ImGui::IsKeyPressed(ImGuiKey_Escape)) { showCredits = false; }
+}
+
+void MainWindow::drawDesktopSpectrumToolbar(float width) {
+    const float scale = style::uiScale;
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("SPECTRUM / WATERFALL");
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth((std::min)(120 * scale, width / 5));
+    if (ImGui::SliderFloat("##workspace_zoom", &bw, 0.0f, 1.0f, "Zoom")) {
+        persist("zoomBw", bw);
+        updateWaterfallZoomBandwidth(bw);
+    }
+    tooltip("Spectrum zoom; scroll over the spectrum for fine control");
+    ImGui::SameLine();
+    if (ImGui::Button("Fit##workspace_fit")) {
+        const auto range = gui::waterfall.autoRange();
+        if (range.first != 0 || range.second != 0) {
+            fftMin = range.first;
+            fftMax = (std::max)((float)range.second, fftMin + 10.0f);
+            gui::waterfall.setFFTMin(fftMin);
+            gui::waterfall.setWaterfallMin(fftMin);
+            gui::waterfall.setFFTMax(fftMax);
+            gui::waterfall.setWaterfallMax(fftMax);
+            persist("min", fftMin);
+            persist("max", fftMax);
+        }
+    }
+    tooltip("Fit display levels to the visible signals");
+    const auto drawLevels = [&](bool inlineControls) {
+        if (inlineControls) { ImGui::SameLine(); }
+        ImGui::SetNextItemWidth(140 * scale);
+        if (ImGui::SliderFloat("Floor##workspace_floor", &fftMin, -200.0f, fftMax - 10, "%.0f dB", ImGuiSliderFlags_AlwaysClamp)) {
+            gui::waterfall.setFFTMin(fftMin);
+            gui::waterfall.setWaterfallMin(fftMin);
+            persist("min", fftMin);
+        }
+        if (inlineControls) { ImGui::SameLine(); }
+        tooltip("Display floor; drag the slider or Ctrl-click to enter dB");
+        ImGui::SetNextItemWidth(140 * scale);
+        if (ImGui::SliderFloat("Ceiling##workspace_ceiling", &fftMax, fftMin + 10, 0.0f, "%.0f dB", ImGuiSliderFlags_AlwaysClamp)) {
+            gui::waterfall.setFFTMax(fftMax);
+            gui::waterfall.setWaterfallMax(fftMax);
+            persist("max", fftMax);
+        }
+        tooltip("Display ceiling; stays at least 10 dB above the floor");
+    };
+    if (width > 900 * scale) {
+        drawLevels(true);
+    }
+    else {
+        ImGui::SameLine();
+        if (ImGui::Button("Levels##workspace_levels")) { ImGui::OpenPopup("Display levels"); }
+        if (ImGui::BeginPopup("Display levels")) {
+            drawLevels(false);
+            ImGui::EndPopup();
+        }
+    }
 }
